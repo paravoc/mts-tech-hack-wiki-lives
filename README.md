@@ -1,43 +1,50 @@
-# WikiLive
+﻿# WikiLive
 
-WikiLive - прототип живой вики-системы для MWS Tables. Идея проекта в том, чтобы пользователь мог писать обычные вики-страницы и вставлять в текст ссылки на данные из таблиц MWS, а сервер подставлял актуальные значения при просмотре страницы.
+WikiLive — прототип живой вики-системы для MWS Tables. Пользователь создает страницы, вставляет в текст ссылки вида `{{tableId:recordId:fieldName}}`, а сервер рендерит эти вставки в актуальные значения из таблиц.
 
-## Что делает проект
+## Что уже реализовано
 
-- создает и хранит вики-страницы
-- поддерживает вставки вида `{{tableId:recordId:fieldName}}`
-- подставляет значения из MWS Tables при рендеринге
-- закладывает основу для live-обновлений через WebSocket
-- использует единый контракт ошибок и безопасную обработку запросов
+- backend на `C++23`
+- HTTP API на `uWebSockets`
+- CRUD для вики-страниц
+- рендер текста с wiki-вставками
+- единый JSON-формат ответов и ошибок
+- базовая интеграция с MWS Tables через `WinHTTP`
+- in-memory хранилище страниц для MVP
+- модульные тесты через `CTest`
 
-## Текущий статус
+## Текущие endpoint'ы
 
-Сейчас в репозитории подготовлен backend-скелет на C++23:
+- `GET /health`
+- `GET /api/pages`
+- `GET /api/pages/{pageId}`
+- `POST /api/pages`
+- `PUT /api/pages/{pageId}`
+- `DELETE /api/pages/{pageId}`
+- `POST /api/render`
 
-- настроена структура проекта
-- добавлен загрузчик конфигурации из `.env`
-- подготовлены базовые модули `router`, `page_storage`, `wiki_parser`, `wiki_renderer`, `mws_client`
-- заложен переход на безопасный стиль работы через `std::expected`
-- добавлены базовые тесты для парсера и кэша
+## Формат страницы
 
-Реальный HTTP-транспорт к MWS API и полноценный сервер на `uWebSockets` пока находятся в стадии реализации.
+```json
+{
+  "pageId": "page-1",
+  "title": "Статус проекта",
+  "content": "Текст страницы",
+  "createdAt": "2026-04-08T12:00:00Z",
+  "updatedAt": "2026-04-08T12:00:00Z",
+  "renderedHtml": "<span>...</span>"
+}
+```
 
-## Архитектура
+## Пример вставки
 
-Проект разделен на несколько модулей:
-
-- `config/` - константы и загрузка конфигурации
-- `src/core/` - запуск приложения и инициализация зависимостей
-- `src/server/` - HTTP-роутинг и WebSocket-слой
-- `src/api/` - работа с MWS Tables API
-- `src/wiki/` - парсинг и рендеринг вики-вставок
-- `src/storage/` - хранение страниц и кэш
-- `src/utils/` - общие утилиты, логирование, ошибки
-- `tests/` - базовые тесты
+```text
+Статус проекта: {{dstPqo6u9dqgb6Ls2t:rec123456:Статус}}
+```
 
 ## Конфигурация
 
-Основные параметры задаются в файле `.env`.
+Настройки задаются в `.env`.
 
 Пример:
 
@@ -60,49 +67,75 @@ ENABLE_WEBSOCKET=true
 ENABLE_AI=false
 ```
 
-Назначение параметров:
+## Сборка
 
-- `MWS_TABLE_ID` и `MWS_VIEW_ID` - таблица с исходными живыми данными
-- `WIKI_PAGES_TABLE_ID` и `WIKI_PAGES_VIEW_ID` - отдельная таблица для хранения вики-страниц
-- `HTTP_PORT` - порт backend-сервера
-- `CACHE_TTL_SECONDS` - время жизни кэша
-- `REQUEST_TIMEOUT_MS`, `RETRY_ATTEMPTS`, `RETRY_BASE_DELAY_MS` - базовые параметры устойчивости
+Проект собирается через preset `windows-debug`.
 
-## Пример вставки
-
-В тексте страницы можно использовать конструкцию:
-
-```text
-Статус проекта: {{dstPqo6u9dqgb6Ls2t:rec123456:Статус}}
+```powershell
+cmake --preset windows-debug
+cmake --build --preset windows-debug
 ```
 
-При рендеринге backend должен получить значение поля `Статус` из записи `rec123456` и подставить его в готовый HTML.
+Готовый бинарник появляется по пути:
+
+```text
+C:\Users\smidr\AppData\Local\WikiLive\build\windows-vs-debug\Debug\wikilive_backend.exe
+```
+
+## Запуск
+
+```powershell
+C:\Users\smidr\AppData\Local\WikiLive\build\windows-vs-debug\Debug\wikilive_backend.exe
+```
+
+После запуска сервер по умолчанию слушает `http://127.0.0.1:3000`.
+
+Проверка:
+
+```powershell
+Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/health
+```
+
+## Тесты
+
+Сборка тестов выполняется вместе с проектом. Запуск:
+
+```powershell
+ctest --test-dir "$env:LOCALAPPDATA\WikiLive\build\windows-vs-debug" -C Debug --output-on-failure
+```
+
+Покрыты базовые сценарии:
+
+- парсинг wiki-вставок
+- работа кэша
+- CRUD и сортировка страниц
+- работа router-слоя
 
 ## Структура проекта
 
 ```text
 wikilive/
 ├── CMakeLists.txt
+├── CMakePresets.json
+├── README.md
 ├── .env.example
 ├── config/
 ├── src/
 │   ├── api/
 │   ├── core/
+│   ├── models/
 │   ├── server/
+│   ├── services/
 │   ├── storage/
 │   ├── utils/
 │   └── wiki/
 └── tests/
 ```
 
-## Ближайшие задачи
+## Что дальше
 
-1. Подключить реальный HTTP-клиент к MWS API через `libcurl`.
-2. Реализовать сохранение и чтение страниц из таблицы `WikiPages`.
-3. Связать `wiki_renderer` с `mws_client`, чтобы вставки подставлялись реальными значениями.
-4. Поднять рабочие endpoint'ы и подключить `uWebSockets`.
-5. Добавить WebSocket-обновления для live-рендеринга.
-
-## Запуск
-
-Сборка и запуск будут описаны после подключения зависимостей `uWebSockets`, `libcurl` и настройки CMake под локальное окружение.
+1. Перевести хранение страниц из памяти в таблицу `WikiPages`.
+2. Довести чтение значений из MWS до стабильной подстановки для всех нужных полей.
+3. Добавить WebSocket-обновления.
+4. Подключить фронтенд.
+5. После стабилизации ядра добавить AI-помощника.

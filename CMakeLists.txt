@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(wikilive_backend LANGUAGES CXX)
+enable_testing()
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -80,8 +81,7 @@ target_link_libraries(wikilive_uwebsockets INTERFACE
 )
 add_library(wikilive::uwebsockets ALIAS wikilive_uwebsockets)
 
-add_executable(wikilive_backend
-    src/main.cpp
+add_library(wikilive_core STATIC
     config/config_loader.cpp
     src/core/app_config.cpp
     src/core/application.cpp
@@ -104,13 +104,21 @@ add_executable(wikilive_backend
     src/utils/time_utils.cpp
 )
 
-target_include_directories(wikilive_backend PRIVATE
+target_include_directories(wikilive_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(wikilive_backend PRIVATE
+target_link_libraries(wikilive_core PUBLIC
     wikilive::uwebsockets
     winhttp
+)
+
+add_executable(wikilive_backend
+    src/main.cpp
+)
+
+target_link_libraries(wikilive_backend PRIVATE
+    wikilive_core
 )
 
 if (WIN32)
@@ -125,7 +133,7 @@ if (WIN32)
     )
 endif()
 
-target_compile_options(wikilive_backend PRIVATE
+target_compile_options(wikilive_core PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/W4>
     $<$<CXX_COMPILER_ID:MSVC>:/EHsc>
     $<$<CXX_COMPILER_ID:MSVC>:/permissive->
@@ -133,3 +141,28 @@ target_compile_options(wikilive_backend PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
     $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
 )
+
+add_executable(wikilive_test_parser
+    tests/test_parser.cpp
+)
+target_link_libraries(wikilive_test_parser PRIVATE wikilive_core)
+
+add_executable(wikilive_test_cache
+    tests/test_cache.cpp
+)
+target_link_libraries(wikilive_test_cache PRIVATE wikilive_core)
+
+add_executable(wikilive_test_page_service
+    tests/test_page_service.cpp
+)
+target_link_libraries(wikilive_test_page_service PRIVATE wikilive_core)
+
+add_executable(wikilive_test_router
+    tests/test_router.cpp
+)
+target_link_libraries(wikilive_test_router PRIVATE wikilive_core)
+
+add_test(NAME wikilive_test_parser COMMAND wikilive_test_parser)
+add_test(NAME wikilive_test_cache COMMAND wikilive_test_cache)
+add_test(NAME wikilive_test_page_service COMMAND wikilive_test_page_service)
+add_test(NAME wikilive_test_router COMMAND wikilive_test_router)
