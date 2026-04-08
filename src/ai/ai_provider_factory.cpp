@@ -16,7 +16,14 @@ std::unique_ptr<AiProvider> createAiProvider(const core::AppConfig& config) {
         return std::make_unique<OpenRouterAiProvider>(
             config.aiBaseUrl,
             config.aiApiKey,
-            config.aiModel);
+            config.aiModel,
+            OpenRouterAiProviderOptions{
+                .requestTimeoutMs = config.requestTimeoutMs,
+                .retryAttempts = config.retryAttempts,
+                .retryBaseDelayMs = config.retryBaseDelayMs,
+                .maxTokens = config.aiMaxTokens,
+                .temperature = config.aiTemperature,
+            });
     }
 
     if (config.aiProvider == "ollama") {

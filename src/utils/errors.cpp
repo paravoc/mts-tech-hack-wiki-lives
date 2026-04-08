@@ -23,6 +23,10 @@ std::string toString(const ErrorCode code) {
             return "MwsApiError";
         case ErrorCode::MwsRateLimit:
             return "MwsRateLimit";
+        case ErrorCode::AiApiError:
+            return "AiApiError";
+        case ErrorCode::AiRateLimit:
+            return "AiRateLimit";
         case ErrorCode::ParserError:
             return "ParserError";
         case ErrorCode::PageNotFound:

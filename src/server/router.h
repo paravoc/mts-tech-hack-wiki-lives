@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 
+#include "src/ai/ai_service.h"
 #include "src/server/websocket_manager.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
@@ -20,6 +21,7 @@ public:
     Router(
         services::PageService& pageService,
         services::RenderService& renderService,
+        ai::AiService* aiService = nullptr,
         WebSocketManager* webSocketManager = nullptr);
 
     [[nodiscard]] RouteResponse handleHealth() const;
@@ -29,6 +31,7 @@ public:
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
+    [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
 
 private:
     [[nodiscard]] RouteResponse ok(const std::string& dataJson) const;
@@ -39,9 +42,11 @@ private:
         const std::string& payload,
         const std::string& key,
         bool required = true) const;
+    [[nodiscard]] std::string aiSuggestInsertResultToJson(const ai::AiSuggestInsertResult& result) const;
 
     services::PageService& pageService_;
     services::RenderService& renderService_;
+    ai::AiService* aiService_ = nullptr;
     WebSocketManager* webSocketManager_ = nullptr;
 };
 

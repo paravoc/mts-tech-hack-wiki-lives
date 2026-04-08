@@ -3,6 +3,8 @@
 #include <exception>
 #include <utility>
 
+#include <nlohmann/json.hpp>
+
 #include "src/utils/string_utils.h"
 
 namespace {
@@ -32,6 +34,16 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
 
     json += "}";
     return json;
+}
+
+std::string aiInsertCandidateToJson(const wikilive::ai::AiInsertCandidate& candidate) {
+    return
+        "{\"tableId\":\"" + wikilive::utils::escapeJson(candidate.tableId) +
+        "\",\"recordId\":\"" + wikilive::utils::escapeJson(candidate.recordId) +
+        "\",\"fieldName\":\"" + wikilive::utils::escapeJson(candidate.fieldName) +
+        "\",\"insert\":\"" + wikilive::utils::escapeJson(candidate.insert) +
+        "\",\"reason\":\"" + wikilive::utils::escapeJson(candidate.reason) +
+        "\",\"confidence\":" + std::to_string(candidate.confidence) + "}";
 }
 
 wikilive::server::RouteResponse unexpectedExceptionResponse(const std::exception& exception) {
@@ -65,8 +77,9 @@ namespace wikilive::server {
 Router::Router(
     services::PageService& pageService,
     services::RenderService& renderService,
+    ai::AiService* aiService,
     WebSocketManager* webSocketManager)
-    : pageService_(pageService), renderService_(renderService), webSocketManager_(webSocketManager) {
+    : pageService_(pageService), renderService_(renderService), aiService_(aiService), webSocketManager_(webSocketManager) {
 }
 
 RouteResponse Router::handleHealth() const {
@@ -250,6 +263,68 @@ RouteResponse Router::renderContent(const std::string& payload) {
     }
 }
 
+RouteResponse Router::suggestInsert(const std::string& payload) {
+    try {
+        if (aiService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "AI service is not configured",
+                503,
+                false));
+        }
+
+        if (payload.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "AI payload must not be empty",
+                400,
+                false));
+        }
+
+        const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto userPrompt = parsedPayload.value("userPrompt", std::string{});
+        const auto pageContent = parsedPayload.value("pageContent", std::string{});
+
+        std::string contextJson;
+        if (parsedPayload.contains("context")) {
+            if (parsedPayload["context"].is_string()) {
+                contextJson = parsedPayload["context"].get<std::string>();
+            } else {
+                contextJson = parsedPayload["context"].dump();
+            }
+        }
+
+        if (userPrompt.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "AI field userPrompt must not be empty",
+                400,
+                false));
+        }
+
+        const auto aiResult = aiService_->suggestInsert(ai::AiSuggestInsertRequest{
+            .userPrompt = userPrompt,
+            .pageContent = pageContent,
+            .contextJson = contextJson,
+        });
+        if (!aiResult) {
+            return fail(aiResult.error());
+        }
+
+        return ok(aiSuggestInsertResultToJson(aiResult.value()));
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed AI JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
 RouteResponse Router::ok(const std::string& dataJson) const {
     return RouteResponse{
         .statusCode = 200,
@@ -359,6 +434,21 @@ utils::Expected<std::string> Router::extractJsonString(
         "Unterminated JSON string field: " + key,
         400,
         false));
+}
+
+std::string Router::aiSuggestInsertResultToJson(const ai::AiSuggestInsertResult& result) const {
+    std::string items = "[";
+    bool first = true;
+    for (const auto& candidate : result.candidates) {
+        if (!first) {
+            items += ",";
+        }
+        first = false;
+        items += aiInsertCandidateToJson(candidate);
+    }
+    items += "]";
+
+    return "{\"candidates\":" + items + "}";
 }
 
 }  // namespace wikilive::server

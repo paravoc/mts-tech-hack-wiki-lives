@@ -10,6 +10,8 @@ enum class ErrorCode {
     InvalidRequest,
     MwsApiError,
     MwsRateLimit,
+    AiApiError,
+    AiRateLimit,
     ParserError,
     PageNotFound,
     Timeout,

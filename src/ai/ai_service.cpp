@@ -2,8 +2,16 @@
 
 namespace wikilive::ai {
 
-AiService::AiService(std::unique_ptr<AiProvider> provider)
-    : provider_(std::move(provider)) {
+AiService::AiService(
+    std::unique_ptr<AiProvider> provider,
+    std::unique_ptr<AiSuggestionValidator> suggestionValidator,
+    std::unique_ptr<AiContextBuilder> contextBuilder)
+    : provider_(std::move(provider)),
+      suggestionValidator_(std::move(suggestionValidator)),
+      contextBuilder_(std::move(contextBuilder)) {
+    if (suggestionValidator_ == nullptr) {
+        suggestionValidator_ = std::make_unique<AiSuggestionValidator>();
+    }
 }
 
 bool AiService::isAvailable() const {
@@ -23,7 +31,25 @@ utils::Expected<AiSuggestInsertResult> AiService::suggestInsert(const AiSuggestI
         return std::unexpected(unavailableError());
     }
 
-    return provider_->suggestInsert(request);
+    AiSuggestInsertRequest preparedRequest = request;
+    if (preparedRequest.contextJson.empty() && contextBuilder_ != nullptr) {
+        const auto builtContext = contextBuilder_->buildSuggestInsertContext();
+        if (!builtContext) {
+            return std::unexpected(builtContext.error());
+        }
+        preparedRequest.contextJson = builtContext.value();
+    }
+
+    const auto providerResult = provider_->suggestInsert(preparedRequest);
+    if (!providerResult) {
+        return std::unexpected(providerResult.error());
+    }
+
+    if (suggestionValidator_ == nullptr) {
+        return providerResult;
+    }
+
+    return suggestionValidator_->validate(providerResult.value());
 }
 
 utils::Error AiService::unavailableError() const {

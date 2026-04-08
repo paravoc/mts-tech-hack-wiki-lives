@@ -23,6 +23,7 @@ WikiLive — прототип живой вики-системы для MWS Tabl
 - `PUT /api/pages/{pageId}`
 - `DELETE /api/pages/{pageId}`
 - `POST /api/render`
+- `POST /api/ai/suggest-insert`
 
 ## Формат страницы
 
@@ -70,6 +71,8 @@ AI_PROVIDER=none
 AI_BASE_URL=
 AI_API_KEY=
 AI_MODEL=
+AI_MAX_TOKENS=500
+AI_TEMPERATURE=0.2
 ```
 
 ## Сборка

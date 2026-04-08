@@ -166,6 +166,12 @@ utils::VoidExpected HttpServer::start(const int port) {
             });
         });
 
+        app.post("/api/ai/suggest-insert", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.suggestInsert(body));
+            });
+        });
+
         app.listen("0.0.0.0", port, [this, port](auto* token) {
             listenSocket_ = token;
             if (token) {

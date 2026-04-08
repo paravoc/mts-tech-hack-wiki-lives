@@ -85,10 +85,14 @@ add_library(wikilive::uwebsockets ALIAS wikilive_uwebsockets)
 
 add_library(wikilive_core STATIC
     config/config_loader.cpp
+    src/ai/ai_context_builder.cpp
+    src/ai/ai_field_verifier.cpp
     src/ai/ai_provider_factory.cpp
     src/ai/ai_service.cpp
+    src/ai/ai_suggestion_validator.cpp
     src/ai/ollama_ai_provider.cpp
     src/ai/openrouter_ai_provider.cpp
+    src/ai/openrouter_prompt_builder.cpp
     src/core/app_config.cpp
     src/core/application.cpp
     src/server/http_server.cpp

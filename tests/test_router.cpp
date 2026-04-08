@@ -1,3 +1,6 @@
+#include "src/ai/ai_provider.h"
+#include "src/ai/ai_service.h"
+#include "src/ai/ai_context_builder.h"
 #include "src/server/router.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
@@ -5,6 +8,50 @@
 #include "tests/test_common.h"
 
 namespace {
+
+class FakeAiProvider final : public wikilive::ai::AiProvider {
+public:
+    const wikilive::ai::AiProviderMetadata& metadata() const override {
+        return metadata_;
+    }
+
+    wikilive::utils::Expected<wikilive::ai::AiSuggestInsertResult> suggestInsert(
+        const wikilive::ai::AiSuggestInsertRequest& request) const override {
+        lastRequest = request;
+        return wikilive::ai::AiSuggestInsertResult{
+            .candidates = {
+                {
+                    .tableId = " dst1 ",
+                    .recordId = " rec1 ",
+                    .fieldName = " Status ",
+                    .insert = "broken",
+                    .reason = "",
+                    .confidence = 0.91,
+                },
+            },
+        };
+    }
+
+    mutable wikilive::ai::AiSuggestInsertRequest lastRequest;
+
+private:
+    wikilive::ai::AiProviderMetadata metadata_{
+        .provider = "fake",
+        .model = "fake-model",
+        .baseUrl = "http://fake",
+        .enabled = true,
+    };
+};
+
+class FakeAiContextBuilder final : public wikilive::ai::AiContextBuilder {
+public:
+    wikilive::utils::Expected<std::string> buildSuggestInsertContext() const override {
+        ++buildCalls;
+        return R"({"tables":[{"tableId":"dst-built"}]})";
+    }
+
+    mutable int buildCalls = 0;
+};
 
 void returnsHealthPayload() {
     wikilive::storage::InMemoryPageStorage storage;
@@ -68,6 +115,57 @@ void rejectsMalformedPayload() {
     wikilive::tests::expect(response.body.find("\"InvalidRequest\"") != std::string::npos, "error body should describe invalid request");
 }
 
+void rejectsAiRequestWhenServiceIsMissing() {
+    wikilive::storage::InMemoryPageStorage storage;
+    wikilive::services::PageService pageService(storage);
+    wikilive::services::RenderService renderService;
+    wikilive::server::Router router(pageService, renderService, nullptr, nullptr);
+
+    const auto response = router.suggestInsert(R"({"userPrompt":"insert project status"})");
+    wikilive::tests::expectEqual(response.statusCode, 503, "missing AI service should return 503");
+    wikilive::tests::expect(response.body.find("\"InvalidConfig\"") != std::string::npos, "missing AI should be reported");
+}
+
+void handlesAiSuggestInsertFlow() {
+    wikilive::storage::InMemoryPageStorage storage;
+    wikilive::services::PageService pageService(storage);
+    wikilive::services::RenderService renderService;
+    auto provider = std::make_unique<FakeAiProvider>();
+    auto* providerRaw = provider.get();
+    wikilive::ai::AiService aiService(std::move(provider));
+    wikilive::server::Router router(pageService, renderService, &aiService, nullptr);
+
+    const auto response = router.suggestInsert(
+        R"({"userPrompt":"insert project status","pageContent":"Current report","context":{"tables":[{"tableId":"dst1"}]}})");
+    wikilive::tests::expectEqual(response.statusCode, 200, "AI suggestInsert should return 200");
+    wikilive::tests::expect(response.body.find("{{dst1:rec1:Status}}") != std::string::npos, "AI response should include insert");
+    wikilive::tests::expect(response.body.find("Suggested by AI") != std::string::npos, "AI response should include normalized reason");
+    wikilive::tests::expectEqual(providerRaw->lastRequest.userPrompt, std::string("insert project status"), "prompt should be passed through");
+    wikilive::tests::expect(providerRaw->lastRequest.contextJson.find("\"tableId\":\"dst1\"") != std::string::npos, "context object should be serialized");
+}
+
+void buildsAiContextWhenPayloadDoesNotIncludeIt() {
+    wikilive::storage::InMemoryPageStorage storage;
+    wikilive::services::PageService pageService(storage);
+    wikilive::services::RenderService renderService;
+    auto provider = std::make_unique<FakeAiProvider>();
+    auto* providerRaw = provider.get();
+    auto contextBuilder = std::make_unique<FakeAiContextBuilder>();
+    auto* contextBuilderRaw = contextBuilder.get();
+    wikilive::ai::AiService aiService(
+        std::move(provider),
+        std::make_unique<wikilive::ai::AiSuggestionValidator>(),
+        std::move(contextBuilder));
+    wikilive::server::Router router(pageService, renderService, &aiService, nullptr);
+
+    const auto response = router.suggestInsert(R"({"userPrompt":"insert project status"})");
+    wikilive::tests::expectEqual(response.statusCode, 200, "AI suggestInsert should build context when it is omitted");
+    wikilive::tests::expectEqual(contextBuilderRaw->buildCalls, 1, "router path should trigger context builder");
+    wikilive::tests::expect(
+        providerRaw->lastRequest.contextJson.find("\"tableId\":\"dst-built\"") != std::string::npos,
+        "provider should receive generated context");
+}
+
 }  // namespace
 
 int main() {
@@ -76,5 +174,8 @@ int main() {
         {"handles page crud flow", handlesPageCrudFlow},
         {"renders content from json payload", rendersContentFromJsonPayload},
         {"rejects malformed payload", rejectsMalformedPayload},
+        {"rejects AI request when service is missing", rejectsAiRequestWhenServiceIsMissing},
+        {"handles AI suggest insert flow", handlesAiSuggestInsertFlow},
+        {"builds AI context when payload does not include it", buildsAiContextWhenPayloadDoesNotIncludeIt},
     });
 }
