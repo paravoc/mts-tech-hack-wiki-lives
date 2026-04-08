@@ -18,11 +18,20 @@ std::string buildErrorJson(const wikilive::utils::Error& error) {
         "\",\"retryable\":" + std::string(error.retryable ? "true" : "false") + "}}";
 }
 
-std::string pageToJson(const wikilive::storage::Page& page) {
-    return
+std::string pageToJson(const wikilive::models::Page& page, const bool includeRenderedHtml) {
+    std::string json =
         "{\"pageId\":\"" + wikilive::utils::escapeJson(page.pageId) +
         "\",\"title\":\"" + wikilive::utils::escapeJson(page.title) +
-        "\",\"content\":\"" + wikilive::utils::escapeJson(page.content) + "\"}";
+        "\",\"content\":\"" + wikilive::utils::escapeJson(page.content) +
+        "\",\"createdAt\":\"" + wikilive::utils::escapeJson(page.createdAt) +
+        "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(page.updatedAt) + "\"";
+
+    if (includeRenderedHtml) {
+        json += ",\"renderedHtml\":\"" + wikilive::utils::escapeJson(page.renderedHtml) + "\"";
+    }
+
+    json += "}";
+    return json;
 }
 
 wikilive::server::RouteResponse unexpectedExceptionResponse(const std::exception& exception) {
@@ -53,9 +62,13 @@ wikilive::server::RouteResponse unknownExceptionResponse() {
 
 namespace wikilive::server {
 
+Router::Router(services::PageService& pageService, services::RenderService& renderService)
+    : pageService_(pageService), renderService_(renderService) {
+}
+
 RouteResponse Router::handleHealth() const {
     try {
-        return ok(R"({"status":"ok","service":"wikilive_backend"})");
+        return ok(R"({"status":"ok","service":"wikilive_backend","version":"mvp"})");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -65,7 +78,7 @@ RouteResponse Router::handleHealth() const {
 
 RouteResponse Router::listPages() {
     try {
-        const auto pages = pageStorage_.listPages();
+        const auto pages = pageService_.listPages();
         if (!pages) {
             return fail(pages.error());
         }
@@ -77,7 +90,7 @@ RouteResponse Router::listPages() {
                 items += ",";
             }
             first = false;
-            items += pageToJson(page);
+            items += pageToJson(page, false);
         }
         items += "]";
 
@@ -99,12 +112,17 @@ RouteResponse Router::getPage(const std::string& pageId) {
                 false));
         }
 
-        const auto page = pageStorage_.getPage(pageId);
+        const auto page = pageService_.getPage(pageId);
         if (!page) {
             return fail(page.error());
         }
 
-        return ok("{\"item\":" + pageToJson(page.value()) + "}");
+        const auto renderedPage = renderService_.renderPage(page.value());
+        if (!renderedPage) {
+            return fail(renderedPage.error());
+        }
+
+        return ok("{\"item\":" + pageToJson(renderedPage.value(), true) + "}");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -112,24 +130,57 @@ RouteResponse Router::getPage(const std::string& pageId) {
     }
 }
 
-RouteResponse Router::savePage(const std::string& payload) {
+RouteResponse Router::createPage(const std::string& payload) {
     try {
-        const auto page = parsePagePayload(payload);
-        if (!page) {
-            return fail(page.error());
+        const auto draft = parsePagePayload(payload);
+        if (!draft) {
+            return fail(draft.error());
         }
 
-        auto value = page.value();
-        if (value.pageId.empty()) {
-            value.pageId = "page-" + std::to_string(nextPageId_++);
+        const auto createdPage = pageService_.createPage(draft.value());
+        if (!createdPage) {
+            return fail(createdPage.error());
         }
 
-        const auto saveResult = pageStorage_.savePage(value);
-        if (!saveResult) {
-            return fail(saveResult.error());
+        const auto renderedPage = renderService_.renderPage(createdPage.value());
+        if (!renderedPage) {
+            return fail(renderedPage.error());
         }
 
-        return ok("{\"item\":" + pageToJson(value) + "}");
+        return created("{\"item\":" + pageToJson(renderedPage.value(), true) + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::updatePage(const std::string& pageId, const std::string& payload) {
+    try {
+        if (pageId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "pageId must not be empty",
+                400,
+                false));
+        }
+
+        const auto draft = parsePagePayload(payload);
+        if (!draft) {
+            return fail(draft.error());
+        }
+
+        const auto updatedPage = pageService_.updatePage(pageId, draft.value());
+        if (!updatedPage) {
+            return fail(updatedPage.error());
+        }
+
+        const auto renderedPage = renderService_.renderPage(updatedPage.value());
+        if (!renderedPage) {
+            return fail(renderedPage.error());
+        }
+
+        return ok("{\"item\":" + pageToJson(renderedPage.value(), true) + "}");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -147,7 +198,7 @@ RouteResponse Router::deletePage(const std::string& pageId) {
                 false));
         }
 
-        const auto removeResult = pageStorage_.deletePage(pageId);
+        const auto removeResult = pageService_.deletePage(pageId);
         if (!removeResult) {
             return fail(removeResult.error());
         }
@@ -171,7 +222,7 @@ RouteResponse Router::renderContent(const std::string& payload) {
             content = extractedContent.value();
         }
 
-        const auto rendered = wikiRenderer_.render(content);
+        const auto rendered = renderService_.render(content);
         if (!rendered) {
             return fail(rendered.error());
         }
@@ -191,6 +242,13 @@ RouteResponse Router::ok(const std::string& dataJson) const {
     };
 }
 
+RouteResponse Router::created(const std::string& dataJson) const {
+    return RouteResponse{
+        .statusCode = 201,
+        .body = buildSuccessJson(dataJson),
+    };
+}
+
 RouteResponse Router::fail(const utils::Error& error) const {
     return RouteResponse{
         .statusCode = error.httpStatus,
@@ -198,7 +256,7 @@ RouteResponse Router::fail(const utils::Error& error) const {
     };
 }
 
-utils::Expected<storage::Page> Router::parsePagePayload(const std::string& payload) {
+utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string& payload) const {
     if (payload.empty()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
@@ -217,26 +275,22 @@ utils::Expected<storage::Page> Router::parsePagePayload(const std::string& paylo
         return std::unexpected(content.error());
     }
 
-    std::string pageId;
-    if (payload.find("\"pageId\"") != std::string::npos) {
-        const auto pageIdValue = extractJsonString(payload, "pageId");
-        if (!pageIdValue) {
-            return std::unexpected(pageIdValue.error());
-        }
-        pageId = pageIdValue.value();
-    }
-
-    return storage::Page{
-        .pageId = std::move(pageId),
+    return services::PageDraft{
         .title = title.value(),
         .content = content.value(),
     };
 }
 
-utils::Expected<std::string> Router::extractJsonString(const std::string& payload, const std::string& key) const {
+utils::Expected<std::string> Router::extractJsonString(
+    const std::string& payload,
+    const std::string& key,
+    const bool required) const {
     const auto keyToken = "\"" + key + "\"";
     const auto keyPosition = payload.find(keyToken);
     if (keyPosition == std::string::npos) {
+        if (!required) {
+            return std::string{};
+        }
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             "Missing JSON field: " + key,

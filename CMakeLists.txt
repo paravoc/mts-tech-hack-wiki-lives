@@ -72,6 +72,9 @@ add_library(wikilive_uwebsockets INTERFACE)
 target_include_directories(wikilive_uwebsockets INTERFACE
     "${_wikilive_uwebsockets_include_dir}"
 )
+target_compile_definitions(wikilive_uwebsockets INTERFACE
+    UWS_NO_ZLIB
+)
 target_link_libraries(wikilive_uwebsockets INTERFACE
     wikilive::usockets
 )
@@ -87,10 +90,13 @@ add_executable(wikilive_backend
     src/server/websocket_manager.cpp
     src/api/mws_client.cpp
     src/api/retry_policy.cpp
+    src/services/page_service.cpp
+    src/services/render_service.cpp
     src/wiki/wiki_insert.cpp
     src/wiki/wiki_parser.cpp
     src/wiki/wiki_renderer.cpp
     src/storage/page_storage.cpp
+    src/storage/in_memory_page_storage.cpp
     src/storage/cache.cpp
     src/utils/logger.cpp
     src/utils/errors.cpp

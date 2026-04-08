@@ -1,28 +1,21 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
 #include <vector>
 
+#include "src/models/page.h"
 #include "src/utils/errors.h"
 
 namespace wikilive::storage {
 
-struct Page {
-    std::string pageId;
-    std::string title;
-    std::string content;
-};
-
 class PageStorage {
 public:
-    [[nodiscard]] utils::Expected<std::vector<Page>> listPages() const;
-    [[nodiscard]] utils::Expected<Page> getPage(const std::string& pageId) const;
-    [[nodiscard]] utils::VoidExpected savePage(const Page& page);
-    [[nodiscard]] utils::VoidExpected deletePage(const std::string& pageId);
+    virtual ~PageStorage() = default;
 
-private:
-    std::unordered_map<std::string, Page> pages_;
+    [[nodiscard]] virtual utils::Expected<std::vector<models::Page>> listPages() const = 0;
+    [[nodiscard]] virtual utils::Expected<models::Page> getPage(const std::string& pageId) const = 0;
+    [[nodiscard]] virtual utils::VoidExpected savePage(const models::Page& page) = 0;
+    [[nodiscard]] virtual utils::VoidExpected deletePage(const std::string& pageId) = 0;
 };
 
 }  // namespace wikilive::storage
