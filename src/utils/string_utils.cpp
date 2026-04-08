@@ -83,6 +83,52 @@ std::string escapeJson(const std::string& value) {
     return escaped;
 }
 
+std::string unescapeJson(const std::string& value) {
+    std::string result;
+    result.reserve(value.size());
+
+    bool escape = false;
+    for (const char ch : value) {
+        if (escape) {
+            switch (ch) {
+                case '\\':
+                    result.push_back('\\');
+                    break;
+                case '"':
+                    result.push_back('"');
+                    break;
+                case 'n':
+                    result.push_back('\n');
+                    break;
+                case 'r':
+                    result.push_back('\r');
+                    break;
+                case 't':
+                    result.push_back('\t');
+                    break;
+                default:
+                    result.push_back(ch);
+                    break;
+            }
+            escape = false;
+            continue;
+        }
+
+        if (ch == '\\') {
+            escape = true;
+            continue;
+        }
+
+        result.push_back(ch);
+    }
+
+    if (escape) {
+        result.push_back('\\');
+    }
+
+    return result;
+}
+
 std::string escapeHtml(const std::string& value) {
     std::string escaped = value;
     escaped = replaceAll(std::move(escaped), "&", "&amp;");

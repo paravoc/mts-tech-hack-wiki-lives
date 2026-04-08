@@ -110,6 +110,7 @@ target_include_directories(wikilive_backend PRIVATE
 
 target_link_libraries(wikilive_backend PRIVATE
     wikilive::uwebsockets
+    winhttp
 )
 
 if (WIN32)
@@ -130,4 +131,5 @@ target_compile_options(wikilive_backend PRIVATE
     $<$<CXX_COMPILER_ID:MSVC>:/permissive->
     $<$<CXX_COMPILER_ID:MSVC>:/Zc:__cplusplus>
     $<$<CXX_COMPILER_ID:MSVC>:/utf-8>
+    $<$<CXX_COMPILER_ID:MSVC>:/wd4996>
 )

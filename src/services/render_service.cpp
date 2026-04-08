@@ -2,6 +2,10 @@
 
 namespace wikilive::services {
 
+RenderService::RenderService(api::MwsClient* mwsClient)
+    : renderer_(mwsClient) {
+}
+
 utils::Expected<std::string> RenderService::render(const std::string& content) const {
     return renderer_.render(content);
 }

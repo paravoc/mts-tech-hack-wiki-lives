@@ -9,6 +9,10 @@ class HttpServer;
 class Router;
 }
 
+namespace wikilive::api {
+class MwsClient;
+}
+
 namespace wikilive::services {
 class PageService;
 class RenderService;
@@ -34,6 +38,7 @@ public:
 private:
     AppConfig config_{};
     bool initialized_ = false;
+    std::unique_ptr<api::MwsClient> mwsClient_{};
     std::unique_ptr<storage::PageStorage> pageStorage_{};
     std::unique_ptr<services::PageService> pageService_{};
     std::unique_ptr<services::RenderService> renderService_{};

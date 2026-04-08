@@ -13,6 +13,12 @@ struct MwsRecord {
     std::string payload;
 };
 
+struct MwsFieldValue {
+    std::string recordId;
+    std::string fieldName;
+    std::string value;
+};
+
 struct MwsClientOptions {
     int requestTimeoutMs = 10000;
     int retryAttempts = 3;
@@ -26,11 +32,19 @@ public:
     void setFallbackRecords(std::vector<MwsRecord> records);
 
     [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords();
+    [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValue(
+        const std::string& tableId,
+        const std::string& recordId,
+        const std::string& fieldName);
     [[nodiscard]] utils::Expected<std::string> createRecord(const std::string& payload);
     [[nodiscard]] utils::Expected<std::string> updateRecord(const std::string& recordId, const std::string& payload);
     [[nodiscard]] utils::VoidExpected deleteRecord(const std::string& recordId);
 
 private:
+    [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValueOnce(
+        const std::string& tableId,
+        const std::string& recordId,
+        const std::string& fieldName) const;
     [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce() const;
     [[nodiscard]] utils::Expected<std::string> createRecordOnce(const std::string& payload) const;
     [[nodiscard]] utils::Expected<std::string> updateRecordOnce(const std::string& recordId, const std::string& payload) const;

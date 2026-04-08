@@ -10,6 +10,7 @@ namespace wikilive::utils {
 [[nodiscard]] std::string replaceAll(std::string value, const std::string& from, const std::string& to);
 [[nodiscard]] std::string stripQuotes(const std::string& value);
 [[nodiscard]] std::string escapeJson(const std::string& value);
+[[nodiscard]] std::string unescapeJson(const std::string& value);
 [[nodiscard]] std::string escapeHtml(const std::string& value);
 
 }  // namespace wikilive::utils

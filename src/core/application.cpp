@@ -1,6 +1,7 @@
 #include "src/core/application.h"
 
 #include "config/config_loader.h"
+#include "src/api/mws_client.h"
 #include "src/server/http_server.h"
 #include "src/server/router.h"
 #include "src/services/page_service.h"
@@ -32,9 +33,18 @@ bool Application::initialize(const char* envPath) {
         utils::Logger::instance().warn("MWS_TOKEN is empty, MWS-backed endpoints are not ready yet");
     }
 
+    mwsClient_ = std::make_unique<api::MwsClient>(
+        config_.mwsToken,
+        config_.mwsTableId,
+        config_.mwsViewId,
+        api::MwsClientOptions{
+            .requestTimeoutMs = config_.requestTimeoutMs,
+            .retryAttempts = config_.retryAttempts,
+            .retryBaseDelayMs = config_.retryBaseDelayMs,
+        });
     pageStorage_ = std::make_unique<storage::InMemoryPageStorage>();
     pageService_ = std::make_unique<services::PageService>(*pageStorage_);
-    renderService_ = std::make_unique<services::RenderService>();
+    renderService_ = std::make_unique<services::RenderService>(mwsClient_.get());
     router_ = std::make_unique<server::Router>(*pageService_, *renderService_);
     httpServer_ = std::make_unique<server::HttpServer>(*router_);
 
@@ -65,6 +75,7 @@ void Application::stop() {
     renderService_.reset();
     pageService_.reset();
     pageStorage_.reset();
+    mwsClient_.reset();
     initialized_ = false;
 }
 
