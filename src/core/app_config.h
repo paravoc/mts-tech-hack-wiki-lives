@@ -16,6 +16,10 @@ struct AppConfig {
     std::string mwsViewId;
     std::string wikiPagesTableId;
     std::string wikiPagesViewId;
+    std::string aiProvider = "none";
+    std::string aiBaseUrl;
+    std::string aiApiKey;
+    std::string aiModel;
     std::string logLevel = "info";
     int httpPort = 3000;
     int cacheTtlSeconds = 60;
@@ -23,6 +27,8 @@ struct AppConfig {
     int retryAttempts = 3;
     int retryBaseDelayMs = 1000;
     int wsHeartbeatSeconds = 20;
+    int aiMaxTokens = 500;
+    double aiTemperature = 0.2;
     bool enableWebSocket = true;
     bool enableAi = false;
 };

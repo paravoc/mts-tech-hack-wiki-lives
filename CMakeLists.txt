@@ -85,6 +85,10 @@ add_library(wikilive::uwebsockets ALIAS wikilive_uwebsockets)
 
 add_library(wikilive_core STATIC
     config/config_loader.cpp
+    src/ai/ai_provider_factory.cpp
+    src/ai/ai_service.cpp
+    src/ai/ollama_ai_provider.cpp
+    src/ai/openrouter_ai_provider.cpp
     src/core/app_config.cpp
     src/core/application.cpp
     src/server/http_server.cpp
@@ -171,8 +175,14 @@ add_executable(wikilive_test_string_utils
 )
 target_link_libraries(wikilive_test_string_utils PRIVATE wikilive_core)
 
+add_executable(wikilive_test_ai_service
+    tests/test_ai_service.cpp
+)
+target_link_libraries(wikilive_test_ai_service PRIVATE wikilive_core)
+
 add_test(NAME wikilive_test_parser COMMAND wikilive_test_parser)
 add_test(NAME wikilive_test_cache COMMAND wikilive_test_cache)
 add_test(NAME wikilive_test_page_service COMMAND wikilive_test_page_service)
 add_test(NAME wikilive_test_router COMMAND wikilive_test_router)
 add_test(NAME wikilive_test_string_utils COMMAND wikilive_test_string_utils)
+add_test(NAME wikilive_test_ai_service COMMAND wikilive_test_ai_service)

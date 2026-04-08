@@ -10,7 +10,8 @@ WikiLive — прототип живой вики-системы для MWS Tabl
 - рендер текста с wiki-вставками
 - единый JSON-формат ответов и ошибок
 - базовая интеграция с MWS Tables через `WinHTTP`
-- in-memory хранилище страниц для MVP
+- хранение страниц в `WikiPages` через MWS Tables
+- модульный AI-слой под `OpenRouter` и `Ollama`
 - модульные тесты через `CTest`
 
 ## Текущие endpoint'ы
@@ -65,6 +66,12 @@ RETRY_BASE_DELAY_MS=1000
 WS_HEARTBEAT_SECONDS=20
 ENABLE_WEBSOCKET=true
 ENABLE_AI=false
+AI_PROVIDER=none
+AI_BASE_URL=
+AI_API_KEY=
+AI_MODEL=
+AI_MAX_TOKENS=500
+AI_TEMPERATURE=0.2
 ```
 
 ## Сборка
@@ -122,6 +129,7 @@ wikilive/
 ├── config/
 ├── src/
 │   ├── api/
+│   ├── ai/
 │   ├── core/
 │   ├── models/
 │   ├── server/
@@ -134,8 +142,8 @@ wikilive/
 
 ## Что дальше
 
-1. Перевести хранение страниц из памяти в таблицу `WikiPages`.
-2. Довести чтение значений из MWS до стабильной подстановки для всех нужных полей.
-3. Добавить WebSocket-обновления.
-4. Подключить фронтенд.
-5. После стабилизации ядра добавить AI-помощника.
+1. Добавить первые AI endpoint'ы поверх уже готового модульного `src/ai`.
+2. Подключить фронтенд к `pages`, `render` и `ws`.
+3. Вынести кэш рендера и MWS-данных в отдельный слой.
+4. Расширить live-render для более сложных типов полей.
+5. Добавить polling или event-механику для внешних изменений в MWS.

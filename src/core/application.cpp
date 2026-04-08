@@ -5,6 +5,8 @@
 #include <vector>
 
 #include "config/config_loader.h"
+#include "src/ai/ai_provider_factory.h"
+#include "src/ai/ai_service.h"
 #include "src/api/mws_client.h"
 #include "src/server/http_server.h"
 #include "src/server/router.h"
@@ -108,6 +110,14 @@ bool Application::initialize(const char* envPath) {
 
     pageService_ = std::make_unique<services::PageService>(*pageStorage_);
     renderService_ = std::make_unique<services::RenderService>(mwsClient_.get());
+    aiService_ = std::make_unique<ai::AiService>(ai::createAiProvider(config_));
+    if (aiService_->isAvailable()) {
+        const auto metadata = aiService_->metadata();
+        utils::Logger::instance().info(
+            "AI provider is configured: " + metadata.provider + " (" + metadata.model + ")");
+    } else {
+        utils::Logger::instance().info("AI provider is disabled");
+    }
     router_ = std::make_unique<server::Router>(*pageService_, *renderService_, webSocketManager_.get());
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 
@@ -135,6 +145,7 @@ void Application::stop() {
     }
 
     router_.reset();
+    aiService_.reset();
     renderService_.reset();
     pageService_.reset();
     pageStorage_.reset();

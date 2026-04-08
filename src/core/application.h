@@ -14,6 +14,10 @@ namespace wikilive::api {
 class MwsClient;
 }
 
+namespace wikilive::ai {
+class AiService;
+}
+
 namespace wikilive::services {
 class PageService;
 class RenderService;
@@ -44,6 +48,7 @@ private:
     std::unique_ptr<storage::PageStorage> pageStorage_{};
     std::unique_ptr<services::PageService> pageService_{};
     std::unique_ptr<services::RenderService> renderService_{};
+    std::unique_ptr<ai::AiService> aiService_{};
     std::unique_ptr<server::WebSocketManager> webSocketManager_{};
     std::unique_ptr<server::Router> router_{};
     std::unique_ptr<server::HttpServer> httpServer_{};
