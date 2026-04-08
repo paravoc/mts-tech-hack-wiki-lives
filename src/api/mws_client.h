@@ -1,0 +1,50 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "src/api/retry_policy.h"
+#include "src/utils/errors.h"
+
+namespace wikilive::api {
+
+struct MwsRecord {
+    std::string recordId;
+    std::string payload;
+};
+
+struct MwsClientOptions {
+    int requestTimeoutMs = 10000;
+    int retryAttempts = 3;
+    int retryBaseDelayMs = 1000;
+};
+
+class MwsClient {
+public:
+    MwsClient(std::string token, std::string tableId, std::string viewId, MwsClientOptions options = {});
+
+    void setFallbackRecords(std::vector<MwsRecord> records);
+
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords();
+    [[nodiscard]] utils::Expected<std::string> createRecord(const std::string& payload);
+    [[nodiscard]] utils::Expected<std::string> updateRecord(const std::string& recordId, const std::string& payload);
+    [[nodiscard]] utils::VoidExpected deleteRecord(const std::string& recordId);
+
+private:
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce() const;
+    [[nodiscard]] utils::Expected<std::string> createRecordOnce(const std::string& payload) const;
+    [[nodiscard]] utils::Expected<std::string> updateRecordOnce(const std::string& recordId, const std::string& payload) const;
+    [[nodiscard]] utils::VoidExpected deleteRecordOnce(const std::string& recordId) const;
+    [[nodiscard]] bool hasConfiguration() const;
+    [[nodiscard]] utils::Error missingConfigurationError() const;
+
+    std::string token_;
+    std::string tableId_;
+    std::string viewId_;
+    MwsClientOptions options_{};
+    RetryPolicy retryPolicy_{};
+    std::vector<MwsRecord> fallbackRecords_;
+    std::vector<MwsRecord> lastGoodRecords_;
+};
+
+}  // namespace wikilive::api
