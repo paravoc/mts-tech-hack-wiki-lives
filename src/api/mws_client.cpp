@@ -414,6 +414,43 @@ std::string buildRecordIdsQuery(const std::vector<std::string>& recordIds) {
     return query;
 }
 
+wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> requestRecordsForTable(
+    const std::string& token,
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::vector<std::string>& recordIds,
+    const int timeoutMs) {
+    auto query = std::string("fieldKey=name");
+    if (!viewId.empty()) {
+        query = appendViewParameter(query, viewId);
+    }
+
+    const auto recordIdsQuery = buildRecordIdsQuery(recordIds);
+    if (!recordIdsQuery.empty()) {
+        query += "&" + recordIdsQuery;
+    }
+
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId) + "/records?" + query;
+    const auto response = executeRequest("GET", toWide(path), token, timeoutMs);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+
+    return parseRecords(response.value());
+}
+
+const wikilive::api::MwsRecord* findRecordById(
+    const std::vector<wikilive::api::MwsRecord>& records,
+    const std::string& recordId) {
+    for (const auto& record : records) {
+        if (record.recordId == recordId) {
+            return &record;
+        }
+    }
+
+    return nullptr;
+}
+
 }  // namespace
 
 namespace wikilive::api {
@@ -529,19 +566,7 @@ utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsOnce(const std::vec
         return std::unexpected(missingConfigurationError());
     }
 
-    auto query = appendViewParameter("fieldKey=name", viewId_);
-    const auto recordIdsQuery = buildRecordIdsQuery(recordIds);
-    if (!recordIdsQuery.empty()) {
-        query += "&" + recordIdsQuery;
-    }
-
-    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?" + query;
-    const auto response = executeRequest("GET", toWide(path), token_, options_.requestTimeoutMs);
-    if (!response) {
-        return std::unexpected(response.error());
-    }
-
-    return parseRecords(response.value());
+    return requestRecordsForTable(token_, tableId_, viewId_, recordIds, options_.requestTimeoutMs);
 }
 
 utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(
@@ -569,45 +594,88 @@ utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(
         return std::unexpected(missingConfigurationError());
     }
 
-    std::string query = "fieldKey=name&recordIds=" + urlEncode(recordId);
-    if (resolvedTableId == tableId_ && !viewId_.empty()) {
-        query = appendViewParameter(query, viewId_);
-    }
+    const bool useConfiguredView = resolvedTableId == tableId_ && !viewId_.empty();
+    const auto resolveFromRecords =
+        [&recordId, &fieldName](const std::vector<MwsRecord>& records) -> utils::Expected<MwsFieldValue> {
+        const auto* record = findRecordById(records, recordId);
+        if (record == nullptr) {
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::PageNotFound,
+                "MWS record was not found: " + recordId,
+                404,
+                false));
+        }
 
-    const auto path = "/fusion/v1/datasheets/" + urlEncode(resolvedTableId) + "/records?" + query;
-    const auto response = executeRequest("GET", toWide(path), token_, options_.requestTimeoutMs);
-    if (!response) {
-        return std::unexpected(response.error());
-    }
+        const auto fieldIt = record->fields.find(fieldName);
+        if (fieldIt == record->fields.end()) {
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::MwsApiError,
+                "Field was not found in MWS record: " + fieldName,
+                404,
+                false));
+        }
 
-    const auto records = parseRecords(response.value());
-    if (!records) {
-        return std::unexpected(records.error());
-    }
-
-    if (records->empty()) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::PageNotFound,
-            "MWS record was not found: " + recordId,
-            404,
-            false));
-    }
-
-    const auto& record = records->front();
-    const auto fieldIt = record.fields.find(fieldName);
-    if (fieldIt == record.fields.end()) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::MwsApiError,
-            "Field was not found in MWS record: " + fieldName,
-            404,
-            false));
-    }
-
-    return MwsFieldValue{
-        .recordId = record.recordId,
-        .fieldName = fieldName,
-        .value = fieldIt->second,
+        return MwsFieldValue{
+            .recordId = record->recordId,
+            .fieldName = fieldName,
+            .value = fieldIt->second,
+        };
     };
+
+    auto tryResolve =
+        [this, &resolvedTableId, &resolveFromRecords](const std::string& queryViewId,
+                                                      const std::vector<std::string>& recordIds) -> utils::Expected<MwsFieldValue> {
+        const auto records = requestRecordsForTable(
+            token_,
+            resolvedTableId,
+            queryViewId,
+            recordIds,
+            options_.requestTimeoutMs);
+        if (!records) {
+            return std::unexpected(records.error());
+        }
+
+        return resolveFromRecords(records.value());
+    };
+
+    std::vector<utils::Expected<MwsFieldValue>> attempts;
+    attempts.reserve(4);
+
+    const auto primaryViewId = useConfiguredView ? viewId_ : std::string{};
+    attempts.push_back(tryResolve(primaryViewId, {recordId}));
+
+    if (!attempts.back()) {
+        attempts.push_back(tryResolve(primaryViewId, {}));
+    }
+
+    if (useConfiguredView) {
+        if (!attempts.back()) {
+            attempts.push_back(tryResolve({}, {recordId}));
+        }
+        if (!attempts.back()) {
+            attempts.push_back(tryResolve({}, {}));
+        }
+    }
+
+    utils::Error lastError = utils::makeError(
+        utils::ErrorCode::PageNotFound,
+        "MWS record was not found: " + recordId,
+        404,
+        false);
+
+    for (auto& attempt : attempts) {
+        if (attempt) {
+            return attempt.value();
+        }
+
+        lastError = attempt.error();
+        if (lastError.code == utils::ErrorCode::MwsRateLimit ||
+            (lastError.code == utils::ErrorCode::MwsApiError && lastError.httpStatus >= 500)) {
+            return std::unexpected(lastError);
+        }
+    }
+
+    return std::unexpected(lastError);
 }
 
 utils::Expected<std::string> MwsClient::createRecordOnce(const std::string& payload) const {

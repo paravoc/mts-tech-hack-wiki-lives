@@ -331,45 +331,27 @@ utils::Expected<std::string> Router::extractJsonString(
             false));
     }
 
-    std::string result;
+    std::string rawValue;
     bool escape = false;
     for (std::size_t index = openingQuote + 1; index < payload.size(); ++index) {
         const char current = payload[index];
         if (escape) {
-            switch (current) {
-                case '"':
-                    result.push_back('"');
-                    break;
-                case '\\':
-                    result.push_back('\\');
-                    break;
-                case 'n':
-                    result.push_back('\n');
-                    break;
-                case 'r':
-                    result.push_back('\r');
-                    break;
-                case 't':
-                    result.push_back('\t');
-                    break;
-                default:
-                    result.push_back(current);
-                    break;
-            }
+            rawValue.push_back(current);
             escape = false;
             continue;
         }
 
         if (current == '\\') {
+            rawValue.push_back(current);
             escape = true;
             continue;
         }
 
         if (current == '"') {
-            return result;
+            return utils::unescapeJson(rawValue);
         }
 
-        result.push_back(current);
+        rawValue.push_back(current);
     }
 
     return std::unexpected(utils::makeError(

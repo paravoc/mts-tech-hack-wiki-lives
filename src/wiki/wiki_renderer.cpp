@@ -2,6 +2,7 @@
 
 #include <utility>
 
+#include "src/utils/logger.h"
 #include "src/utils/string_utils.h"
 
 namespace wikilive::wiki {
@@ -23,6 +24,9 @@ utils::Expected<std::string> WikiRenderer::render(const std::string& content) co
             const auto fieldValue = mwsClient_->getFieldValue(insert.tableId, insert.recordId, insert.fieldName);
             if (fieldValue) {
                 label = fieldValue->value;
+            } else {
+                utils::Logger::instance().warn(
+                    "Could not resolve wiki insert " + insert.raw + ": " + fieldValue.error().message);
             }
         }
 
