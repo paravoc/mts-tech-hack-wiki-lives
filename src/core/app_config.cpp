@@ -18,18 +18,6 @@ int toInt(const std::string& value, const int fallback) {
     }
 }
 
-double toDouble(const std::string& value, const double fallback) {
-    if (value.empty()) {
-        return fallback;
-    }
-
-    try {
-        return std::stod(value);
-    } catch (...) {
-        return fallback;
-    }
-}
-
 bool toBool(const std::string& value, const bool fallback) {
     if (value == "true" || value == "1") {
         return true;
@@ -62,8 +50,6 @@ AppConfig loadAppConfig(const config::ConfigLoader& loader) {
     config.retryAttempts = toInt(loader.get("RETRY_ATTEMPTS"), config::kDefaultRetryCount);
     config.retryBaseDelayMs = toInt(loader.get("RETRY_BASE_DELAY_MS"), 1000);
     config.wsHeartbeatSeconds = toInt(loader.get("WS_HEARTBEAT_SECONDS"), 20);
-    config.aiMaxTokens = toInt(loader.get("AI_MAX_TOKENS"), 500);
-    config.aiTemperature = toDouble(loader.get("AI_TEMPERATURE"), 0.2);
     config.enableWebSocket = toBool(loader.get("ENABLE_WEBSOCKET"), true);
     config.enableAi = toBool(loader.get("ENABLE_AI"), false);
     return config;
@@ -114,22 +100,6 @@ utils::VoidExpected validateAppConfig(const AppConfig& config) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidConfig,
             "WS_HEARTBEAT_SECONDS must be positive",
-            500,
-            false));
-    }
-
-    if (config.aiMaxTokens <= 0) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::InvalidConfig,
-            "AI_MAX_TOKENS must be positive",
-            500,
-            false));
-    }
-
-    if (config.aiTemperature < 0.0 || config.aiTemperature > 2.0) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::InvalidConfig,
-            "AI_TEMPERATURE must be in range 0.0..2.0",
             500,
             false));
     }

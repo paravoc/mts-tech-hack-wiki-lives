@@ -70,8 +70,6 @@ AI_PROVIDER=none
 AI_BASE_URL=
 AI_API_KEY=
 AI_MODEL=
-AI_MAX_TOKENS=500
-AI_TEMPERATURE=0.2
 ```
 
 ## Сборка
@@ -142,7 +140,7 @@ wikilive/
 
 ## Что дальше
 
-1. Добавить первые AI endpoint'ы поверх уже готового модульного `src/ai`.
+1. Добавить первый AI endpoint поверх уже готового модульного `src/ai`.
 2. Подключить фронтенд к `pages`, `render` и `ws`.
 3. Вынести кэш рендера и MWS-данных в отдельный слой.
 4. Расширить live-render для более сложных типов полей.

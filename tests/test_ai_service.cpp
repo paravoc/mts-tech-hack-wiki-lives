@@ -39,8 +39,9 @@ void createsOpenRouterProviderFromConfig() {
     wikilive::tests::expectEqual(metadata.provider, std::string("openrouter"), "provider should match config");
     wikilive::tests::expectEqual(metadata.model, config.aiModel, "model should match config");
 
-    const auto result = service.generatePage({
-        .prompt = "собери страницу статуса",
+    const auto result = service.suggestInsert({
+        .userPrompt = "вставь статус проекта",
+        .pageContent = "",
         .contextJson = "{}",
     });
 

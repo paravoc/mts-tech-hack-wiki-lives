@@ -18,28 +18,12 @@ AiProviderMetadata AiService::metadata() const {
     return provider_->metadata();
 }
 
-utils::Expected<AiAnalysisResult> AiService::analyzeText(const AiAnalyzeRequest& request) const {
-    if (provider_ == nullptr) {
-        return std::unexpected(unavailableError());
-    }
-
-    return provider_->analyzeText(request);
-}
-
 utils::Expected<AiSuggestInsertResult> AiService::suggestInsert(const AiSuggestInsertRequest& request) const {
     if (provider_ == nullptr) {
         return std::unexpected(unavailableError());
     }
 
     return provider_->suggestInsert(request);
-}
-
-utils::Expected<AiGeneratedPage> AiService::generatePage(const AiGeneratePageRequest& request) const {
-    if (provider_ == nullptr) {
-        return std::unexpected(unavailableError());
-    }
-
-    return provider_->generatePage(request);
 }
 
 utils::Error AiService::unavailableError() const {

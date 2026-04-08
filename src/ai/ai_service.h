@@ -12,9 +12,7 @@ public:
 
     [[nodiscard]] bool isAvailable() const;
     [[nodiscard]] AiProviderMetadata metadata() const;
-    [[nodiscard]] utils::Expected<AiAnalysisResult> analyzeText(const AiAnalyzeRequest& request) const;
     [[nodiscard]] utils::Expected<AiSuggestInsertResult> suggestInsert(const AiSuggestInsertRequest& request) const;
-    [[nodiscard]] utils::Expected<AiGeneratedPage> generatePage(const AiGeneratePageRequest& request) const;
 
 private:
     [[nodiscard]] utils::Error unavailableError() const;

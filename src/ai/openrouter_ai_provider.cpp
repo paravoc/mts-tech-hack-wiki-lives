@@ -14,16 +14,8 @@ const AiProviderMetadata& OpenRouterAiProvider::metadata() const {
     return metadata_;
 }
 
-utils::Expected<AiAnalysisResult> OpenRouterAiProvider::analyzeText(const AiAnalyzeRequest& /*request*/) const {
-    return std::unexpected(notImplementedError("analyzeText"));
-}
-
 utils::Expected<AiSuggestInsertResult> OpenRouterAiProvider::suggestInsert(const AiSuggestInsertRequest& /*request*/) const {
     return std::unexpected(notImplementedError("suggestInsert"));
-}
-
-utils::Expected<AiGeneratedPage> OpenRouterAiProvider::generatePage(const AiGeneratePageRequest& /*request*/) const {
-    return std::unexpected(notImplementedError("generatePage"));
 }
 
 utils::Error OpenRouterAiProvider::notImplementedError(const std::string& operation) const {

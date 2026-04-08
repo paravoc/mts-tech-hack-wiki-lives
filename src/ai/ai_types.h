@@ -12,17 +12,6 @@ struct AiProviderMetadata {
     bool enabled = false;
 };
 
-struct AiAnalyzeRequest {
-    std::string pageTitle;
-    std::string content;
-    std::string contextJson;
-};
-
-struct AiAnalysisResult {
-    std::vector<std::string> findings;
-    std::vector<std::string> suggestions;
-};
-
 struct AiSuggestInsertRequest {
     std::string userPrompt;
     std::string pageContent;
@@ -40,17 +29,6 @@ struct AiInsertCandidate {
 
 struct AiSuggestInsertResult {
     std::vector<AiInsertCandidate> candidates;
-};
-
-struct AiGeneratePageRequest {
-    std::string prompt;
-    std::string contextJson;
-};
-
-struct AiGeneratedPage {
-    std::string title;
-    std::string content;
-    std::vector<std::string> notes;
 };
 
 }  // namespace wikilive::ai

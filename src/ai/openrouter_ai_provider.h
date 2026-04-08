@@ -11,9 +11,7 @@ public:
     OpenRouterAiProvider(std::string baseUrl, std::string apiKey, std::string model);
 
     [[nodiscard]] const AiProviderMetadata& metadata() const override;
-    [[nodiscard]] utils::Expected<AiAnalysisResult> analyzeText(const AiAnalyzeRequest& request) const override;
     [[nodiscard]] utils::Expected<AiSuggestInsertResult> suggestInsert(const AiSuggestInsertRequest& request) const override;
-    [[nodiscard]] utils::Expected<AiGeneratedPage> generatePage(const AiGeneratePageRequest& request) const override;
 
 private:
     [[nodiscard]] utils::Error notImplementedError(const std::string& operation) const;

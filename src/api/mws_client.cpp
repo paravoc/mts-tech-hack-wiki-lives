@@ -462,13 +462,6 @@ MwsClient::MwsClient(std::string token, std::string tableId, std::string viewId,
       options_(options) {
 }
 
-void MwsClient::setFallbackRecords(std::vector<MwsRecord> records) {
-    fallbackRecords_ = std::move(records);
-    if (!fallbackRecords_.empty()) {
-        lastGoodRecords_ = fallbackRecords_;
-    }
-}
-
 utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords(const std::vector<std::string>& recordIds) {
     auto result = retryPolicy_.run(
         [this, &recordIds]() {
@@ -488,38 +481,9 @@ utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords(const std::vector<
         if (!lastGoodRecords_.empty()) {
             return lastGoodRecords_;
         }
-
-        if (!fallbackRecords_.empty()) {
-            return fallbackRecords_;
-        }
     }
 
     return result;
-}
-
-utils::Expected<MwsRecord> MwsClient::getRecordById(const std::string& recordId) {
-    if (recordId.empty()) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::InvalidRequest,
-            "recordId must not be empty",
-            400,
-            false));
-    }
-
-    const auto records = getRecords({recordId});
-    if (!records) {
-        return std::unexpected(records.error());
-    }
-
-    if (records->empty()) {
-        return std::unexpected(utils::makeError(
-            utils::ErrorCode::PageNotFound,
-            "MWS record was not found: " + recordId,
-            404,
-            false));
-    }
-
-    return records->front();
 }
 
 utils::Expected<MwsFieldValue> MwsClient::getFieldValue(

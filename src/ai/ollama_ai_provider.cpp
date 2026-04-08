@@ -13,16 +13,8 @@ const AiProviderMetadata& OllamaAiProvider::metadata() const {
     return metadata_;
 }
 
-utils::Expected<AiAnalysisResult> OllamaAiProvider::analyzeText(const AiAnalyzeRequest& /*request*/) const {
-    return std::unexpected(notImplementedError("analyzeText"));
-}
-
 utils::Expected<AiSuggestInsertResult> OllamaAiProvider::suggestInsert(const AiSuggestInsertRequest& /*request*/) const {
     return std::unexpected(notImplementedError("suggestInsert"));
-}
-
-utils::Expected<AiGeneratedPage> OllamaAiProvider::generatePage(const AiGeneratePageRequest& /*request*/) const {
-    return std::unexpected(notImplementedError("generatePage"));
 }
 
 utils::Error OllamaAiProvider::notImplementedError(const std::string& operation) const {

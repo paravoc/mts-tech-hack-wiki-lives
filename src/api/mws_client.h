@@ -31,10 +31,7 @@ class MwsClient {
 public:
     MwsClient(std::string token, std::string tableId, std::string viewId, MwsClientOptions options = {});
 
-    void setFallbackRecords(std::vector<MwsRecord> records);
-
     [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords(const std::vector<std::string>& recordIds = {});
-    [[nodiscard]] utils::Expected<MwsRecord> getRecordById(const std::string& recordId);
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValue(
         const std::string& tableId,
         const std::string& recordId,
@@ -60,7 +57,6 @@ private:
     std::string viewId_;
     MwsClientOptions options_{};
     RetryPolicy retryPolicy_{};
-    std::vector<MwsRecord> fallbackRecords_;
     std::vector<MwsRecord> lastGoodRecords_;
 };
 

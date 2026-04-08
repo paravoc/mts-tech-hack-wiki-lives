@@ -27,8 +27,6 @@ struct AppConfig {
     int retryAttempts = 3;
     int retryBaseDelayMs = 1000;
     int wsHeartbeatSeconds = 20;
-    int aiMaxTokens = 500;
-    double aiTemperature = 0.2;
     bool enableWebSocket = true;
     bool enableAi = false;
 };
