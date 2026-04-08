@@ -36,6 +36,8 @@ set(_wikilive_libuv_release_dll
     "${_vcpkg_root}/packages/libuv_${_wikilive_vcpkg_triplet}/bin/uv.dll")
 set(_wikilive_libuv_debug_dll
     "${_vcpkg_root}/packages/libuv_${_wikilive_vcpkg_triplet}/debug/bin/uv.dll")
+set(_wikilive_vcpkg_include_dir
+    "${_vcpkg_root}/installed/${_wikilive_vcpkg_triplet}/include")
 
 foreach(_required_path IN ITEMS
     "${_wikilive_uwebsockets_include_dir}/uwebsockets/App.h"
@@ -97,6 +99,7 @@ add_library(wikilive_core STATIC
     src/wiki/wiki_renderer.cpp
     src/storage/page_storage.cpp
     src/storage/in_memory_page_storage.cpp
+    src/storage/mws_page_storage.cpp
     src/storage/cache.cpp
     src/utils/logger.cpp
     src/utils/errors.cpp
@@ -106,6 +109,7 @@ add_library(wikilive_core STATIC
 
 target_include_directories(wikilive_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    "${_wikilive_vcpkg_include_dir}"
 )
 
 target_link_libraries(wikilive_core PUBLIC

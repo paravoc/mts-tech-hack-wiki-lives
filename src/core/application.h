@@ -7,6 +7,7 @@
 namespace wikilive::server {
 class HttpServer;
 class Router;
+class WebSocketManager;
 }
 
 namespace wikilive::api {
@@ -39,9 +40,11 @@ private:
     AppConfig config_{};
     bool initialized_ = false;
     std::unique_ptr<api::MwsClient> mwsClient_{};
+    std::unique_ptr<api::MwsClient> wikiPagesClient_{};
     std::unique_ptr<storage::PageStorage> pageStorage_{};
     std::unique_ptr<services::PageService> pageService_{};
     std::unique_ptr<services::RenderService> renderService_{};
+    std::unique_ptr<server::WebSocketManager> webSocketManager_{};
     std::unique_ptr<server::Router> router_{};
     std::unique_ptr<server::HttpServer> httpServer_{};
 };

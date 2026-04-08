@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "src/server/router.h"
+#include "src/server/websocket_manager.h"
 #include "src/utils/logger.h"
 #include "uwebsockets/App.h"
 
@@ -93,12 +94,35 @@ void handleRequestBody(HttpResponse* response, HttpRequest* request, Callback&& 
 
 }  // namespace
 
-HttpServer::HttpServer(Router& router) : router_(router) {
+HttpServer::HttpServer(Router& router, WebSocketManager* webSocketManager)
+    : router_(router), webSocketManager_(webSocketManager) {
 }
 
 utils::VoidExpected HttpServer::start(const int port) {
     try {
         uWS::App app;
+
+        if (webSocketManager_ != nullptr) {
+            app.ws<WebSocketSessionData>("/ws", {
+                .open = [this](auto* socket) {
+                    webSocketManager_->registerConnection(socket);
+                    socket->send(R"({"event":"connected","status":"ok"})", uWS::OpCode::TEXT);
+                },
+                .message = [this](auto* socket, std::string_view message, uWS::OpCode opCode) {
+                    if (opCode != uWS::OpCode::TEXT) {
+                        return;
+                    }
+
+                    const auto response = webSocketManager_->handleMessage(socket, message);
+                    if (!response.empty()) {
+                        socket->send(response, uWS::OpCode::TEXT);
+                    }
+                },
+                .close = [this](auto* socket, int /*code*/, std::string_view /*message*/) {
+                    webSocketManager_->unregisterConnection(socket);
+                },
+            });
+        }
 
         app.options("/*", [](HttpResponse* response, HttpRequest* /*request*/) {
             writeResponse(response, RouteResponse{

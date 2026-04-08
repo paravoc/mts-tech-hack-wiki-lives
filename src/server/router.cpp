@@ -62,8 +62,11 @@ wikilive::server::RouteResponse unknownExceptionResponse() {
 
 namespace wikilive::server {
 
-Router::Router(services::PageService& pageService, services::RenderService& renderService)
-    : pageService_(pageService), renderService_(renderService) {
+Router::Router(
+    services::PageService& pageService,
+    services::RenderService& renderService,
+    WebSocketManager* webSocketManager)
+    : pageService_(pageService), renderService_(renderService), webSocketManager_(webSocketManager) {
 }
 
 RouteResponse Router::handleHealth() const {
@@ -147,6 +150,10 @@ RouteResponse Router::createPage(const std::string& payload) {
             return fail(renderedPage.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(renderedPage->pageId, "page.created");
+        }
+
         return created("{\"item\":" + pageToJson(renderedPage.value(), true) + "}");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
@@ -180,6 +187,10 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
             return fail(renderedPage.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(renderedPage->pageId, "page.updated");
+        }
+
         return ok("{\"item\":" + pageToJson(renderedPage.value(), true) + "}");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
@@ -201,6 +212,10 @@ RouteResponse Router::deletePage(const std::string& pageId) {
         const auto removeResult = pageService_.deletePage(pageId);
         if (!removeResult) {
             return fail(removeResult.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "page.deleted");
         }
 
         return ok("{\"deleted\":true,\"pageId\":\"" + utils::escapeJson(pageId) + "\"}");

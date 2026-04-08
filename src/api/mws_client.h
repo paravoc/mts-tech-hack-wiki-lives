@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "src/api/retry_policy.h"
@@ -10,6 +11,7 @@ namespace wikilive::api {
 
 struct MwsRecord {
     std::string recordId;
+    std::unordered_map<std::string, std::string> fields;
     std::string payload;
 };
 
@@ -31,7 +33,8 @@ public:
 
     void setFallbackRecords(std::vector<MwsRecord> records);
 
-    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords();
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords(const std::vector<std::string>& recordIds = {});
+    [[nodiscard]] utils::Expected<MwsRecord> getRecordById(const std::string& recordId);
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValue(
         const std::string& tableId,
         const std::string& recordId,
@@ -41,11 +44,11 @@ public:
     [[nodiscard]] utils::VoidExpected deleteRecord(const std::string& recordId);
 
 private:
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce(const std::vector<std::string>& recordIds) const;
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValueOnce(
         const std::string& tableId,
         const std::string& recordId,
         const std::string& fieldName) const;
-    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce() const;
     [[nodiscard]] utils::Expected<std::string> createRecordOnce(const std::string& payload) const;
     [[nodiscard]] utils::Expected<std::string> updateRecordOnce(const std::string& recordId, const std::string& payload) const;
     [[nodiscard]] utils::VoidExpected deleteRecordOnce(const std::string& recordId) const;

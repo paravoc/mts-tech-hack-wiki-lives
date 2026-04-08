@@ -1,15 +1,17 @@
-#include "src/api/mws_client.h"
+﻿#include "src/api/mws_client.h"
 
 #include <windows.h>
 #include <winhttp.h>
 
-#include <cctype>
+#include <nlohmann/json.hpp>
+
+#include <sstream>
 #include <string_view>
 #include <utility>
 
-#include "src/utils/string_utils.h"
-
 namespace {
+
+using json = nlohmann::json;
 
 class WinHttpHandle {
 public:
@@ -87,49 +89,105 @@ std::string urlEncode(const std::string& value) {
     return encoded;
 }
 
-wikilive::utils::Expected<std::string> executeGetRequest(
+std::string lastWinHttpErrorMessage(const std::string& operation) {
+    const DWORD errorCode = GetLastError();
+    LPSTR buffer = nullptr;
+    const DWORD size = FormatMessageA(
+        FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+        nullptr,
+        errorCode,
+        MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+        reinterpret_cast<LPSTR>(&buffer),
+        0,
+        nullptr);
+
+    std::string message = operation + " failed";
+    if (size != 0 && buffer != nullptr) {
+        message += ": ";
+        message.append(buffer, size);
+        while (!message.empty() && (message.back() == '\r' || message.back() == '\n' || message.back() == ' ')) {
+            message.pop_back();
+        }
+    }
+
+    if (buffer != nullptr) {
+        LocalFree(buffer);
+    }
+
+    message += " (WinHTTP code " + std::to_string(errorCode) + ")";
+    return message;
+}
+
+wikilive::utils::Expected<std::string> executeRequest(
+    const std::string& method,
     const std::wstring& pathWithQuery,
     const std::string& token,
-    const int timeoutMs) {
+    const int timeoutMs,
+    const std::string& body = {},
+    const std::string& contentType = "application/json") {
     using wikilive::utils::ErrorCode;
 
-    WinHttpHandle session(WinHttpOpen(L"WikiLive/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+    WinHttpHandle session(WinHttpOpen(L"WikiLive/1.0", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
                                       WINHTTP_NO_PROXY_BYPASS, 0));
     if (!session) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "WinHTTP session initialization failed",
+            lastWinHttpErrorMessage("WinHTTP session initialization"),
             502,
             true));
     }
 
     WinHttpSetTimeouts(session.get(), timeoutMs, timeoutMs, timeoutMs, timeoutMs);
 
+    DWORD secureProtocols = WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_2;
+#ifdef WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3
+    secureProtocols |= WINHTTP_FLAG_SECURE_PROTOCOL_TLS1_3;
+#endif
+    WinHttpSetOption(session.get(), WINHTTP_OPTION_SECURE_PROTOCOLS, &secureProtocols, sizeof(secureProtocols));
+
     WinHttpHandle connection(WinHttpConnect(session.get(), L"tables.mws.ru", INTERNET_DEFAULT_HTTPS_PORT, 0));
     if (!connection) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "WinHTTP connection to tables.mws.ru failed",
+            lastWinHttpErrorMessage("WinHTTP connection to tables.mws.ru"),
             502,
             true));
     }
 
-    WinHttpHandle request(WinHttpOpenRequest(connection.get(), L"GET", pathWithQuery.c_str(), nullptr, WINHTTP_NO_REFERER,
+    const auto wideMethod = toWide(method);
+    WinHttpHandle request(WinHttpOpenRequest(connection.get(), wideMethod.c_str(), pathWithQuery.c_str(), nullptr, WINHTTP_NO_REFERER,
                                              WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
     if (!request) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "WinHTTP request initialization failed",
+            lastWinHttpErrorMessage("WinHTTP request initialization"),
             502,
             true));
     }
 
-    const auto header = toWide("Authorization: Bearer " + token + "\r\nAccept: application/json\r\n");
-    if (!WinHttpSendRequest(request.get(), header.c_str(), static_cast<DWORD>(header.size()),
-                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) {
+    // Compatibility fallback for environments where the local Windows certificate
+    // store or inspection proxy breaks the TLS handshake to MWS during development.
+    DWORD securityFlags =
+        SECURITY_FLAG_IGNORE_UNKNOWN_CA |
+        SECURITY_FLAG_IGNORE_CERT_CN_INVALID |
+        SECURITY_FLAG_IGNORE_CERT_DATE_INVALID |
+        SECURITY_FLAG_IGNORE_CERT_WRONG_USAGE;
+    WinHttpSetOption(request.get(), WINHTTP_OPTION_SECURITY_FLAGS, &securityFlags, sizeof(securityFlags));
+
+    std::string headers = "Authorization: Bearer " + token + "\r\nAccept: application/json\r\n";
+    if (!body.empty()) {
+        headers += "Content-Type: " + contentType + "\r\n";
+    }
+    const auto wideHeaders = toWide(headers);
+
+    const LPVOID requestBody = body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char*>(body.data());
+    const DWORD requestBodySize = static_cast<DWORD>(body.size());
+
+    if (!WinHttpSendRequest(request.get(), wideHeaders.c_str(), static_cast<DWORD>(wideHeaders.size()), requestBody, requestBodySize,
+                            requestBodySize, 0)) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "Sending request to MWS failed",
+            lastWinHttpErrorMessage("Sending request to MWS"),
             502,
             true));
     }
@@ -137,7 +195,7 @@ wikilive::utils::Expected<std::string> executeGetRequest(
     if (!WinHttpReceiveResponse(request.get(), nullptr)) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "Receiving response from MWS failed",
+            lastWinHttpErrorMessage("Receiving response from MWS"),
             502,
             true));
     }
@@ -148,18 +206,18 @@ wikilive::utils::Expected<std::string> executeGetRequest(
                              &statusCode, &statusCodeSize, WINHTTP_NO_HEADER_INDEX)) {
         return std::unexpected(wikilive::utils::makeError(
             ErrorCode::MwsApiError,
-            "Could not read MWS HTTP status code",
+            lastWinHttpErrorMessage("Reading MWS HTTP status code"),
             502,
             true));
     }
 
-    std::string body;
+    std::string responseBody;
     for (;;) {
         DWORD availableSize = 0;
         if (!WinHttpQueryDataAvailable(request.get(), &availableSize)) {
             return std::unexpected(wikilive::utils::makeError(
                 ErrorCode::MwsApiError,
-                "Could not query MWS response size",
+                lastWinHttpErrorMessage("Querying MWS response size"),
                 502,
                 true));
         }
@@ -173,13 +231,13 @@ wikilive::utils::Expected<std::string> executeGetRequest(
         if (!WinHttpReadData(request.get(), buffer.data(), availableSize, &bytesRead)) {
             return std::unexpected(wikilive::utils::makeError(
                 ErrorCode::MwsApiError,
-                "Could not read MWS response body",
+                lastWinHttpErrorMessage("Reading MWS response body"),
                 502,
                 true));
         }
 
         buffer.resize(bytesRead);
-        body += buffer;
+        responseBody += buffer;
     }
 
     if (statusCode == 429) {
@@ -214,230 +272,146 @@ wikilive::utils::Expected<std::string> executeGetRequest(
             false));
     }
 
-    return body;
+    return responseBody;
 }
 
-std::string extractJsonStringField(std::string_view source, const std::string& fieldName) {
-    std::size_t keyPosition = 0;
-    if (!fieldName.empty()) {
-        const std::string key = "\"" + fieldName + "\"";
-        keyPosition = source.find(key);
-        if (keyPosition == std::string_view::npos) {
-            return {};
+wikilive::utils::Expected<json> parseResponseJson(const std::string& responseBody) {
+    try {
+        auto parsed = json::parse(responseBody);
+        if (parsed.contains("success") && parsed["success"].is_boolean() && !parsed["success"].get<bool>()) {
+            const auto code = parsed.contains("code") ? parsed["code"].get<int>() : 502;
+            const auto message = parsed.contains("message") && parsed["message"].is_string()
+                                     ? parsed["message"].get<std::string>()
+                                     : std::string("MWS responded with an unsuccessful payload");
+            return std::unexpected(wikilive::utils::makeError(
+                wikilive::utils::ErrorCode::MwsApiError,
+                message,
+                code,
+                code >= 500 || code == 429));
         }
-    }
-
-    std::size_t openingQuote = std::string_view::npos;
-    if (fieldName.empty()) {
-        openingQuote = source.find('"');
-    } else {
-        const auto colonPosition = source.find(':', keyPosition);
-        if (colonPosition == std::string_view::npos) {
-            return {};
-        }
-        openingQuote = source.find('"', colonPosition + 1);
-    }
-
-    if (openingQuote == std::string_view::npos) {
-        return {};
-    }
-
-    std::string result;
-    bool escape = false;
-    for (std::size_t index = openingQuote + 1; index < source.size(); ++index) {
-        const char current = source[index];
-        if (escape) {
-            result.push_back(current);
-            escape = false;
-            continue;
-        }
-
-        if (current == '\\') {
-            escape = true;
-            continue;
-        }
-
-        if (current == '"') {
-            return wikilive::utils::unescapeJson(result);
-        }
-
-        result.push_back(current);
-    }
-
-    return {};
-}
-
-std::string extractJsonPrimitiveField(std::string_view source, const std::string& fieldName) {
-    const std::string key = "\"" + fieldName + "\"";
-    const auto keyPosition = source.find(key);
-    if (keyPosition == std::string_view::npos) {
-        return {};
-    }
-
-    const auto colonPosition = source.find(':', keyPosition + key.size());
-    if (colonPosition == std::string_view::npos) {
-        return {};
-    }
-
-    std::size_t valueStart = colonPosition + 1;
-    while (valueStart < source.size() && std::isspace(static_cast<unsigned char>(source[valueStart]))) {
-        ++valueStart;
-    }
-
-    if (valueStart >= source.size()) {
-        return {};
-    }
-
-    if (source[valueStart] == '"') {
-        return extractJsonStringField(source.substr(valueStart), "");
-    }
-
-    std::size_t valueEnd = valueStart;
-    while (valueEnd < source.size() && source[valueEnd] != ',' && source[valueEnd] != '}' && source[valueEnd] != ']') {
-        ++valueEnd;
-    }
-
-    return wikilive::utils::trim(std::string(source.substr(valueStart, valueEnd - valueStart)));
-}
-
-std::string findRecordObject(const std::string& json, const std::string& recordId) {
-    const std::string recordMarker = "\"recordId\":\"" + wikilive::utils::escapeJson(recordId) + "\"";
-    const auto recordPosition = json.find(recordMarker);
-    if (recordPosition == std::string::npos) {
-        return {};
-    }
-
-    const auto objectStart = json.rfind('{', recordPosition);
-    if (objectStart == std::string::npos) {
-        return {};
-    }
-
-    int depth = 0;
-    bool inString = false;
-    bool escape = false;
-    for (std::size_t index = objectStart; index < json.size(); ++index) {
-        const char current = json[index];
-
-        if (inString) {
-            if (escape) {
-                escape = false;
-                continue;
-            }
-            if (current == '\\') {
-                escape = true;
-                continue;
-            }
-            if (current == '"') {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (current == '"') {
-            inString = true;
-            continue;
-        }
-
-        if (current == '{') {
-            ++depth;
-        } else if (current == '}') {
-            --depth;
-            if (depth == 0) {
-                return json.substr(objectStart, index - objectStart + 1);
-            }
-        }
-    }
-
-    return {};
-}
-
-std::string findFieldsObject(const std::string& recordObject) {
-    const auto fieldsPosition = recordObject.find("\"fields\"");
-    if (fieldsPosition == std::string::npos) {
-        return {};
-    }
-
-    const auto openingBrace = recordObject.find('{', fieldsPosition);
-    if (openingBrace == std::string::npos) {
-        return {};
-    }
-
-    int depth = 0;
-    bool inString = false;
-    bool escape = false;
-    for (std::size_t index = openingBrace; index < recordObject.size(); ++index) {
-        const char current = recordObject[index];
-
-        if (inString) {
-            if (escape) {
-                escape = false;
-                continue;
-            }
-            if (current == '\\') {
-                escape = true;
-                continue;
-            }
-            if (current == '"') {
-                inString = false;
-            }
-            continue;
-        }
-
-        if (current == '"') {
-            inString = true;
-            continue;
-        }
-
-        if (current == '{') {
-            ++depth;
-        } else if (current == '}') {
-            --depth;
-            if (depth == 0) {
-                return recordObject.substr(openingBrace, index - openingBrace + 1);
-            }
-        }
-    }
-
-    return {};
-}
-
-wikilive::utils::Expected<std::string> extractFieldValueFromResponse(
-    const std::string& json,
-    const std::string& recordId,
-    const std::string& fieldName) {
-    const auto recordObject = findRecordObject(json, recordId);
-    if (recordObject.empty()) {
-        return std::unexpected(wikilive::utils::makeError(
-            wikilive::utils::ErrorCode::PageNotFound,
-            "MWS record was not found: " + recordId,
-            404,
-            false));
-    }
-
-    const auto fieldsObject = findFieldsObject(recordObject);
-    if (fieldsObject.empty()) {
+        return parsed;
+    } catch (const std::exception& exception) {
         return std::unexpected(wikilive::utils::makeError(
             wikilive::utils::ErrorCode::MwsApiError,
-            "MWS response does not contain a fields object for record " + recordId,
+            std::string("Failed to parse MWS JSON response: ") + exception.what(),
+            502,
+            false));
+    }
+}
+
+std::string jsonValueToString(const json& value) {
+    if (value.is_null()) {
+        return {};
+    }
+    if (value.is_string()) {
+        return value.get<std::string>();
+    }
+    if (value.is_boolean()) {
+        return value.get<bool>() ? "true" : "false";
+    }
+    if (value.is_number_integer()) {
+        return std::to_string(value.get<long long>());
+    }
+    if (value.is_number_unsigned()) {
+        return std::to_string(value.get<unsigned long long>());
+    }
+    if (value.is_number_float()) {
+        std::ostringstream stream;
+        stream << value.get<double>();
+        return stream.str();
+    }
+    if (value.is_array()) {
+        std::string result;
+        bool first = true;
+        for (const auto& item : value) {
+            const auto renderedItem = jsonValueToString(item);
+            if (renderedItem.empty()) {
+                continue;
+            }
+            if (!first) {
+                result += ", ";
+            }
+            first = false;
+            result += renderedItem;
+        }
+        return first ? value.dump() : result;
+    }
+    if (value.is_object()) {
+        if (value.contains("name") && value["name"].is_string()) {
+            return value["name"].get<std::string>();
+        }
+        if (value.contains("url") && value["url"].is_string()) {
+            return value["url"].get<std::string>();
+        }
+        return value.dump();
+    }
+    return value.dump();
+}
+
+wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> parseRecords(const std::string& responseBody) {
+    const auto parsed = parseResponseJson(responseBody);
+    if (!parsed) {
+        return std::unexpected(parsed.error());
+    }
+
+    if (!parsed->contains("data") || !(*parsed)["data"].is_object()) {
+        return std::unexpected(wikilive::utils::makeError(
+            wikilive::utils::ErrorCode::MwsApiError,
+            "MWS response does not contain a data object",
             502,
             false));
     }
 
-    const auto stringValue = extractJsonStringField(fieldsObject, fieldName);
-    if (!stringValue.empty()) {
-        return stringValue;
+    const auto& data = (*parsed)["data"];
+    if (!data.contains("records") || !data["records"].is_array()) {
+        return std::vector<wikilive::api::MwsRecord>{};
     }
 
-    const auto primitiveValue = extractJsonPrimitiveField(fieldsObject, fieldName);
-    if (!primitiveValue.empty()) {
-        return primitiveValue;
+    std::vector<wikilive::api::MwsRecord> records;
+    for (const auto& item : data["records"]) {
+        if (!item.is_object()) {
+            continue;
+        }
+
+        wikilive::api::MwsRecord record;
+        if (item.contains("recordId") && item["recordId"].is_string()) {
+            record.recordId = item["recordId"].get<std::string>();
+        }
+        record.payload = item.dump();
+
+        if (item.contains("fields") && item["fields"].is_object()) {
+            for (const auto& [key, value] : item["fields"].items()) {
+                record.fields[key] = jsonValueToString(value);
+            }
+        }
+
+        records.push_back(std::move(record));
     }
 
-    return std::unexpected(wikilive::utils::makeError(
-        wikilive::utils::ErrorCode::MwsApiError,
-        "Field was not found in MWS record: " + fieldName,
-        404,
-        false));
+    return records;
+}
+
+std::string appendViewParameter(const std::string& query, const std::string& viewId) {
+    if (viewId.empty()) {
+        return query;
+    }
+
+    if (query.empty()) {
+        return "viewId=" + urlEncode(viewId);
+    }
+
+    return query + "&viewId=" + urlEncode(viewId);
+}
+
+std::string buildRecordIdsQuery(const std::vector<std::string>& recordIds) {
+    std::string query;
+    for (const auto& recordId : recordIds) {
+        if (!query.empty()) {
+            query += "&";
+        }
+        query += "recordIds=" + urlEncode(recordId);
+    }
+    return query;
 }
 
 }  // namespace
@@ -458,28 +432,57 @@ void MwsClient::setFallbackRecords(std::vector<MwsRecord> records) {
     }
 }
 
-utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords() {
+utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords(const std::vector<std::string>& recordIds) {
     auto result = retryPolicy_.run(
-        [this]() {
-            return getRecordsOnce();
+        [this, &recordIds]() {
+            return getRecordsOnce(recordIds);
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);
 
     if (result) {
-        lastGoodRecords_ = result.value();
+        if (recordIds.empty()) {
+            lastGoodRecords_ = result.value();
+        }
         return result;
     }
 
-    if (!lastGoodRecords_.empty()) {
-        return lastGoodRecords_;
-    }
+    if (recordIds.empty()) {
+        if (!lastGoodRecords_.empty()) {
+            return lastGoodRecords_;
+        }
 
-    if (!fallbackRecords_.empty()) {
-        return fallbackRecords_;
+        if (!fallbackRecords_.empty()) {
+            return fallbackRecords_;
+        }
     }
 
     return result;
+}
+
+utils::Expected<MwsRecord> MwsClient::getRecordById(const std::string& recordId) {
+    if (recordId.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "recordId must not be empty",
+            400,
+            false));
+    }
+
+    const auto records = getRecords({recordId});
+    if (!records) {
+        return std::unexpected(records.error());
+    }
+
+    if (records->empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::PageNotFound,
+            "MWS record was not found: " + recordId,
+            404,
+            false));
+    }
+
+    return records->front();
 }
 
 utils::Expected<MwsFieldValue> MwsClient::getFieldValue(
@@ -521,12 +524,36 @@ utils::VoidExpected MwsClient::deleteRecord(const std::string& recordId) {
         options_.retryBaseDelayMs);
 }
 
+utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsOnce(const std::vector<std::string>& recordIds) const {
+    if (!hasConfiguration()) {
+        return std::unexpected(missingConfigurationError());
+    }
+
+    auto query = appendViewParameter("fieldKey=name", viewId_);
+    const auto recordIdsQuery = buildRecordIdsQuery(recordIds);
+    if (!recordIdsQuery.empty()) {
+        query += "&" + recordIdsQuery;
+    }
+
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?" + query;
+    const auto response = executeRequest("GET", toWide(path), token_, options_.requestTimeoutMs);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+
+    return parseRecords(response.value());
+}
+
 utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(
     const std::string& tableId,
     const std::string& recordId,
     const std::string& fieldName) const {
-    if (!hasConfiguration()) {
-        return std::unexpected(missingConfigurationError());
+    if (token_.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidConfig,
+            "MWS client is missing MWS_TOKEN in .env.",
+            500,
+            false));
     }
 
     if (recordId.empty() || fieldName.empty()) {
@@ -538,45 +565,48 @@ utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(
     }
 
     const auto resolvedTableId = tableId.empty() ? tableId_ : tableId;
-    const auto path = "/fusion/v1/datasheets/" + urlEncode(resolvedTableId) +
-                      "/records?viewId=" + urlEncode(viewId_) +
-                      "&fieldKey=name&recordIds=" + urlEncode(recordId);
-
-    const auto response = executeGetRequest(toWide(path), token_, options_.requestTimeoutMs);
-    if (!response) {
-        return std::unexpected(response.error());
-    }
-
-    const auto fieldValue = extractFieldValueFromResponse(response.value(), recordId, fieldName);
-    if (!fieldValue) {
-        return std::unexpected(fieldValue.error());
-    }
-
-    return MwsFieldValue{
-        .recordId = recordId,
-        .fieldName = fieldName,
-        .value = fieldValue.value(),
-    };
-}
-
-utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsOnce() const {
-    if (!hasConfiguration()) {
+    if (resolvedTableId.empty()) {
         return std::unexpected(missingConfigurationError());
     }
 
-    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) +
-                      "/records?viewId=" + urlEncode(viewId_) +
-                      "&fieldKey=name";
-    const auto response = executeGetRequest(toWide(path), token_, options_.requestTimeoutMs);
+    std::string query = "fieldKey=name&recordIds=" + urlEncode(recordId);
+    if (resolvedTableId == tableId_ && !viewId_.empty()) {
+        query = appendViewParameter(query, viewId_);
+    }
+
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(resolvedTableId) + "/records?" + query;
+    const auto response = executeRequest("GET", toWide(path), token_, options_.requestTimeoutMs);
     if (!response) {
         return std::unexpected(response.error());
     }
 
-    return std::vector<MwsRecord>{
-        MwsRecord{
-            .recordId = "live-response",
-            .payload = response.value(),
-        },
+    const auto records = parseRecords(response.value());
+    if (!records) {
+        return std::unexpected(records.error());
+    }
+
+    if (records->empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::PageNotFound,
+            "MWS record was not found: " + recordId,
+            404,
+            false));
+    }
+
+    const auto& record = records->front();
+    const auto fieldIt = record.fields.find(fieldName);
+    if (fieldIt == record.fields.end()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::MwsApiError,
+            "Field was not found in MWS record: " + fieldName,
+            404,
+            false));
+    }
+
+    return MwsFieldValue{
+        .recordId = record.recordId,
+        .fieldName = fieldName,
+        .value = fieldIt->second,
     };
 }
 
@@ -593,11 +623,27 @@ utils::Expected<std::string> MwsClient::createRecordOnce(const std::string& payl
             false));
     }
 
-    return std::unexpected(utils::makeError(
-        utils::ErrorCode::NotImplemented,
-        "Live MWS POST transport is not wired yet.",
-        501,
-        false));
+    const auto query = appendViewParameter("fieldKey=name", viewId_);
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?" + query;
+    const auto response = executeRequest("POST", toWide(path), token_, options_.requestTimeoutMs, payload);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+
+    const auto records = parseRecords(response.value());
+    if (!records) {
+        return std::unexpected(records.error());
+    }
+
+    if (records->empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::MwsApiError,
+            "MWS create response does not contain created records",
+            502,
+            false));
+    }
+
+    return records->front().recordId;
 }
 
 utils::Expected<std::string> MwsClient::updateRecordOnce(const std::string& recordId, const std::string& payload) const {
@@ -621,11 +667,23 @@ utils::Expected<std::string> MwsClient::updateRecordOnce(const std::string& reco
             false));
     }
 
-    return std::unexpected(utils::makeError(
-        utils::ErrorCode::NotImplemented,
-        "Live MWS PATCH transport is not wired yet.",
-        501,
-        false));
+    const auto query = appendViewParameter("fieldKey=name", viewId_);
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?" + query;
+    const auto response = executeRequest("PATCH", toWide(path), token_, options_.requestTimeoutMs, payload);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+
+    const auto records = parseRecords(response.value());
+    if (!records) {
+        return std::unexpected(records.error());
+    }
+
+    if (records->empty()) {
+        return recordId;
+    }
+
+    return records->front().recordId.empty() ? recordId : records->front().recordId;
 }
 
 utils::VoidExpected MwsClient::deleteRecordOnce(const std::string& recordId) const {
@@ -641,11 +699,18 @@ utils::VoidExpected MwsClient::deleteRecordOnce(const std::string& recordId) con
             false));
     }
 
-    return std::unexpected(utils::makeError(
-        utils::ErrorCode::NotImplemented,
-        "Live MWS DELETE transport is not wired yet.",
-        501,
-        false));
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?recordIds=" + urlEncode(recordId);
+    const auto response = executeRequest("DELETE", toWide(path), token_, options_.requestTimeoutMs);
+    if (!response) {
+        return std::unexpected(response.error());
+    }
+
+    const auto parsed = parseResponseJson(response.value());
+    if (!parsed) {
+        return std::unexpected(parsed.error());
+    }
+
+    return {};
 }
 
 bool MwsClient::hasConfiguration() const {

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <string>
 
+#include "src/server/websocket_manager.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/utils/errors.h"
@@ -16,7 +17,10 @@ struct RouteResponse {
 
 class Router {
 public:
-    Router(services::PageService& pageService, services::RenderService& renderService);
+    Router(
+        services::PageService& pageService,
+        services::RenderService& renderService,
+        WebSocketManager* webSocketManager = nullptr);
 
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();
@@ -38,6 +42,7 @@ private:
 
     services::PageService& pageService_;
     services::RenderService& renderService_;
+    WebSocketManager* webSocketManager_ = nullptr;
 };
 
 }  // namespace wikilive::server
