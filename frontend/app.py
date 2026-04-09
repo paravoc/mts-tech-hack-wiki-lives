@@ -141,6 +141,37 @@ def inject_styles() -> None:
                 color: var(--accent);
             }
 
+            .stButton > button,
+            div[data-testid="stPopover"] > button,
+            div[data-testid="stBaseButton-secondary"] > button,
+            div[data-testid="stBaseButton-primary"] > button {
+                color: #fff8f0 !important;
+                background: linear-gradient(180deg, #26252e 0%, #171822 100%) !important;
+                border: 1px solid rgba(255, 248, 240, 0.12) !important;
+                box-shadow: 0 14px 34px rgba(17, 18, 28, 0.28) !important;
+                font-weight: 700 !important;
+            }
+
+            .stButton > button:hover,
+            div[data-testid="stPopover"] > button:hover,
+            div[data-testid="stBaseButton-secondary"] > button:hover,
+            div[data-testid="stBaseButton-primary"] > button:hover {
+                color: #fffdf8 !important;
+                border-color: rgba(191, 79, 47, 0.45) !important;
+                background: linear-gradient(180deg, #2f2e38 0%, #1c1d28 100%) !important;
+            }
+
+            .stButton > button p,
+            div[data-testid="stPopover"] > button p,
+            div[data-testid="stBaseButton-secondary"] > button p,
+            div[data-testid="stBaseButton-primary"] > button p,
+            .stButton > button span,
+            div[data-testid="stPopover"] > button span,
+            div[data-testid="stBaseButton-secondary"] > button span,
+            div[data-testid="stBaseButton-primary"] > button span {
+                color: inherit !important;
+            }
+
             .preview-shell {
                 border: 1px dashed rgba(72, 56, 43, 0.2);
                 border-radius: 18px;
@@ -151,6 +182,33 @@ def inject_styles() -> None:
 
             .preview-shell code {
                 font-family: 'IBM Plex Mono', monospace;
+            }
+
+            .preview-shell img,
+            .preview-shell .wikilive-attachment-image__img {
+                max-width: 100%;
+                height: auto;
+                display: block;
+                border-radius: 16px;
+                border: 1px solid rgba(72, 56, 43, 0.12);
+                box-shadow: 0 18px 40px rgba(49, 36, 28, 0.12);
+                margin-bottom: 0.6rem;
+            }
+
+            .preview-shell .wikilive-attachment-image__caption {
+                color: var(--muted);
+                font-size: 0.88rem;
+            }
+
+            .preview-shell .wikilive-insert-link {
+                color: var(--accent);
+                font-weight: 700;
+                text-decoration: none;
+                border-bottom: 1px solid rgba(191, 79, 47, 0.25);
+            }
+
+            .preview-shell .wikilive-insert-link:hover {
+                border-bottom-color: rgba(191, 79, 47, 0.65);
             }
 
             .candidate-card {

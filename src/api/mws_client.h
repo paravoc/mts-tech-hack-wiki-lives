@@ -12,6 +12,7 @@ namespace wikilive::api {
 struct MwsRecord {
     std::string recordId;
     std::unordered_map<std::string, std::string> fields;
+    std::unordered_map<std::string, std::string> rawFieldsJson;
     std::string payload;
 };
 
@@ -19,6 +20,9 @@ struct MwsFieldValue {
     std::string recordId;
     std::string fieldName;
     std::string value;
+    std::string resourceUrl;
+    std::string mimeType;
+    bool isImage = false;
 };
 
 struct MwsClientOptions {

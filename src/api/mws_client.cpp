@@ -89,6 +89,22 @@ std::string urlEncode(const std::string& value) {
     return encoded;
 }
 
+std::string makeAbsoluteTablesUrl(const std::string& value) {
+    if (value.empty()) {
+        return {};
+    }
+
+    if (value.rfind("http://", 0) == 0 || value.rfind("https://", 0) == 0) {
+        return value;
+    }
+
+    if (value.front() == '/') {
+        return "https://tables.mws.ru" + value;
+    }
+
+    return "https://tables.mws.ru/" + value;
+}
+
 std::string lastWinHttpErrorMessage(const std::string& operation) {
     const DWORD errorCode = GetLastError();
     LPSTR buffer = nullptr;
@@ -341,11 +357,40 @@ std::string jsonValueToString(const json& value) {
             return value["name"].get<std::string>();
         }
         if (value.contains("url") && value["url"].is_string()) {
-            return value["url"].get<std::string>();
+            return makeAbsoluteTablesUrl(value["url"].get<std::string>());
         }
         return value.dump();
     }
     return value.dump();
+}
+
+void applyFieldMetadata(const json& value, wikilive::api::MwsFieldValue& fieldValue) {
+    if (value.is_array()) {
+        for (const auto& item : value) {
+            applyFieldMetadata(item, fieldValue);
+            if (!fieldValue.resourceUrl.empty()) {
+                return;
+            }
+        }
+        return;
+    }
+
+    if (!value.is_object()) {
+        return;
+    }
+
+    if (value.contains("url") && value["url"].is_string()) {
+        fieldValue.resourceUrl = makeAbsoluteTablesUrl(value["url"].get<std::string>());
+    }
+
+    if (value.contains("mimeType") && value["mimeType"].is_string()) {
+        fieldValue.mimeType = value["mimeType"].get<std::string>();
+        fieldValue.isImage = fieldValue.mimeType.rfind("image/", 0) == 0;
+    }
+
+    if (fieldValue.value.empty() && value.contains("name") && value["name"].is_string()) {
+        fieldValue.value = value["name"].get<std::string>();
+    }
 }
 
 wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> parseRecords(const std::string& responseBody) {
@@ -382,6 +427,7 @@ wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> parseRecords(co
         if (item.contains("fields") && item["fields"].is_object()) {
             for (const auto& [key, value] : item["fields"].items()) {
                 record.fields[key] = jsonValueToString(value);
+                record.rawFieldsJson[key] = value.dump();
             }
         }
 
@@ -587,11 +633,20 @@ utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(
                 false));
         }
 
-        return MwsFieldValue{
+        MwsFieldValue result{
             .recordId = record->recordId,
             .fieldName = fieldName,
             .value = fieldIt->second,
         };
+
+        if (const auto rawFieldIt = record->rawFieldsJson.find(fieldName); rawFieldIt != record->rawFieldsJson.end()) {
+            try {
+                applyFieldMetadata(json::parse(rawFieldIt->second), result);
+            } catch (...) {
+            }
+        }
+
+        return result;
     };
 
     auto tryResolve =
