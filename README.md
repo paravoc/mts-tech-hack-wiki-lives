@@ -6,6 +6,7 @@ WikiLive — прототип живой вики-системы для MWS Tabl
 
 - backend на `C++23`
 - HTTP API на `uWebSockets`
+- web frontend на `Streamlit`
 - CRUD для вики-страниц
 - рендер текста с wiki-вставками
 - единый JSON-формат ответов и ошибок
@@ -24,6 +25,7 @@ WikiLive — прототип живой вики-системы для MWS Tabl
 - `DELETE /api/pages/{pageId}`
 - `POST /api/render`
 - `POST /api/ai/suggest-insert`
+- `GET /ws`
 
 ## Формат страницы
 
@@ -87,13 +89,13 @@ cmake --build --preset windows-debug
 Готовый бинарник появляется по пути:
 
 ```text
-C:\Users\smidr\AppData\Local\WikiLive\build\windows-vs-debug\Debug\wikilive_backend.exe
+C:\Users\smidr\OneDrive\Desktop\mts\out\build\x64-Debug\wikilive_backend.exe
 ```
 
 ## Запуск
 
 ```powershell
-C:\Users\smidr\AppData\Local\WikiLive\build\windows-vs-debug\Debug\wikilive_backend.exe
+C:\Users\smidr\OneDrive\Desktop\mts\out\build\x64-Debug\wikilive_backend.exe
 ```
 
 После запуска сервер по умолчанию слушает `http://127.0.0.1:3000`.
@@ -103,6 +105,40 @@ C:\Users\smidr\AppData\Local\WikiLive\build\windows-vs-debug\Debug\wikilive_back
 ```powershell
 Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/health
 ```
+
+## Frontend
+
+Зависимости frontend находятся в `frontend/requirements.txt`.
+
+Установка:
+
+```powershell
+C:\Users\smidr\AppData\Local\Programs\Python\Python313\python.exe -m pip install -r frontend\requirements.txt
+```
+
+Запуск:
+
+```powershell
+C:\Users\smidr\AppData\Local\Programs\Python\Python313\python.exe -m streamlit run frontend\app.py
+```
+
+По умолчанию frontend ожидает backend на `http://127.0.0.1:3000`.
+
+Если нужно изменить адрес backend:
+
+```powershell
+$env:WIKILIVE_BACKEND_URL="http://127.0.0.1:3000"
+C:\Users\smidr\AppData\Local\Programs\Python\Python313\python.exe -m streamlit run frontend\app.py
+```
+
+Что уже умеет web UI:
+
+- список страниц в sidebar
+- создание, обновление и удаление страницы
+- живой предпросмотр через `/api/render`
+- загрузка существующей страницы из `WikiPages`
+- AI-кнопка для `suggest-insert`
+- архитектура, готовая к desktop-обертке
 
 ## Тесты
 
@@ -128,6 +164,7 @@ wikilive/
 ├── README.md
 ├── .env.example
 ├── config/
+├── frontend/
 ├── src/
 │   ├── api/
 │   ├── ai/
@@ -143,8 +180,8 @@ wikilive/
 
 ## Что дальше
 
-1. Добавить первый AI endpoint поверх уже готового модульного `src/ai`.
-2. Подключить фронтенд к `pages`, `render` и `ws`.
+1. Добавить во frontend подписку на `/ws` и fallback на polling.
+2. Сделать cursor-aware вставку AI-кандидатов, а не только вставку в конец текста.
 3. Вынести кэш рендера и MWS-данных в отдельный слой.
 4. Расширить live-render для более сложных типов полей.
-5. Добавить polling или event-механику для внешних изменений в MWS.
+5. Добавить дополнительные AI-сценарии: `analyze` и `generate-page`.
