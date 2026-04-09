@@ -203,6 +203,9 @@ def ensure_state() -> None:
         "last_error": "",
         "last_success": "",
         "loaded_page_snapshot": None,
+        "live_updates_enabled": True,
+        "live_refresh_seconds": 3,
+        "last_live_sync_at": "",
     }
 
     for key, value in defaults.items():
@@ -228,6 +231,7 @@ def load_page(page: dict[str, Any]) -> None:
     st.session_state.loaded_page_snapshot = {
         "title": st.session_state.editor_title,
         "content": st.session_state.editor_content,
+        "updatedAt": page.get("updatedAt", ""),
     }
 
 
@@ -276,6 +280,58 @@ def render_preview_panel() -> None:
         )
 
 
+def has_unsaved_local_changes() -> bool:
+    snapshot = st.session_state.loaded_page_snapshot or {}
+    return (
+        st.session_state.editor_title != snapshot.get("title", "")
+        or st.session_state.editor_content != snapshot.get("content", "")
+    )
+
+
+def sync_selected_page_if_needed(client: ApiClient) -> None:
+    selected_page_id = st.session_state.selected_page_id
+    if not selected_page_id:
+        return
+
+    try:
+        server_page = client.get_page(selected_page_id)
+    except ApiClientError:
+        return
+
+    snapshot = st.session_state.loaded_page_snapshot or {}
+    current_updated_at = snapshot.get("updatedAt", "")
+    server_updated_at = server_page.get("updatedAt", "")
+
+    if server_updated_at and server_updated_at != current_updated_at:
+        if has_unsaved_local_changes():
+            st.session_state.last_live_sync_at = "локальные правки не перезаписаны"
+            return
+        load_page(server_page)
+        st.session_state.last_success = "Открытая страница обновилась с сервера."
+        st.rerun()
+
+    st.session_state.last_live_sync_at = server_updated_at or "checked"
+
+
+def render_live_sync_fragment(client: ApiClient) -> None:
+    run_every = None
+    if st.session_state.live_updates_enabled and st.session_state.selected_page_id:
+        run_every = st.session_state.live_refresh_seconds
+
+    @st.fragment(run_every=run_every)
+    def live_sync_fragment() -> None:
+        sync_selected_page_if_needed(client)
+        if st.session_state.selected_page_id:
+            st.caption(
+                f"Live sync: каждые {st.session_state.live_refresh_seconds} сек. "
+                f"Последняя отметка: {st.session_state.last_live_sync_at or 'ожидание'}"
+            )
+        else:
+            st.caption("Live sync включится автоматически, когда будет выбрана страница.")
+
+    live_sync_fragment()
+
+
 def main() -> None:
     st.set_page_config(
         page_title="WikiLive",
@@ -312,6 +368,14 @@ def main() -> None:
             unsafe_allow_html=True,
         )
         st.caption(f"Backend: `{DEFAULT_BACKEND_URL}`")
+
+        st.toggle("Live sync", key="live_updates_enabled")
+        st.slider(
+            "Интервал обновления, сек",
+            min_value=2,
+            max_value=15,
+            key="live_refresh_seconds",
+        )
 
         if st.button("Обновить страницы", use_container_width=True):
             st.rerun()
@@ -372,6 +436,7 @@ def main() -> None:
         </div>
     """
     st.markdown(metric_cards, unsafe_allow_html=True)
+    render_live_sync_fragment(client)
 
     editor_col, side_col = st.columns([1.25, 0.95], gap="large")
 
