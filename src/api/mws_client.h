@@ -31,6 +31,8 @@ class MwsClient {
 public:
     MwsClient(std::string token, std::string tableId, std::string viewId, MwsClientOptions options = {});
 
+    [[nodiscard]] const std::string& tableId() const;
+    [[nodiscard]] const std::string& viewId() const;
     [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords(const std::vector<std::string>& recordIds = {});
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValue(
         const std::string& tableId,

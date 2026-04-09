@@ -166,6 +166,10 @@ utils::VoidExpected HttpServer::start(const int port) {
             });
         });
 
+        app.get("/api/mws/insert-options", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.getMwsInsertOptions());
+        });
+
         app.post("/api/ai/suggest-insert", [this](HttpResponse* response, HttpRequest* request) {
             handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
                 writeResponse(innerResponse, router_.suggestInsert(body));

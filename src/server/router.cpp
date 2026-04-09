@@ -1,6 +1,8 @@
 #include "src/server/router.h"
 
+#include <algorithm>
 #include <exception>
+#include <unordered_set>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -79,7 +81,20 @@ Router::Router(
     services::RenderService& renderService,
     ai::AiService* aiService,
     WebSocketManager* webSocketManager)
-    : pageService_(pageService), renderService_(renderService), aiService_(aiService), webSocketManager_(webSocketManager) {
+    : Router(pageService, renderService, nullptr, aiService, webSocketManager) {
+}
+
+Router::Router(
+    services::PageService& pageService,
+    services::RenderService& renderService,
+    api::MwsClient* mwsClient,
+    ai::AiService* aiService,
+    WebSocketManager* webSocketManager)
+    : pageService_(pageService),
+      renderService_(renderService),
+      mwsClient_(mwsClient),
+      aiService_(aiService),
+      webSocketManager_(webSocketManager) {
 }
 
 RouteResponse Router::handleHealth() const {
@@ -256,6 +271,54 @@ RouteResponse Router::renderContent(const std::string& payload) {
         }
 
         return ok("{\"html\":\"" + utils::escapeJson(rendered.value()) + "\"}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::getMwsInsertOptions() {
+    try {
+        if (mwsClient_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "MWS client is not configured",
+                503,
+                false));
+        }
+
+        const auto records = mwsClient_->getRecords();
+        if (!records) {
+            return fail(records.error());
+        }
+
+        nlohmann::json payload = {
+            {"tableId", mwsClient_->tableId()},
+            {"viewId", mwsClient_->viewId()},
+            {"records", nlohmann::json::array()},
+            {"fieldNames", nlohmann::json::array()},
+        };
+
+        std::unordered_set<std::string> fieldNames;
+        for (const auto& record : records.value()) {
+            nlohmann::json fieldsJson = nlohmann::json::object();
+            for (const auto& [fieldName, fieldValue] : record.fields) {
+                fieldsJson[fieldName] = fieldValue;
+                fieldNames.insert(fieldName);
+            }
+
+            payload["records"].push_back({
+                {"recordId", record.recordId},
+                {"fields", std::move(fieldsJson)},
+            });
+        }
+
+        std::vector<std::string> sortedFieldNames(fieldNames.begin(), fieldNames.end());
+        std::sort(sortedFieldNames.begin(), sortedFieldNames.end());
+        payload["fieldNames"] = sortedFieldNames;
+
+        return ok(payload.dump());
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {

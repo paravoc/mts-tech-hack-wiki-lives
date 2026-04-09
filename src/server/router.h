@@ -4,6 +4,7 @@
 #include <string>
 
 #include "src/ai/ai_service.h"
+#include "src/api/mws_client.h"
 #include "src/server/websocket_manager.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
@@ -21,6 +22,12 @@ public:
     Router(
         services::PageService& pageService,
         services::RenderService& renderService,
+        ai::AiService* aiService,
+        WebSocketManager* webSocketManager = nullptr);
+    Router(
+        services::PageService& pageService,
+        services::RenderService& renderService,
+        api::MwsClient* mwsClient = nullptr,
         ai::AiService* aiService = nullptr,
         WebSocketManager* webSocketManager = nullptr);
 
@@ -31,6 +38,7 @@ public:
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
+    [[nodiscard]] RouteResponse getMwsInsertOptions();
     [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
 
 private:
@@ -46,6 +54,7 @@ private:
 
     services::PageService& pageService_;
     services::RenderService& renderService_;
+    api::MwsClient* mwsClient_ = nullptr;
     ai::AiService* aiService_ = nullptr;
     WebSocketManager* webSocketManager_ = nullptr;
 };

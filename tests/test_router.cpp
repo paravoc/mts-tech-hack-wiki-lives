@@ -119,7 +119,7 @@ void rejectsAiRequestWhenServiceIsMissing() {
     wikilive::storage::InMemoryPageStorage storage;
     wikilive::services::PageService pageService(storage);
     wikilive::services::RenderService renderService;
-    wikilive::server::Router router(pageService, renderService, nullptr, nullptr);
+    wikilive::server::Router router(pageService, renderService);
 
     const auto response = router.suggestInsert(R"({"userPrompt":"insert project status"})");
     wikilive::tests::expectEqual(response.statusCode, 503, "missing AI service should return 503");

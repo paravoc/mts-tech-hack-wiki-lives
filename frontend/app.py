@@ -206,6 +206,8 @@ def ensure_state() -> None:
         "live_updates_enabled": True,
         "live_refresh_seconds": 3,
         "last_live_sync_at": "",
+        "insert_options_cache": None,
+        "insert_options_error": "",
     }
 
     for key, value in defaults.items():
@@ -245,6 +247,32 @@ def insert_candidate(candidate_insert: str) -> None:
     st.session_state.last_success = "Вставка добавлена в редактор."
 
 
+def insert_text_snippet(snippet: str, new_line: bool = True) -> None:
+    current = st.session_state.editor_content
+    if not current.strip():
+        st.session_state.editor_content = snippet
+    elif new_line:
+        separator = "\n" if current.endswith("\n") else "\n\n"
+        st.session_state.editor_content = f"{current}{separator}{snippet}"
+    else:
+        st.session_state.editor_content = f"{current}{snippet}"
+    st.session_state.preview_html = ""
+
+
+def build_record_label(record: dict[str, Any]) -> str:
+    fields = record.get("fields", {})
+    for preferred in ("Название", "title", "name", "Статус", "status"):
+        value = fields.get(preferred)
+        if value:
+            return f"{record.get('recordId', 'record')} · {value}"
+
+    for field_value in fields.values():
+        if field_value:
+            return f"{record.get('recordId', 'record')} · {field_value}"
+
+    return record.get("recordId", "record")
+
+
 def backend_status(client: ApiClient) -> tuple[bool, str]:
     try:
         health = client.health()
@@ -259,6 +287,18 @@ def fetch_pages(client: ApiClient) -> tuple[list[dict[str, Any]], str | None]:
         return client.list_pages(), None
     except ApiClientError as exc:
         return [], str(exc)
+
+
+def ensure_insert_options_loaded(client: ApiClient, force_refresh: bool = False) -> None:
+    if st.session_state.insert_options_cache is not None and not force_refresh:
+        return
+
+    try:
+        st.session_state.insert_options_cache = client.get_insert_options()
+        st.session_state.insert_options_error = ""
+    except ApiClientError as exc:
+        st.session_state.insert_options_cache = None
+        st.session_state.insert_options_error = str(exc)
 
 
 def render_preview_panel() -> None:
@@ -452,6 +492,89 @@ def main() -> None:
             """,
             unsafe_allow_html=True,
         )
+
+        helper_col, helper_refresh_col = st.columns([1.4, 1.0])
+        with helper_col:
+            with st.popover("Вставить живое поле", use_container_width=True):
+                ensure_insert_options_loaded(client)
+
+                if st.session_state.insert_options_error:
+                    st.error(st.session_state.insert_options_error)
+                else:
+                    options = st.session_state.insert_options_cache or {}
+                    records = options.get("records", [])
+                    field_names = options.get("fieldNames", [])
+
+                    st.caption("Панель подбирает вставку для текущей MWS-таблицы и вставляет готовый токен в текст.")
+
+                    if not records or not field_names:
+                        st.info("Не удалось получить записи или поля из текущей таблицы MWS.")
+                    else:
+                        table_id = options.get("tableId", "tableId")
+                        record_index = st.selectbox(
+                            "Запись",
+                            options=list(range(len(records))),
+                            format_func=lambda idx: build_record_label(records[idx]),
+                            key="insert-record-index",
+                        )
+                        selected_record = records[record_index]
+                        record_fields = selected_record.get("fields", {})
+
+                        sorted_fields = sorted(
+                            field_names,
+                            key=lambda field_name: (field_name not in record_fields, field_name.lower()),
+                        )
+                        selected_field = st.selectbox(
+                            "Поле",
+                            options=sorted_fields,
+                            key="insert-field-name",
+                        )
+
+                        token = (
+                            "{{"
+                            f"{table_id}:"
+                            f"{selected_record.get('recordId', 'recordId')}:"
+                            f"{selected_field}"
+                            "}}"
+                        )
+
+                        preview_value = record_fields.get(selected_field, "—")
+                        st.code(token, language="text")
+                        st.caption(f"Текущее значение: {preview_value}")
+
+                        insert_col1, insert_col2 = st.columns(2)
+                        if insert_col1.button("Вставить", key="insert-token-inline", use_container_width=True):
+                            insert_text_snippet(token, new_line=False)
+                            st.session_state.last_success = "Живое поле добавлено в редактор."
+                            st.rerun()
+
+                        if insert_col2.button("С новой строки", key="insert-token-newline", use_container_width=True):
+                            insert_text_snippet(token, new_line=True)
+                            st.session_state.last_success = "Живое поле добавлено отдельным блоком."
+                            st.rerun()
+
+        with helper_refresh_col:
+            if st.button("Обновить поля MWS", use_container_width=True):
+                ensure_insert_options_loaded(client, force_refresh=True)
+                if st.session_state.insert_options_error:
+                    st.session_state.last_error = st.session_state.insert_options_error
+                else:
+                    st.session_state.last_success = "Список полей и записей обновлен."
+                st.rerun()
+
+        snippet_col1, snippet_col2, snippet_col3 = st.columns(3)
+        if snippet_col1.button("## Заголовок", use_container_width=True):
+            insert_text_snippet("## Новый раздел")
+            st.session_state.last_success = "Шаблон заголовка добавлен."
+            st.rerun()
+        if snippet_col2.button("> Важно", use_container_width=True):
+            insert_text_snippet("> Важное замечание")
+            st.session_state.last_success = "Шаблон заметки добавлен."
+            st.rerun()
+        if snippet_col3.button("---", use_container_width=True):
+            insert_text_snippet("---")
+            st.session_state.last_success = "Разделитель добавлен."
+            st.rerun()
 
         st.text_input("Заголовок", key="editor_title", placeholder="Например, Статус проекта")
         st.text_area(

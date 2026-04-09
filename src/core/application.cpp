@@ -134,7 +134,12 @@ bool Application::initialize(const char* envPath) {
     } else {
         utils::Logger::instance().info("AI provider is disabled");
     }
-    router_ = std::make_unique<server::Router>(*pageService_, *renderService_, aiService_.get(), webSocketManager_.get());
+    router_ = std::make_unique<server::Router>(
+        *pageService_,
+        *renderService_,
+        mwsClient_.get(),
+        aiService_.get(),
+        webSocketManager_.get());
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 
     initialized_ = true;

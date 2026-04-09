@@ -462,6 +462,14 @@ MwsClient::MwsClient(std::string token, std::string tableId, std::string viewId,
       options_(options) {
 }
 
+const std::string& MwsClient::tableId() const {
+    return tableId_;
+}
+
+const std::string& MwsClient::viewId() const {
+    return viewId_;
+}
+
 utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords(const std::vector<std::string>& recordIds) {
     auto result = retryPolicy_.run(
         [this, &recordIds]() {

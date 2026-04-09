@@ -55,6 +55,9 @@ class ApiClient:
         data = self._request("POST", "/api/render", json_body={"content": content})
         return data["html"]
 
+    def get_insert_options(self) -> dict[str, Any]:
+        return self._request("GET", "/api/mws/insert-options")
+
     def suggest_insert(
         self,
         user_prompt: str,
