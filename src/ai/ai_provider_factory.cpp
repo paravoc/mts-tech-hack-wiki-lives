@@ -29,7 +29,14 @@ std::unique_ptr<AiProvider> createAiProvider(const core::AppConfig& config) {
     if (config.aiProvider == "ollama") {
         return std::make_unique<OllamaAiProvider>(
             config.aiBaseUrl,
-            config.aiModel);
+            config.aiModel,
+            OllamaAiProviderOptions{
+                .requestTimeoutMs = config.requestTimeoutMs,
+                .retryAttempts = config.retryAttempts,
+                .retryBaseDelayMs = config.retryBaseDelayMs,
+                .maxTokens = config.aiMaxTokens,
+                .temperature = config.aiTemperature,
+            });
     }
 
     utils::Logger::instance().warn(
