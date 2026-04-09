@@ -10,6 +10,7 @@ import requests
 ROOT = Path(__file__).resolve().parents[1]
 ENV_PATH = ROOT / ".env"
 BASE_URL = "https://tables.mws.ru/fusion/v1"
+BACKEND_BASE_URL = "http://127.0.0.1:3000"
 
 
 def load_env() -> dict[str, str]:
@@ -87,19 +88,54 @@ def filter_fields(payload: dict[str, Any], allowed: set[str]) -> dict[str, Any]:
     return filtered
 
 
+def list_pages_via_backend() -> list[dict[str, Any]]:
+    response = requests.get(f"{BACKEND_BASE_URL}/api/pages", timeout=15)
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success", False):
+        raise RuntimeError(f"Backend pages list failed: {payload}")
+    return payload.get("data", {}).get("items", [])
+
+
+def delete_page_via_backend(page_id: str) -> None:
+    response = requests.delete(f"{BACKEND_BASE_URL}/api/pages/{page_id}", timeout=15)
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success", False):
+        raise RuntimeError(f"Backend page delete failed: {payload}")
+
+
+def create_page_via_backend(title: str, content: str) -> dict[str, Any]:
+    response = requests.post(
+        f"{BACKEND_BASE_URL}/api/pages",
+        json={"title": title, "content": content},
+        timeout=15,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("success", False):
+        raise RuntimeError(f"Backend page create failed: {payload}")
+    return payload.get("data", {}).get("item", {})
+
+
 def main() -> None:
     env = load_env()
     token = env.get("MWS_TOKEN", "")
     data_table_id = env.get("MWS_TABLE_ID", "")
     data_view_id = env.get("MWS_VIEW_ID", "")
-    wiki_table_id = env.get("WIKI_PAGES_TABLE_ID", "")
-    wiki_view_id = env.get("WIKI_PAGES_VIEW_ID", "")
 
-    if not all((token, data_table_id, data_view_id, wiki_table_id, wiki_view_id)):
-        raise SystemExit("В .env не хватает MWS/WikiPages параметров.")
+    if not all((token, data_table_id, data_view_id)):
+        raise SystemExit("В .env не хватает MWS параметров.")
 
     existing_data_records = list_records(token, data_table_id, data_view_id)
     allowed_data_fields = pick_existing_fields(existing_data_records)
+    existing_pages = list_pages_via_backend()
+    demo_titles = {"Оперативная сводка", "Паспорт релиза", "Медиа из таблицы"}
+    for page in existing_pages:
+        page_id = str(page.get("pageId", ""))
+        title = str(page.get("title", ""))
+        if title == "Debug page" or title in demo_titles:
+            delete_page_via_backend(page_id)
 
     demo_data_templates = [
         {
@@ -129,29 +165,56 @@ def main() -> None:
     primary_field = "Название" if "Название" in allowed_data_fields else next(iter(allowed_data_fields), "Опции")
     secondary_field = "Опции" if "Опции" in allowed_data_fields else primary_field
     timestamp = now_iso()
+    attachment_record_id = next(
+        (
+            record.get("recordId", "")
+            for record in existing_data_records + created_data_records
+            if record.get("fields", {}).get("Вложения")
+        ),
+        "",
+    )
 
-    demo_pages = []
-    for index, record_id in enumerate(created_ids, start=1):
+    demo_pages = [
+        {
+            "title": "Оперативная сводка",
+            "content": (
+                "## Что происходит сейчас\n"
+                f"Проект: {{{{{data_table_id}:{created_ids[0]}:{primary_field}}}}}\n\n"
+                "> Текущий статус\n"
+                f"{{{{{data_table_id}:{created_ids[0]}:{secondary_field}}}}}\n\n"
+                "---\n"
+                "Этот документ показывает, как живая страница заменяет ручное копирование статусов из таблицы."
+            ),
+        },
+        {
+            "title": "Паспорт релиза",
+            "content": (
+                "## Карточка релиза\n"
+                f"Релизный поток: {{{{{data_table_id}:{created_ids[1]}:{primary_field}}}}}\n\n"
+                "> Что нужно проверить\n"
+                f"{{{{{data_table_id}:{created_ids[1]}:{secondary_field}}}}}\n\n"
+                "---\n"
+                "Здесь удобно держать короткий текст, а все чувствительные к изменениям поля оставлять живыми."
+            ),
+        },
+    ]
+
+    if attachment_record_id and "Вложения" in allowed_data_fields:
         demo_pages.append(
             {
-                "fields": {
-                    "pageId": f"demo-{record_id.lower()}",
-                    "title": f"Демо-страница {index}",
-                    "content": (
-                        "## Короткая сводка\n"
-                        f"Название: {{{{{data_table_id}:{record_id}:{primary_field}}}}}\n\n"
-                        "> Важный статус\n"
-                        f"{{{{{data_table_id}:{record_id}:{secondary_field}}}}}\n\n"
-                        "---\n"
-                        "Этот текст создан seed-скриптом и уже готов для демонстрации в UI."
-                    ),
-                    "createdAt": timestamp,
-                    "updatedAt": timestamp,
-                }
+                "title": "Медиа из таблицы",
+                "content": (
+                    "## Визуальный блок\n"
+                    "Ниже подтягивается изображение напрямую из MWS без отдельной загрузки в страницу.\n\n"
+                    f"{{{{{data_table_id}:{attachment_record_id}:Вложения}}}}\n\n"
+                    "---\n"
+                    "Так можно собирать живые отчеты, документацию или карточки продукта."
+                ),
             }
         )
 
-    create_records(token, wiki_table_id, wiki_view_id, demo_pages)
+    for page in demo_pages:
+        create_page_via_backend(page["title"], page["content"])
 
     print("Готово.")
     print(f"Создано demo records: {', '.join(created_ids)}")
