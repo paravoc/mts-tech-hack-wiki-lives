@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import os
 from html import escape
@@ -10,10 +11,12 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from utils.api_client import ApiClient, ApiClientError
-from utils.editor_shell import PAGE_BREAK_MARKER, render_editor_shell
+from utils import editor_shell as editor_shell_module
 from utils.document_tools import build_formula_token, count_words, describe_formula, extract_formula_tokens, render_document_html
 
 URL = os.getenv("WIKILIVE_BACKEND_URL", "http://127.0.0.1:3000")
+editor_shell = importlib.reload(editor_shell_module)
+PAGE_BREAK_MARKER = editor_shell.PAGE_BREAK_MARKER
 
 
 def inject_css() -> None:
@@ -2836,7 +2839,7 @@ def main() -> None:
 
     draft_key = st.session_state.selected_page_id or f"new-{st.session_state.new_draft_id}"
     st.text_area("Текст", key="editor_content", placeholder="", label_visibility="collapsed")
-    render_editor_shell(
+    editor_shell.render_editor_shell(
         build_editor_lookup_payload(st.session_state.catalog),
         draft_key,
         st.session_state.latest_insert_snippet,
