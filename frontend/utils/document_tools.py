@@ -2,11 +2,19 @@
 
 from dataclasses import dataclass
 from html import escape
+import json
 import re
 from typing import Any, Iterable
+from urllib.parse import unquote
 
 
 FORMULA_PATTERN = re.compile(r"\{\{([^:}]+):([^:}]+):([^}]+)\}\}")
+ATTACHMENT_PATTERN = re.compile(r"\[\[WL_ATTACHMENT:([^\]]+)\]\]")
+MARKDOWN_LINK_PATTERN = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+PAGE_LINK_PATTERN = re.compile(r"\[\[([^\]]+)\]\]")
+INLINE_TOKEN_PATTERN = re.compile(
+    r"(\{\{[^:}]+:[^:}]+:[^}]+\}\}|\[\[WL_ATTACHMENT:[^\]]+\]\]|\[[^\]]+\]\([^)]+\)|\[\[[^\]]+\]\])"
+)
 TABLE_SEPARATOR_CELL_PATTERN = re.compile(r"^:?-{3,}:?$")
 
 
@@ -111,6 +119,50 @@ def _render_inline_formula(
     )
 
 
+def _render_attachment(meta: dict[str, Any]) -> str:
+
+    name = str(meta.get("name", "Вложение"))
+    mime = str(meta.get("mime", ""))
+    src = str(meta.get("src", ""))
+    width = int(meta.get("width", 520) or 520)
+    if mime.startswith("image/") or src.startswith("data:image/"):
+        safe_width = max(180, min(width, 760))
+        return (
+            '<figure class="doc-attachment doc-attachment--image" '
+            f'style="margin:0.9rem 0;border-radius:0;max-width:{safe_width}px;">'
+            f'<img src="{escape(src)}" alt="{escape(name)}" '
+            'style="display:block;width:100%;max-height:420px;object-fit:cover;border-radius:0;background:#eef1f7;"/>'
+            f'<figcaption style="margin-top:0.45rem;color:#8b92a3;font-size:0.78rem;">{escape(name)}</figcaption>'
+            "</figure>"
+        )
+    return (
+        '<span class="doc-file-chip" '
+        'style="display:inline-flex;align-items:center;gap:0.65rem;padding:0.62rem 0.8rem;'
+        'border-radius:14px;border:1px solid rgba(20,23,28,0.08);background:#f8f9fc;margin:0.2rem 0;">'
+        '<span style="width:0.6rem;height:0.6rem;border-radius:999px;background:#8f7cff;display:inline-block;"></span>'
+        f'<span style="font-weight:700;color:#1e2430;">{escape(name)}</span>'
+        f'<span style="color:#8b92a3;font-size:0.78rem;">{escape(mime or "attachment")}</span>'
+        "</span>"
+    )
+
+
+def _render_markdown_link(label: str, url: str) -> str:
+    return (
+        f'<a class="doc-inline-link" href="{escape(url)}" target="_blank" '
+        'style="color:#546dff;text-decoration:underline;text-underline-offset:2px;">'
+        f"{escape(label)}</a>"
+    )
+
+
+def _render_page_link(title: str) -> str:
+    return (
+        '<span class="doc-page-link" '
+        'style="display:inline-flex;align-items:center;min-height:1.7rem;padding:0 0.7rem;'
+        'border-radius:999px;background:#f3f0ff;color:#5e49d2;font-size:0.78rem;font-weight:700;">'
+        f"{escape(title)}</span>"
+    )
+
+
 def render_document_html(content: str, insert_options: Any = None) -> str:
     if not content.strip():
         return """
@@ -122,23 +174,43 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
 
     token_cursor = 0
 
-    def replace_formulas(line: str) -> str:
+    def replace_inline_tokens(line: str) -> str:
         nonlocal token_cursor
 
         parts: list[str] = []
         last_end = 0
-        for match in FORMULA_PATTERN.finditer(line):
+        for match in INLINE_TOKEN_PATTERN.finditer(line):
             parts.append(escape(line[last_end:match.start()]))
-            groups = match.groups()
-            token = FormulaToken(
-                index=token_cursor,
-                raw=match.group(0),
-                table_id=groups[0],
-                record_id=groups[1],
-                field_name=groups[2],
-            )
-            parts.append(_render_inline_formula(token, insert_options))
-            token_cursor += 1
+            raw = match.group(0)
+            formula_match = FORMULA_PATTERN.fullmatch(raw)
+            attachment_match = ATTACHMENT_PATTERN.fullmatch(raw)
+            markdown_link_match = MARKDOWN_LINK_PATTERN.fullmatch(raw)
+            page_link_match = PAGE_LINK_PATTERN.fullmatch(raw)
+
+            if formula_match:
+                groups = formula_match.groups()
+                token = FormulaToken(
+                    index=token_cursor,
+                    raw=raw,
+                    table_id=groups[0],
+                    record_id=groups[1],
+                    field_name=groups[2],
+                )
+                parts.append(_render_inline_formula(token, insert_options))
+                token_cursor += 1
+            elif attachment_match:
+                payload = attachment_match.group(1)
+                try:
+                    attachment_payload = json.loads(unquote(payload))
+                except Exception:
+                    attachment_payload = {}
+                parts.append(_render_attachment(attachment_payload))
+            elif markdown_link_match:
+                parts.append(_render_markdown_link(markdown_link_match.group(1), markdown_link_match.group(2)))
+            elif page_link_match and not raw.startswith("[[WL_ATTACHMENT:"):
+                parts.append(_render_page_link(page_link_match.group(1)))
+            else:
+                parts.append(escape(raw))
             last_end = match.end()
 
         parts.append(escape(line[last_end:]))
@@ -169,13 +241,13 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
 
     def render_table_block(header_cells: list[str], body_rows: list[list[str]]) -> str:
         header_html = "".join(
-            f'<th style="padding:0.72rem 0.8rem;text-align:left;border-bottom:1px solid rgba(20,23,28,0.08);background:rgba(227,6,19,0.05);">{replace_formulas(cell)}</th>'
+            f'<th style="padding:0.72rem 0.8rem;text-align:left;border-bottom:1px solid rgba(20,23,28,0.08);background:#f6f7fb;">{replace_inline_tokens(cell)}</th>'
             for cell in header_cells
         )
         body_html = []
         for row in body_rows:
             cells_html = "".join(
-                f'<td style="padding:0.72rem 0.8rem;border-bottom:1px solid rgba(20,23,28,0.06);vertical-align:top;">{replace_formulas(cell)}</td>'
+                f'<td style="padding:0.72rem 0.8rem;border-bottom:1px solid rgba(20,23,28,0.06);vertical-align:top;">{replace_inline_tokens(cell)}</td>'
                 for cell in row
             )
             body_html.append(f"<tr>{cells_html}</tr>")
@@ -224,7 +296,7 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
         if stripped.startswith("## "):
             flush_paragraph()
             blocks.append(
-                f'<h2 class="doc-heading">{replace_formulas(stripped[3:])}</h2>'
+                f'<h2 class="doc-heading">{replace_inline_tokens(stripped[3:])}</h2>'
             )
             index += 1
             continue
@@ -239,13 +311,13 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
             flush_paragraph()
             blocks.append(
                 '<div class="doc-callout">'
-                f"{replace_formulas(stripped[2:])}"
+                f"{replace_inline_tokens(stripped[2:])}"
                 "</div>"
             )
             index += 1
             continue
 
-        paragraph_parts.append(replace_formulas(line))
+        paragraph_parts.append(replace_inline_tokens(line))
         index += 1
 
     flush_paragraph()
