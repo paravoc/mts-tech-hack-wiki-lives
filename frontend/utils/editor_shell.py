@@ -21,12 +21,7 @@ def render_editor_shell(
         <style>
         html, body { margin: 0; padding: 0; background: transparent; color: #111827; font-family: 'Manrope', sans-serif; }
         .wikilive-rich-root { position: relative; min-height: 82vh; padding: 0.2rem 0 2rem; }
-        .wl-workbench {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) 320px;
-            gap: 1rem;
-            align-items: start;
-        }
+        .wl-workbench { display: block; }
         .wl-toolbar {
             position: sticky;
             top: 0;
@@ -98,17 +93,28 @@ def render_editor_shell(
             accent-color: #e30613;
         }
         .wl-canvas {
-            max-width: 920px;
+            max-width: 980px;
             margin: 0 auto;
             padding: 0 1.2rem 4rem;
+            overflow: visible;
+        }
+        .wl-page {
+            width: min(100%, 860px);
+            min-height: 1120px;
+            margin: 0 auto;
+            padding: 3.6rem 0 5.6rem;
+            overflow: visible;
         }
         .wl-editor {
-            min-height: 78vh;
+            min-height: 980px;
+            max-width: 760px;
+            margin: 0 auto;
             outline: none;
             color: #111827;
             caret-color: #e30613;
             font: 500 17px/1.9 Manrope, sans-serif;
             word-break: break-word;
+            overflow: visible;
         }
         .wl-editor:empty::before {
             content: attr(data-placeholder);
@@ -123,37 +129,36 @@ def render_editor_shell(
         .wl-line {
             min-height: 1.92em;
             white-space: pre-wrap;
-            padding: 0.08rem 0.8rem 0.12rem 0.9rem;
-            margin: 0.08rem -0.25rem;
+            padding: 0;
+            margin: 0 2.8rem 0.88rem 2.8rem;
             transition: background .16s ease, box-shadow .16s ease;
-        }
-        .wl-line:hover {
-            background: rgba(255,255,255,.72);
-            box-shadow: 0 10px 22px rgba(17,24,39,.04);
         }
         .wl-line__body { min-height: 1.92em; }
         .wl-line.is-comment-target {
-            background: rgba(227,6,19,.07);
-            box-shadow: 0 14px 24px rgba(227,6,19,.08);
+            background: rgba(227,6,19,.04);
         }
         .wl-line[data-kind="heading1"] {
             font: 800 2rem/1.22 'Onest', sans-serif;
             letter-spacing: -0.03em;
-            margin: 0.22rem 0 0.34rem;
+            margin-top: 0.35rem;
+            margin-bottom: 0.62rem;
         }
         .wl-line[data-kind="heading2"] {
             font: 800 1.46rem/1.34 'Onest', sans-serif;
             letter-spacing: -0.02em;
-            margin: 0.18rem 0 0.24rem;
+            margin-top: 0.28rem;
+            margin-bottom: 0.52rem;
         }
         .wl-line[data-kind="heading3"] {
             font: 700 1.12rem/1.55 'Onest', sans-serif;
             letter-spacing: -0.01em;
-            margin: 0.12rem 0 0.12rem;
+            margin-top: 0.18rem;
+            margin-bottom: 0.42rem;
         }
         .wl-line[data-kind="callout"] {
             padding: 0.38rem 0.85rem;
-            margin: 0.2rem 0;
+            margin-top: 0.18rem;
+            margin-bottom: 0.7rem;
             border-left: 3px solid #e30613;
             border-radius: 0 14px 14px 0;
             background: rgba(227,6,19,.05);
@@ -189,15 +194,15 @@ def render_editor_shell(
             transform: translateY(0);
         }
         .wl-block-handle {
-            left: -2.15rem;
-            top: 0.25rem;
+            left: -2.75rem;
+            top: 0.08rem;
             width: 1.7rem;
             height: 1.7rem;
             font: 800 .84rem/1 Manrope, sans-serif;
         }
         .wl-block-comment {
-            right: -2.45rem;
-            bottom: 0.18rem;
+            right: -2.8rem;
+            bottom: 0.04rem;
             min-width: 1.9rem;
             height: 1.9rem;
             padding: 0 0.45rem;
@@ -213,26 +218,27 @@ def render_editor_shell(
             align-items: center;
             gap: 0.4rem;
             margin: 0 0.14rem;
-            border: 1px solid rgba(17,24,39,.10);
-            background: rgba(255,255,255,.98);
-            box-shadow: 0 8px 20px rgba(17,24,39,.06);
+            border: 1px solid transparent;
+            background: transparent;
+            box-shadow: none;
             cursor: pointer;
-            transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease;
+            transition: transform .16s ease, border-color .16s ease, box-shadow .16s ease, background .16s ease;
             vertical-align: middle;
         }
         .wl-object:hover, .wl-object.is-selected, .wl-attachment:hover, .wl-attachment.is-selected {
             transform: translateY(-1px);
-            border-color: rgba(227,6,19,.42);
-            box-shadow: 0 14px 30px rgba(227,6,19,.10);
+            border-color: rgba(227,6,19,.24);
+            background: rgba(227,6,19,.05);
+            box-shadow: 0 8px 22px rgba(227,6,19,.06);
         }
-        .wl-object { padding: 0.22rem 0.55rem; border-radius: 999px; }
+        .wl-object { padding: 0.16rem 0.28rem; border-radius: 12px; }
         .wl-object__field { color: #bf0812; font-size: .74rem; font-weight: 800; }
         .wl-object__value { color: #4b5563; font-size: .8rem; max-width: 14rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .wl-attachment { border-radius: 18px; }
         .wl-attachment--image {
             flex-direction: column;
             align-items: stretch;
-            padding: 0.46rem;
+            padding: 0.2rem;
             width: fit-content;
             max-width: 520px;
         }
@@ -253,7 +259,7 @@ def render_editor_shell(
         }
         .wl-attachment__name { color: #111827; font-size: .82rem; font-weight: 700; }
         .wl-attachment__type { color: #6b7280; font-size: .74rem; font-weight: 700; }
-        .wl-attachment--file { padding: 0.45rem 0.7rem; border-radius: 999px; }
+        .wl-attachment--file { padding: 0.18rem 0.24rem; border-radius: 12px; }
         .wl-attachment__dot { width: .5rem; height: .5rem; border-radius: 999px; background: #e30613; flex: none; }
         .wl-table-block {
             margin: 0.55rem 0 0.85rem;
@@ -389,15 +395,18 @@ def render_editor_shell(
             font: 700 .76rem/1.45 Manrope, sans-serif;
         }
         .wl-comments {
-            position: sticky;
-            top: 4.6rem;
-            max-height: calc(100vh - 5.4rem);
+            position: fixed;
+            right: max(18px, calc((100vw - 1380px) / 2));
+            top: 5.1rem;
+            width: 310px;
+            max-height: calc(100vh - 6.2rem);
             overflow: auto;
             border-radius: 24px;
             border: 1px solid rgba(17,24,39,.08);
             background: rgba(255,255,255,.92);
             box-shadow: 0 18px 40px rgba(17,24,39,.08);
             backdrop-filter: blur(12px);
+            z-index: 55;
         }
         .wl-comments__head {
             position: sticky;
@@ -620,14 +629,27 @@ def render_editor_shell(
         }
         @media (max-width: 980px) {
             .wl-outline { display: none; }
-            .wl-workbench { grid-template-columns: 1fr; }
             .wl-canvas { padding: 0 0.2rem 3rem; max-width: none; }
+            .wl-page {
+                width: min(100%, 100%);
+                min-height: 78vh;
+                padding: 1rem 0 3rem;
+            }
+            .wl-editor {
+                max-width: none;
+                min-height: 64vh;
+                font-size: 16px;
+            }
+            .wl-line {
+                margin-left: 1.7rem;
+                margin-right: 1.7rem;
+            }
             .wl-comments {
                 position: static;
+                width: auto;
                 max-height: none;
-                margin: 0 0.2rem;
+                margin: 0.8rem 0.2rem 0;
             }
-            .wl-editor { min-height: 64vh; font-size: 16px; }
             .wl-block-handle { left: -0.1rem; }
             .wl-block-comment { right: 0.1rem; }
         }
@@ -672,7 +694,9 @@ def render_editor_shell(
             <input id="wl-file-input" type="file" multiple hidden />
             <div class="wl-workbench">
                 <div class="wl-canvas">
-                    <div id="wikilive-editor" class="wl-editor" contenteditable="true" spellcheck="true" data-placeholder="Пиши здесь"></div>
+                    <div class="wl-page">
+                        <div id="wikilive-editor" class="wl-editor" contenteditable="true" spellcheck="true" data-placeholder="Пиши здесь"></div>
+                    </div>
                 </div>
                 <aside class="wl-comments">
                     <div class="wl-comments__head">
@@ -968,8 +992,25 @@ def render_editor_shell(
             return `[[WL_ATTACHMENT:${encodeURIComponent(JSON.stringify(meta))}]]`;
         }
 
+        function inferMimeFromName(name) {
+            const value = String(name || "").toLowerCase();
+            if (/\.(png)$/.test(value)) return "image/png";
+            if (/\.(jpe?g)$/.test(value)) return "image/jpeg";
+            if (/\.(gif)$/.test(value)) return "image/gif";
+            if (/\.(webp)$/.test(value)) return "image/webp";
+            if (/\.(bmp)$/.test(value)) return "image/bmp";
+            if (/\.(svg)$/.test(value)) return "image/svg+xml";
+            return "";
+        }
+
         function isImageMeta(meta) {
-            return Boolean((meta.mime || "").startsWith("image/") || String(meta.src || "").startsWith("data:image/"));
+            const mime = String(meta.mime || "");
+            const src = String(meta.src || "");
+            return Boolean(
+                mime.startsWith("image/") ||
+                src.startsWith("data:image/") ||
+                inferMimeFromName(meta.name || "").startsWith("image/")
+            );
         }
 
         function appendFormattedText(target, text) {
@@ -2071,6 +2112,26 @@ def render_editor_shell(
             else body.appendChild(document.createElement("br"));
         }
 
+        function insertParagraphAfterCurrentBlock() {
+            const block = getCurrentBlock();
+            if (!block || block.dataset.kind === "table" || block.dataset.kind === "code") return false;
+            const blocks = getTopBlocks();
+            const index = Math.max(0, blocks.indexOf(block));
+            const paragraph = createLineBlock("line", "", { tokenIndex: 0 });
+            if (block.nextSibling) editor.insertBefore(paragraph, block.nextSibling);
+            else editor.appendChild(paragraph);
+            assignBlockAnchors();
+            queueDraftStore();
+            queueHistorySnapshot();
+            queueOutlineRefresh();
+            queueFrameHeight();
+            window.requestAnimationFrame(() => {
+                placeCaretAtBlock(index + 1, "start", false);
+                setCommentTarget(buildCommentTarget(paragraph));
+            });
+            return true;
+        }
+
         function insertSnippet(snippet) {
             if (!snippet) return;
             const blockIndex = getCurrentBlockIndex();
@@ -2103,11 +2164,18 @@ def render_editor_shell(
 
         async function buildAttachmentSnippetFromFile(file) {
             const src = await readFileAsDataUrl(file);
+            const srcMimeMatch = String(src).match(/^data:([^;]+);/i);
+            const inferredMime = (
+                String(file.type || "").trim() ||
+                (srcMimeMatch ? String(srcMimeMatch[1] || "") : "") ||
+                inferMimeFromName(file.name || "")
+            );
+            const mime = inferredMime || "application/octet-stream";
             return buildAttachmentSnippet({
                 name: file.name || "Вложение",
-                mime: file.type || "application/octet-stream",
+                mime,
                 src,
-                width: file.type.startsWith("image/") ? 420 : 0,
+                width: mime.startsWith("image/") ? 420 : 0,
                 opacity: 1,
             });
         }
@@ -2276,6 +2344,12 @@ def render_editor_shell(
                 event.preventDefault();
                 applyBlockStyle("heading3");
                 return;
+            }
+            if (event.key === "Enter" && !modifier && !event.shiftKey) {
+                if (insertParagraphAfterCurrentBlock()) {
+                    event.preventDefault();
+                    return;
+                }
             }
             if (selectedObject && (event.key === "Backspace" || event.key === "Delete")) {
                 event.preventDefault();
