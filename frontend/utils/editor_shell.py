@@ -14,11 +14,19 @@ def render_editor_shell(
     draft_key: str,
     active_snippet: str,
     active_hint: str,
+    page_id: str | None,
+    backend_url: str,
 ) -> None:
     html = r"""
         <style>
         html, body { margin: 0; padding: 0; background: transparent; color: #111827; font-family: 'Manrope', sans-serif; }
         .wikilive-rich-root { position: relative; min-height: 82vh; padding: 0.2rem 0 2rem; }
+        .wl-workbench {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 1rem;
+            align-items: start;
+        }
         .wl-toolbar {
             position: sticky;
             top: 0;
@@ -90,7 +98,7 @@ def render_editor_shell(
             accent-color: #e30613;
         }
         .wl-canvas {
-            max-width: 980px;
+            max-width: 920px;
             margin: 0 auto;
             padding: 0 1.2rem 4rem;
         }
@@ -106,7 +114,28 @@ def render_editor_shell(
             content: attr(data-placeholder);
             color: #9ca3af;
         }
-        .wl-line { min-height: 1.92em; white-space: pre-wrap; }
+        .wl-line,
+        .wl-table-block,
+        .wl-code-block {
+            position: relative;
+            border-radius: 18px;
+        }
+        .wl-line {
+            min-height: 1.92em;
+            white-space: pre-wrap;
+            padding: 0.08rem 0.8rem 0.12rem 0.9rem;
+            margin: 0.08rem -0.25rem;
+            transition: background .16s ease, box-shadow .16s ease;
+        }
+        .wl-line:hover {
+            background: rgba(255,255,255,.72);
+            box-shadow: 0 10px 22px rgba(17,24,39,.04);
+        }
+        .wl-line__body { min-height: 1.92em; }
+        .wl-line.is-comment-target {
+            background: rgba(227,6,19,.07);
+            box-shadow: 0 14px 24px rgba(227,6,19,.08);
+        }
         .wl-line[data-kind="heading1"] {
             font: 800 2rem/1.22 'Onest', sans-serif;
             letter-spacing: -0.03em;
@@ -129,6 +158,54 @@ def render_editor_shell(
             border-radius: 0 14px 14px 0;
             background: rgba(227,6,19,.05);
         }
+        .wl-block-handle,
+        .wl-block-comment {
+            position: absolute;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 12px;
+            border: 1px solid rgba(17,24,39,.08);
+            background: rgba(255,255,255,.96);
+            color: #6b7280;
+            box-shadow: 0 10px 24px rgba(17,24,39,.08);
+            cursor: pointer;
+            opacity: 0;
+            transform: translateY(4px);
+            transition: opacity .16s ease, transform .16s ease, border-color .16s ease, color .16s ease;
+            z-index: 3;
+        }
+        .wl-block-handle:hover,
+        .wl-block-comment:hover {
+            color: #bf0812;
+            border-color: rgba(227,6,19,.28);
+        }
+        .wl-line:hover .wl-block-handle,
+        .wl-line:hover .wl-block-comment,
+        .wl-line.has-comments .wl-block-comment,
+        .wl-line.is-comment-target .wl-block-handle,
+        .wl-line.is-comment-target .wl-block-comment {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .wl-block-handle {
+            left: -2.15rem;
+            top: 0.25rem;
+            width: 1.7rem;
+            height: 1.7rem;
+            font: 800 .84rem/1 Manrope, sans-serif;
+        }
+        .wl-block-comment {
+            right: -2.45rem;
+            bottom: 0.18rem;
+            min-width: 1.9rem;
+            height: 1.9rem;
+            padding: 0 0.45rem;
+            gap: 0.28rem;
+            font: 800 .76rem/1 Manrope, sans-serif;
+        }
+        .wl-block-comment__icon { font-size: .84rem; }
+        .wl-block-comment__count { color: inherit; }
         .wl-inline-mark--underline { text-decoration: underline; }
         .wl-inline-mark--strike { text-decoration: line-through; color: #6b7280; }
         .wl-object, .wl-attachment {
@@ -311,10 +388,248 @@ def render_editor_shell(
             color: #9ca3af;
             font: 700 .76rem/1.45 Manrope, sans-serif;
         }
+        .wl-comments {
+            position: sticky;
+            top: 4.6rem;
+            max-height: calc(100vh - 5.4rem);
+            overflow: auto;
+            border-radius: 24px;
+            border: 1px solid rgba(17,24,39,.08);
+            background: rgba(255,255,255,.92);
+            box-shadow: 0 18px 40px rgba(17,24,39,.08);
+            backdrop-filter: blur(12px);
+        }
+        .wl-comments__head {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            padding: 0.9rem 0.95rem 0.7rem;
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(255,255,255,.92));
+            border-bottom: 1px solid rgba(17,24,39,.06);
+        }
+        .wl-comments__title {
+            color: #111827;
+            font: 800 .92rem/1.2 Manrope, sans-serif;
+        }
+        .wl-comments__subtitle {
+            margin-top: 0.2rem;
+            color: #6b7280;
+            font: 600 .74rem/1.45 Manrope, sans-serif;
+        }
+        .wl-comments__context {
+            margin-top: 0.7rem;
+            padding: 0.72rem 0.78rem;
+            border-radius: 16px;
+            background: rgba(227,6,19,.05);
+            color: #374151;
+            font: 700 .77rem/1.45 Manrope, sans-serif;
+            white-space: pre-wrap;
+        }
+        .wl-comments__context.is-muted {
+            background: rgba(243,244,246,.88);
+            color: #6b7280;
+        }
+        .wl-comments__composer {
+            display: grid;
+            gap: 0.55rem;
+            margin-top: 0.7rem;
+        }
+        .wl-comments__composer textarea,
+        .wl-thread__reply textarea {
+            width: 100%;
+            min-height: 78px;
+            resize: vertical;
+            border-radius: 16px;
+            border: 1px solid rgba(17,24,39,.08);
+            background: #ffffff;
+            padding: 0.78rem 0.82rem;
+            color: #111827;
+            font: 600 .8rem/1.55 Manrope, sans-serif;
+            box-sizing: border-box;
+        }
+        .wl-comments__composer textarea:focus,
+        .wl-thread__reply textarea:focus {
+            outline: none;
+            border-color: rgba(227,6,19,.22);
+            box-shadow: 0 0 0 3px rgba(227,6,19,.06);
+        }
+        .wl-comments__submit,
+        .wl-thread__reply-send {
+            border: 1px solid rgba(227,6,19,.24);
+            background: #ffffff;
+            color: #bf0812;
+            border-radius: 14px;
+            padding: 0.64rem 0.8rem;
+            font: 800 .78rem/1 Manrope, sans-serif;
+            cursor: pointer;
+            transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
+        }
+        .wl-comments__submit:hover,
+        .wl-thread__reply-send:hover {
+            transform: translateY(-1px);
+            border-color: rgba(227,6,19,.44);
+            box-shadow: 0 10px 22px rgba(227,6,19,.08);
+        }
+        .wl-comments__submit:disabled,
+        .wl-thread__reply-send:disabled {
+            opacity: .42;
+            box-shadow: none;
+            transform: none;
+            cursor: default;
+        }
+        .wl-comments__list {
+            display: grid;
+            gap: 0.75rem;
+            padding: 0.9rem 0.95rem 1rem;
+        }
+        .wl-comments__empty {
+            padding: 0.85rem;
+            border-radius: 16px;
+            background: rgba(243,244,246,.86);
+            color: #6b7280;
+            font: 700 .76rem/1.5 Manrope, sans-serif;
+        }
+        .wl-thread {
+            padding: 0.8rem;
+            border-radius: 18px;
+            border: 1px solid rgba(17,24,39,.06);
+            background: linear-gradient(180deg, rgba(255,255,255,.98), rgba(249,250,251,.96));
+            box-shadow: 0 12px 28px rgba(17,24,39,.05);
+        }
+        .wl-thread.is-focused {
+            border-color: rgba(227,6,19,.20);
+            box-shadow: 0 18px 34px rgba(227,6,19,.08);
+        }
+        .wl-thread.is-resolved { opacity: .74; }
+        .wl-thread__row {
+            display: grid;
+            grid-template-columns: 2rem minmax(0, 1fr);
+            gap: 0.62rem;
+            align-items: start;
+        }
+        .wl-thread__avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 2rem;
+            height: 2rem;
+            border-radius: 999px;
+            background: rgba(227,6,19,.10);
+            color: #bf0812;
+            font: 800 .78rem/1 Manrope, sans-serif;
+        }
+        .wl-thread__bubble {
+            border-radius: 16px;
+            background: #ffffff;
+            padding: 0.72rem 0.8rem;
+            border: 1px solid rgba(17,24,39,.06);
+        }
+        .wl-thread__author {
+            color: #111827;
+            font: 800 .78rem/1.2 Manrope, sans-serif;
+        }
+        .wl-thread__meta {
+            margin-top: 0.16rem;
+            color: #9ca3af;
+            font: 700 .7rem/1.2 Manrope, sans-serif;
+        }
+        .wl-thread__body {
+            margin-top: 0.38rem;
+            color: #1f2937;
+            font: 600 .8rem/1.55 Manrope, sans-serif;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .wl-thread__selection {
+            margin-top: 0.46rem;
+            color: #6b7280;
+            font: 700 .72rem/1.45 Manrope, sans-serif;
+        }
+        .wl-thread__replies {
+            display: grid;
+            gap: 0.48rem;
+            margin-top: 0.62rem;
+        }
+        .wl-thread__reply-row {
+            display: grid;
+            grid-template-columns: 1.65rem minmax(0, 1fr);
+            gap: 0.48rem;
+            align-items: start;
+        }
+        .wl-thread__reply-avatar {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 1.65rem;
+            height: 1.65rem;
+            border-radius: 999px;
+            background: rgba(243,244,246,.9);
+            color: #6b7280;
+            font: 800 .7rem/1 Manrope, sans-serif;
+        }
+        .wl-thread__reply-bubble {
+            border-radius: 14px;
+            background: rgba(249,250,251,.95);
+            padding: 0.56rem 0.64rem;
+            border: 1px solid rgba(17,24,39,.05);
+        }
+        .wl-thread__actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.42rem;
+            margin-top: 0.65rem;
+        }
+        .wl-thread__actions button {
+            border: 1px solid rgba(17,24,39,.08);
+            background: #ffffff;
+            color: #4b5563;
+            border-radius: 999px;
+            padding: 0.38rem 0.62rem;
+            font: 800 .72rem/1 Manrope, sans-serif;
+            cursor: pointer;
+        }
+        .wl-thread__reply {
+            display: grid;
+            gap: 0.42rem;
+            margin-top: 0.65rem;
+        }
+        .wl-thread__reply textarea {
+            min-height: 60px;
+        }
+        .wl-selection-bubble {
+            position: fixed;
+            z-index: 99998;
+            display: none;
+            align-items: center;
+            gap: 0.32rem;
+            padding: 0.3rem;
+            border-radius: 14px;
+            border: 1px solid rgba(17,24,39,.08);
+            background: rgba(255,255,255,.98);
+            box-shadow: 0 16px 32px rgba(17,24,39,.14);
+        }
+        .wl-selection-bubble button {
+            min-width: 2rem;
+            height: 2rem;
+            border-radius: 10px;
+            border: 1px solid rgba(227,6,19,.16);
+            background: #ffffff;
+            color: #111827;
+            font: 800 .76rem/1 Manrope, sans-serif;
+            cursor: pointer;
+        }
         @media (max-width: 980px) {
             .wl-outline { display: none; }
-            .wl-canvas { padding: 0 0.2rem 3rem; }
+            .wl-workbench { grid-template-columns: 1fr; }
+            .wl-canvas { padding: 0 0.2rem 3rem; max-width: none; }
+            .wl-comments {
+                position: static;
+                max-height: none;
+                margin: 0 0.2rem;
+            }
             .wl-editor { min-height: 64vh; font-size: 16px; }
+            .wl-block-handle { left: -0.1rem; }
+            .wl-block-comment { right: 0.1rem; }
         }
         </style>
         <div class="wikilive-rich-root">
@@ -355,8 +670,22 @@ def render_editor_shell(
                 </div>
             </div>
             <input id="wl-file-input" type="file" multiple hidden />
-            <div class="wl-canvas">
-                <div id="wikilive-editor" class="wl-editor" contenteditable="true" spellcheck="true" data-placeholder="Пиши здесь"></div>
+            <div class="wl-workbench">
+                <div class="wl-canvas">
+                    <div id="wikilive-editor" class="wl-editor" contenteditable="true" spellcheck="true" data-placeholder="Пиши здесь"></div>
+                </div>
+                <aside class="wl-comments">
+                    <div class="wl-comments__head">
+                        <div class="wl-comments__title">Обсуждение</div>
+                        <div class="wl-comments__subtitle">Комментарии прямо по абзацам</div>
+                        <div id="wl-comment-context" class="wl-comments__context is-muted">Выбери абзац или выдели текст</div>
+                        <div class="wl-comments__composer">
+                            <textarea id="wl-comment-input" placeholder="Напиши комментарий"></textarea>
+                            <button id="wl-comment-submit" class="wl-comments__submit" type="button">Отправить</button>
+                        </div>
+                    </div>
+                    <div id="wl-comments-list" class="wl-comments__list"></div>
+                </aside>
             </div>
         </div>
         <div id="wikilive-context-menu" class="wl-context-menu">
@@ -365,18 +694,27 @@ def render_editor_shell(
             <div id="wikilive-context-hint" class="wl-context-menu__hint"></div>
         </div>
         <div id="wikilive-slash-menu" class="wl-slash-menu"></div>
+        <div id="wikilive-selection-bubble" class="wl-selection-bubble">
+            <button id="wl-bubble-bold" type="button" title="Жирный">B</button>
+            <button id="wl-bubble-italic" type="button" title="Курсив">I</button>
+            <button id="wl-bubble-quote" type="button" title="Цитата">``</button>
+            <button id="wl-bubble-comment" type="button" title="Комментарий">&#128172;</button>
+        </div>
         <script>
         const parentWindow = window.parent;
         const parentDoc = parentWindow.document;
         const lookup = __WIKILIVE_LOOKUP__;
         const draftKey = __WIKILIVE_DRAFT_KEY__;
         const pageBreakMarker = __WIKILIVE_PAGE_BREAK_MARKER__;
+        const pageId = __WIKILIVE_PAGE_ID__;
+        const backendUrl = (__WIKILIVE_BACKEND_URL__ || "").replace(/\/$/, "");
         let activeSnippet = __WIKILIVE_ACTIVE_SNIPPET__;
         let activeHint = __WIKILIVE_ACTIVE_HINT__;
         const storageKey = `wikilive:draft:${draftKey}`;
         const selectedKey = `wikilive:selected:${draftKey}`;
         const snippetKey = `wikilive:active-snippet:${draftKey}`;
         const hintKey = `wikilive:active-hint:${draftKey}`;
+        const blockMapKey = `wikilive:block-map:${draftKey}`;
         const tokenRegex = /(\{\{([^:}\n]+):([^:}\n]+):([^}\n]+)\}\}|\[\[WL_ATTACHMENT:([^\]]+)\]\])/g;
         const tableSeparatorRegex = /^:?-{3,}:?$/;
         const inlineStyleRegex = /(\*\*[^*][^*]*\*\*|__[^_][^_]*__|~~[^~][^~]*~~|\*[^*][^*]*\*)/g;
@@ -386,11 +724,20 @@ def render_editor_shell(
         const contextInsertButton = document.getElementById("wikilive-context-insert");
         const contextHintNode = document.getElementById("wikilive-context-hint");
         const slashMenu = document.getElementById("wikilive-slash-menu");
+        const selectionBubble = document.getElementById("wikilive-selection-bubble");
         const outlineList = document.getElementById("wl-outline-list");
         const blockStyleSelect = document.getElementById("wl-block-style");
         const fileInput = document.getElementById("wl-file-input");
         const imageWidthInput = document.getElementById("wl-image-width");
         const imageOpacityInput = document.getElementById("wl-image-opacity");
+        const commentsList = document.getElementById("wl-comments-list");
+        const commentContext = document.getElementById("wl-comment-context");
+        const commentInput = document.getElementById("wl-comment-input");
+        const commentSubmit = document.getElementById("wl-comment-submit");
+        const bubbleBoldButton = document.getElementById("wl-bubble-bold");
+        const bubbleItalicButton = document.getElementById("wl-bubble-italic");
+        const bubbleQuoteButton = document.getElementById("wl-bubble-quote");
+        const bubbleCommentButton = document.getElementById("wl-bubble-comment");
         const undoButton = document.getElementById("wl-undo");
         const redoButton = document.getElementById("wl-redo");
         const formatButtons = {
@@ -424,9 +771,14 @@ def render_editor_shell(
         let outlineTimer = null;
         let frameTimer = null;
         let historyTimer = null;
+        let commentsTimer = null;
         let historyStack = [];
         let historyIndex = -1;
         let applyingHistory = false;
+        let commentThreads = [];
+        let commentTarget = null;
+        let commentsLoading = false;
+        let commentsLoaded = false;
 
         function targetArea() {
             return parentDoc.querySelector('div[data-testid="stTextArea"] textarea') || parentDoc.querySelector("textarea");
@@ -750,7 +1102,24 @@ def render_editor_shell(
             line.className = "wl-line";
             line.dataset.kind = kind;
             applyAlignmentToBlock(line, align);
-            renderInline(line, text, state);
+            const handle = document.createElement("button");
+            handle.type = "button";
+            handle.className = "wl-block-handle";
+            handle.dataset.ui = "1";
+            handle.contentEditable = "false";
+            handle.textContent = "≡";
+            const body = document.createElement("div");
+            body.className = "wl-line__body";
+            renderInline(body, text, state);
+            const commentButton = document.createElement("button");
+            commentButton.type = "button";
+            commentButton.className = "wl-block-comment";
+            commentButton.dataset.ui = "1";
+            commentButton.contentEditable = "false";
+            commentButton.innerHTML = '<span class="wl-block-comment__icon">&#128172;</span><span class="wl-block-comment__count"></span>';
+            line.appendChild(handle);
+            line.appendChild(body);
+            line.appendChild(commentButton);
             return line;
         }
 
@@ -891,8 +1260,13 @@ def render_editor_shell(
             clearSelectedObject();
             editor.innerHTML = "";
             renderBlocks(editor, raw, { tokenIndex: 0 });
+            assignBlockAnchors();
             restoreSelectedObject();
             isRendering = false;
+            if (commentTarget) setCommentTarget(commentTarget);
+            else refreshCommentComposerState();
+            updateCommentBadges();
+            renderComments();
             queueToolbarRefresh();
             queueOutlineRefresh();
             queueFrameHeight();
@@ -902,6 +1276,7 @@ def render_editor_shell(
             if (node.nodeType === Node.TEXT_NODE) return (node.textContent || "").replace(/\u00a0/g, " ");
             if (node.nodeType !== Node.ELEMENT_NODE) return "";
             const element = node;
+            if (element.dataset && element.dataset.ui === "1") return "";
             if (element.dataset && element.dataset.raw) return element.dataset.raw;
             if (element.tagName === "BR") return "";
             if (element.tagName === "STRONG" || element.tagName === "B") return `**${Array.from(element.childNodes).map(serializeInlineNode).join("")}**`;
@@ -929,6 +1304,436 @@ def render_editor_shell(
 
         function serializeDocument() {
             return getTopBlocks().map(serializeBlockNode).join("\n");
+        }
+
+        function blockPlainText(block) {
+            if (!block) return "";
+            const clone = block.cloneNode(true);
+            clone.querySelectorAll('[data-ui="1"]').forEach((node) => node.remove());
+            return String(clone.textContent || "").replace(/\s+/g, " ").trim();
+        }
+
+        function clipPreview(text, limit = 96) {
+            const value = String(text || "").replace(/\s+/g, " ").trim();
+            if (!value) return "Абзац";
+            return value.length > limit ? `${value.slice(0, limit - 1)}…` : value;
+        }
+
+        function randomId(prefix = "wl") {
+            return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
+        }
+
+        function loadStoredBlockMap() {
+            try {
+                const raw = parentWindow.sessionStorage.getItem(blockMapKey);
+                const parsed = raw ? JSON.parse(raw) : [];
+                return Array.isArray(parsed) ? parsed : [];
+            } catch (error) {
+                return [];
+            }
+        }
+
+        function storeBlockMap(items) {
+            parentWindow.sessionStorage.setItem(blockMapKey, JSON.stringify(items));
+        }
+
+        function assignBlockAnchors() {
+            const previous = loadStoredBlockMap();
+            const used = new Set();
+            const next = [];
+            getTopBlocks().forEach((block) => {
+                const raw = serializeBlockNode(block);
+                let matchIndex = previous.findIndex((item, index) => !used.has(index) && item && item.raw === raw);
+                if (matchIndex < 0) {
+                    const preview = clipPreview(blockPlainText(block));
+                    matchIndex = previous.findIndex((item, index) => !used.has(index) && item && item.preview === preview);
+                }
+                const anchor = matchIndex >= 0 ? previous[matchIndex].anchor : randomId("blk");
+                if (matchIndex >= 0) used.add(matchIndex);
+                block.dataset.commentAnchor = anchor;
+                next.push({
+                    anchor,
+                    raw,
+                    preview: clipPreview(blockPlainText(block)),
+                });
+            });
+            storeBlockMap(next);
+        }
+
+        function parseCommentSelectionLabel(label) {
+            if (!label) return { anchor: "", preview: "", blockPreview: "" };
+            try {
+                const parsed = JSON.parse(label);
+                if (parsed && typeof parsed === "object") {
+                    return {
+                        anchor: String(parsed.anchor || ""),
+                        preview: clipPreview(parsed.preview || ""),
+                        blockPreview: clipPreview(parsed.blockPreview || parsed.preview || ""),
+                        kind: String(parsed.kind || "block"),
+                    };
+                }
+            } catch (error) {}
+            const fallback = clipPreview(label);
+            return { anchor: "", preview: fallback, blockPreview: fallback, kind: "legacy" };
+        }
+
+        function formatCommentSelectionLabel(target) {
+            return JSON.stringify({
+                anchor: String(target?.anchor || ""),
+                preview: clipPreview(target?.preview || ""),
+                blockPreview: clipPreview(target?.blockPreview || target?.preview || ""),
+                kind: String(target?.kind || "block"),
+            });
+        }
+
+        function findBlockByAnchor(anchor) {
+            if (!anchor) return null;
+            return editor.querySelector(`[data-comment-anchor="${anchor}"]`);
+        }
+
+        function resolveThreadAnchor(thread) {
+            const meta = parseCommentSelectionLabel(thread?.selectionLabel || "");
+            if (meta.anchor) {
+                const block = findBlockByAnchor(meta.anchor);
+                if (block) return meta.anchor;
+            }
+            if (meta.blockPreview) {
+                const match = getTopBlocks().find((block) => clipPreview(blockPlainText(block)) === meta.blockPreview);
+                if (match) return match.dataset.commentAnchor || "";
+            }
+            return "";
+        }
+
+        function currentSelectionText() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return "";
+            const text = selection.toString().replace(/\s+/g, " ").trim();
+            return clipPreview(text, 120);
+        }
+
+        function buildCommentTarget(block, selectedText = "") {
+            if (!block) return null;
+            const blockPreview = clipPreview(blockPlainText(block));
+            return {
+                anchor: block.dataset.commentAnchor || "",
+                preview: clipPreview(selectedText || blockPreview, 120),
+                blockPreview,
+                kind: selectedText ? "selection" : "block",
+            };
+        }
+
+        function refreshCommentComposerState() {
+            commentSubmit.disabled = !pageId || !commentTarget || !String(commentInput.value || "").trim();
+        }
+
+        function setCommentTarget(target) {
+            commentTarget = target || null;
+            getTopBlocks().forEach((block) => {
+                block.classList.toggle("is-comment-target", Boolean(commentTarget && block.dataset.commentAnchor === commentTarget.anchor));
+            });
+            if (!pageId) {
+                commentContext.classList.add("is-muted");
+                commentContext.textContent = "Сначала сохрани страницу";
+            } else if (!commentTarget) {
+                commentContext.classList.add("is-muted");
+                commentContext.textContent = "Выбери абзац или выдели текст";
+            } else {
+                commentContext.classList.remove("is-muted");
+                commentContext.textContent = commentTarget.preview || commentTarget.blockPreview || "Абзац";
+            }
+            refreshCommentComposerState();
+            renderComments();
+        }
+
+        function updateCommentBadges() {
+            const counts = new Map();
+            commentThreads.forEach((thread) => {
+                const anchor = resolveThreadAnchor(thread);
+                if (!anchor) return;
+                counts.set(anchor, (counts.get(anchor) || 0) + 1);
+            });
+            getTopBlocks().forEach((block) => {
+                const button = block.querySelector(".wl-block-comment");
+                if (!button) return;
+                const count = counts.get(block.dataset.commentAnchor || "") || 0;
+                const countNode = button.querySelector(".wl-block-comment__count");
+                if (countNode) countNode.textContent = count > 0 ? String(count) : "";
+                block.classList.toggle("has-comments", count > 0);
+            });
+        }
+
+        function initialsFromName(name) {
+            const parts = String(name || "V").trim().split(/\s+/).filter(Boolean).slice(0, 2);
+            return (parts.map((item) => item[0] || "").join("") || "V").toUpperCase();
+        }
+
+        function formatTimestamp(value) {
+            if (!value) return "";
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return String(value);
+            return date.toLocaleString("ru-RU", {
+                day: "2-digit",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+            });
+        }
+
+        async function apiRequest(method, path, payload = null) {
+            if (!backendUrl) throw new Error("backend_url_missing");
+            const response = await fetch(`${backendUrl}${path}`, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: payload === null ? null : JSON.stringify(payload),
+            });
+            const data = await response.json().catch(() => ({ success: false, error: { message: "bad_response" } }));
+            if (!response.ok || data.success !== true) {
+                throw new Error(data?.error?.message || `request_failed_${response.status}`);
+            }
+            return data.data || {};
+        }
+
+        async function loadComments() {
+            if (!pageId) {
+                commentsLoaded = true;
+                commentThreads = [];
+                renderComments();
+                updateCommentBadges();
+                return;
+            }
+            commentsLoading = true;
+            renderComments();
+            try {
+                const data = await apiRequest("GET", `/api/pages/${encodeURIComponent(pageId)}/comments`);
+                commentThreads = Array.isArray(data.items) ? data.items : [];
+            } catch (error) {
+                commentThreads = [];
+            } finally {
+                commentsLoading = false;
+                commentsLoaded = true;
+                updateCommentBadges();
+                renderComments();
+            }
+        }
+
+        function scheduleCommentsRefresh(delay = 0) {
+            if (commentsTimer !== null) window.clearTimeout(commentsTimer);
+            commentsTimer = window.setTimeout(() => {
+                commentsTimer = null;
+                loadComments();
+            }, delay);
+        }
+
+        async function submitComment() {
+            const body = String(commentInput.value || "").trim();
+            if (!pageId || !commentTarget || !body) return;
+            commentSubmit.disabled = true;
+            try {
+                await apiRequest("POST", `/api/pages/${encodeURIComponent(pageId)}/comments`, {
+                    body,
+                    selectionLabel: formatCommentSelectionLabel(commentTarget),
+                    author: "viewer",
+                });
+                commentInput.value = "";
+                refreshCommentComposerState();
+                scheduleCommentsRefresh(40);
+            } catch (error) {
+                commentContext.classList.add("is-muted");
+                commentContext.textContent = "Не удалось отправить комментарий";
+            } finally {
+                refreshCommentComposerState();
+            }
+        }
+
+        async function toggleThreadLike(threadId) {
+            if (!pageId || !threadId) return;
+            await apiRequest("POST", `/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(threadId)}/like`, {
+                author: "viewer",
+            });
+            scheduleCommentsRefresh(20);
+        }
+
+        async function toggleThreadResolved(threadId, resolved) {
+            if (!pageId || !threadId) return;
+            await apiRequest("POST", `/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(threadId)}/resolve`, {
+                resolved,
+            });
+            scheduleCommentsRefresh(20);
+        }
+
+        async function sendThreadReply(threadId, textarea) {
+            const body = String(textarea?.value || "").trim();
+            if (!pageId || !threadId || !body) return;
+            await apiRequest("POST", `/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(threadId)}/replies`, {
+                body,
+                author: "viewer",
+            });
+            textarea.value = "";
+            scheduleCommentsRefresh(20);
+        }
+
+        function renderCommentThread(thread) {
+            const meta = parseCommentSelectionLabel(thread?.selectionLabel || "");
+            const anchor = resolveThreadAnchor(thread);
+            const messages = Array.isArray(thread?.messages) ? thread.messages : [];
+            const first = messages[0] || {};
+            const card = document.createElement("article");
+            card.className = "wl-thread";
+            if (thread?.resolved) card.classList.add("is-resolved");
+            if (commentTarget && anchor && commentTarget.anchor === anchor) card.classList.add("is-focused");
+
+            const row = document.createElement("div");
+            row.className = "wl-thread__row";
+            const avatar = document.createElement("div");
+            avatar.className = "wl-thread__avatar";
+            avatar.textContent = initialsFromName(first.author || "viewer");
+            const bubble = document.createElement("div");
+            bubble.className = "wl-thread__bubble";
+            const author = document.createElement("div");
+            author.className = "wl-thread__author";
+            author.textContent = first.author || "viewer";
+            const metaNode = document.createElement("div");
+            metaNode.className = "wl-thread__meta";
+            metaNode.textContent = formatTimestamp(first.createdAt || thread.updatedAt || thread.createdAt);
+            const body = document.createElement("div");
+            body.className = "wl-thread__body";
+            body.textContent = first.body || "Комментарий";
+            bubble.appendChild(author);
+            bubble.appendChild(metaNode);
+            bubble.appendChild(body);
+            if (meta.preview || meta.blockPreview) {
+                const selection = document.createElement("div");
+                selection.className = "wl-thread__selection";
+                selection.textContent = meta.preview || meta.blockPreview;
+                bubble.appendChild(selection);
+            }
+            row.appendChild(avatar);
+            row.appendChild(bubble);
+            card.appendChild(row);
+
+            if (messages.length > 1) {
+                const replies = document.createElement("div");
+                replies.className = "wl-thread__replies";
+                messages.slice(1).forEach((message) => {
+                    const replyRow = document.createElement("div");
+                    replyRow.className = "wl-thread__reply-row";
+                    const replyAvatar = document.createElement("div");
+                    replyAvatar.className = "wl-thread__reply-avatar";
+                    replyAvatar.textContent = initialsFromName(message.author || "viewer");
+                    const replyBubble = document.createElement("div");
+                    replyBubble.className = "wl-thread__reply-bubble";
+                    const replyAuthor = document.createElement("div");
+                    replyAuthor.className = "wl-thread__author";
+                    replyAuthor.textContent = message.author || "viewer";
+                    const replyMeta = document.createElement("div");
+                    replyMeta.className = "wl-thread__meta";
+                    replyMeta.textContent = formatTimestamp(message.createdAt);
+                    const replyBody = document.createElement("div");
+                    replyBody.className = "wl-thread__body";
+                    replyBody.textContent = message.body || "";
+                    replyBubble.appendChild(replyAuthor);
+                    replyBubble.appendChild(replyMeta);
+                    replyBubble.appendChild(replyBody);
+                    replyRow.appendChild(replyAvatar);
+                    replyRow.appendChild(replyBubble);
+                    replies.appendChild(replyRow);
+                });
+                card.appendChild(replies);
+            }
+
+            const actions = document.createElement("div");
+            actions.className = "wl-thread__actions";
+            const likeButton = document.createElement("button");
+            likeButton.type = "button";
+            likeButton.textContent = `♥ ${Number(thread?.likeCount || 0)}`;
+            likeButton.addEventListener("click", async (event) => {
+                event.stopPropagation();
+                await toggleThreadLike(thread.threadId || "");
+            });
+            const replyButton = document.createElement("button");
+            replyButton.type = "button";
+            replyButton.textContent = "Ответить";
+            const resolveButton = document.createElement("button");
+            resolveButton.type = "button";
+            resolveButton.textContent = thread?.resolved ? "Открыть" : "Решить";
+            resolveButton.addEventListener("click", async (event) => {
+                event.stopPropagation();
+                await toggleThreadResolved(thread.threadId || "", !Boolean(thread?.resolved));
+            });
+            actions.appendChild(likeButton);
+            actions.appendChild(replyButton);
+            actions.appendChild(resolveButton);
+            card.appendChild(actions);
+
+            const replyWrap = document.createElement("div");
+            replyWrap.className = "wl-thread__reply";
+            replyWrap.hidden = true;
+            const replyInput = document.createElement("textarea");
+            replyInput.placeholder = "Ответ";
+            const replySend = document.createElement("button");
+            replySend.type = "button";
+            replySend.className = "wl-thread__reply-send";
+            replySend.textContent = "Отправить";
+            replySend.addEventListener("click", async (event) => {
+                event.stopPropagation();
+                await sendThreadReply(thread.threadId || "", replyInput);
+            });
+            replyWrap.appendChild(replyInput);
+            replyWrap.appendChild(replySend);
+            replyButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                replyWrap.hidden = !replyWrap.hidden;
+                if (!replyWrap.hidden) replyInput.focus();
+            });
+            card.appendChild(replyWrap);
+
+            card.addEventListener("click", () => {
+                const block = findBlockByAnchor(anchor);
+                if (block) {
+                    setCommentTarget(buildCommentTarget(block));
+                    block.scrollIntoView({ behavior: "smooth", block: "center" });
+                }
+            });
+            return card;
+        }
+
+        function renderComments() {
+            commentsList.innerHTML = "";
+            if (!pageId) {
+                const empty = document.createElement("div");
+                empty.className = "wl-comments__empty";
+                empty.textContent = "Сохрани страницу, и обсуждения появятся здесь.";
+                commentsList.appendChild(empty);
+                refreshCommentComposerState();
+                return;
+            }
+            if (commentsLoading) {
+                const loading = document.createElement("div");
+                loading.className = "wl-comments__empty";
+                loading.textContent = "Загружаю комментарии…";
+                commentsList.appendChild(loading);
+                refreshCommentComposerState();
+                return;
+            }
+            const sortedThreads = [...commentThreads].sort((left, right) => {
+                const leftAnchor = resolveThreadAnchor(left);
+                const rightAnchor = resolveThreadAnchor(right);
+                const leftFocused = commentTarget && leftAnchor === commentTarget.anchor ? 1 : 0;
+                const rightFocused = commentTarget && rightAnchor === commentTarget.anchor ? 1 : 0;
+                if (leftFocused !== rightFocused) return rightFocused - leftFocused;
+                if (Boolean(left?.resolved) !== Boolean(right?.resolved)) return Number(left?.resolved) - Number(right?.resolved);
+                return String(right?.updatedAt || right?.createdAt || "").localeCompare(String(left?.updatedAt || left?.createdAt || ""));
+            });
+            if (!sortedThreads.length) {
+                const empty = document.createElement("div");
+                empty.className = "wl-comments__empty";
+                empty.textContent = commentsLoaded ? "Пока без обсуждений." : "Комментарии появятся здесь.";
+                commentsList.appendChild(empty);
+                refreshCommentComposerState();
+                return;
+            }
+            sortedThreads.forEach((thread) => commentsList.appendChild(renderCommentThread(thread)));
+            refreshCommentComposerState();
         }
 
         function getCurrentBlock() {
@@ -960,6 +1765,7 @@ def render_editor_shell(
                 rememberSelection();
                 queueToolbarRefresh();
                 queueSlashRefresh();
+                refreshSelectionBubble();
             }, 0);
         }
 
@@ -976,13 +1782,63 @@ def render_editor_shell(
             }
         }
 
+        function hideSelectionBubble() {
+            selectionBubble.style.display = "none";
+        }
+
+        function selectBlockContents(block) {
+            if (!block) return;
+            const body = block.querySelector(".wl-line__body") || block;
+            const range = document.createRange();
+            range.selectNodeContents(body);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            lastRange = range.cloneRange();
+            queueToolbarRefresh();
+            refreshSelectionBubble();
+        }
+
+        function refreshSelectionBubble() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0 || selection.isCollapsed) {
+                hideSelectionBubble();
+                return;
+            }
+            const range = selection.getRangeAt(0);
+            if (!editor.contains(range.commonAncestorContainer)) {
+                hideSelectionBubble();
+                return;
+            }
+            const rect = range.getBoundingClientRect();
+            if (!rect || (!rect.width && !rect.height)) {
+                hideSelectionBubble();
+                return;
+            }
+            selectionBubble.style.left = `${Math.min(Math.max(12, rect.left + rect.width / 2 - 70), window.innerWidth - 160)}px`;
+            selectionBubble.style.top = `${Math.max(12, rect.top - 52)}px`;
+            selectionBubble.style.display = "flex";
+        }
+
+        function openCommentComposerForCurrentSelection() {
+            const selection = window.getSelection();
+            if (!selection || selection.rangeCount === 0) return;
+            const block = closestBlock(selection.getRangeAt(0).startContainer);
+            if (!block) return;
+            const selectedText = currentSelectionText();
+            setCommentTarget(buildCommentTarget(block, selectedText));
+            commentInput.focus();
+            hideSelectionBubble();
+        }
+
         function placeCaretAtBlock(index = 0, placement = "end", scrollIntoView = false) {
             const blocks = getTopBlocks();
             if (!blocks.length) return;
             const block = blocks[Math.max(0, Math.min(index, blocks.length - 1))];
+            const contentRoot = block.querySelector(".wl-line__body") || block;
             editor.focus();
             const range = document.createRange();
-            range.selectNodeContents(block);
+            range.selectNodeContents(contentRoot);
             range.collapse(placement !== "start");
             const selection = window.getSelection();
             selection.removeAllRanges();
@@ -990,6 +1846,7 @@ def render_editor_shell(
             lastRange = range.cloneRange();
             if (scrollIntoView) block.scrollIntoView({ behavior: "smooth", block: "center" });
             queueToolbarRefresh();
+            hideSelectionBubble();
         }
 
         function placeCaretAtEnd(scrollIntoView = false) {
@@ -1158,7 +2015,7 @@ def render_editor_shell(
                 const item = document.createElement("button");
                 item.type = "button";
                 item.className = `wl-outline__item level-${headingLevel(heading.dataset.kind || "heading1")}`;
-                item.textContent = heading.textContent.trim() || `H${headingLevel(heading.dataset.kind || "heading1")}`;
+                item.textContent = blockPlainText(heading) || `H${headingLevel(heading.dataset.kind || "heading1")}`;
                 item.addEventListener("click", () => moveCaretToBlockNode(heading, "start"));
                 outlineList.appendChild(item);
             });
@@ -1207,10 +2064,11 @@ def render_editor_shell(
 
         function stripTrailingSlashFromBlock(block) {
             if (!block || block.dataset.kind === "table" || block.dataset.kind === "code") return;
-            const cleaned = String(block.textContent || "").replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd();
-            block.innerHTML = "";
-            if (cleaned) block.appendChild(document.createTextNode(cleaned));
-            else block.appendChild(document.createElement("br"));
+            const cleaned = blockPlainText(block).replace(/(^|\s)\/[^\s/]*$/, "$1").trimEnd();
+            const body = block.querySelector(".wl-line__body") || block;
+            body.innerHTML = "";
+            if (cleaned) body.appendChild(document.createTextNode(cleaned));
+            else body.appendChild(document.createElement("br"));
         }
 
         function insertSnippet(snippet) {
@@ -1294,7 +2152,7 @@ def render_editor_shell(
             const block = closestBlock(range.startContainer);
             if (!block || block.dataset.kind === "table" || block.dataset.kind === "code") return null;
             const probe = range.cloneRange();
-            probe.selectNodeContents(block);
+            probe.selectNodeContents(block.querySelector(".wl-line__body") || block);
             probe.setEnd(range.endContainer, range.endOffset);
             const textBefore = probe.toString();
             const match = textBefore.match(/(?:^|\s)\/([^\s/]*)$/);
@@ -1353,12 +2211,35 @@ def render_editor_shell(
         });
 
         editor.addEventListener("click", (event) => {
+            const handleButton = event.target.closest(".wl-block-handle");
+            if (handleButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                const block = closestBlock(handleButton);
+                if (block) {
+                    setCommentTarget(buildCommentTarget(block));
+                    selectBlockContents(block);
+                }
+                return;
+            }
+            const commentButton = event.target.closest(".wl-block-comment");
+            if (commentButton) {
+                event.preventDefault();
+                event.stopPropagation();
+                const block = closestBlock(commentButton);
+                if (block) {
+                    setCommentTarget(buildCommentTarget(block, currentSelectionText()));
+                    commentInput.focus();
+                }
+                return;
+            }
             const objectNode = closestObjectNode(event.target);
             if (objectNode) {
                 event.preventDefault();
                 event.stopPropagation();
                 selectObject(objectNode);
                 openPicker();
+                hideSelectionBubble();
                 return;
             }
             clearSelectedObject();
@@ -1366,6 +2247,7 @@ def render_editor_shell(
             rememberSelection();
             queueToolbarRefresh();
             queueSlashRefresh();
+            refreshSelectionBubble();
         });
 
         editor.addEventListener("keydown", (event) => {
@@ -1403,6 +2285,11 @@ def render_editor_shell(
                 renderAndStore(serializeDocument(), blockIndex, "end", false, true);
                 return;
             }
+            if (event.key === "Escape") {
+                hideContextMenu();
+                hideSlashMenu();
+                hideSelectionBubble();
+            }
             queueRememberSelection();
         });
 
@@ -1413,6 +2300,7 @@ def render_editor_shell(
             queueRememberSelection();
             queueOutlineRefresh();
             queueFrameHeight();
+            updateCommentBadges();
         });
 
         editor.addEventListener("paste", async (event) => {
@@ -1436,11 +2324,13 @@ def render_editor_shell(
             rememberSelection();
             queueToolbarRefresh();
             queueSlashRefresh();
+            refreshSelectionBubble();
         });
 
         editor.addEventListener("keyup", () => {
             queueRememberSelection();
             queueSlashRefresh();
+            refreshSelectionBubble();
         });
 
         editor.addEventListener("dragstart", (event) => {
@@ -1499,6 +2389,7 @@ def render_editor_shell(
                 }
             }
             hideSlashMenu();
+            hideSelectionBubble();
             showContextMenu(event.clientX, event.clientY);
         });
 
@@ -1511,6 +2402,23 @@ def render_editor_shell(
         Object.entries(formatButtons).forEach(([command, button]) => button.addEventListener("click", () => runEditorCommand(command)));
         Object.entries(alignButtons).forEach(([align, button]) => button.addEventListener("click", () => applyAlignment(align)));
         blockStyleSelect.addEventListener("change", () => applyBlockStyle(blockStyleSelect.value));
+        commentInput.addEventListener("input", refreshCommentComposerState);
+        commentSubmit.addEventListener("click", async () => {
+            await submitComment();
+        });
+        bubbleBoldButton.addEventListener("click", () => {
+            runEditorCommand("bold");
+            hideSelectionBubble();
+        });
+        bubbleItalicButton.addEventListener("click", () => {
+            runEditorCommand("italic");
+            hideSelectionBubble();
+        });
+        bubbleQuoteButton.addEventListener("click", () => {
+            applyBlockStyle("callout");
+            hideSelectionBubble();
+        });
+        bubbleCommentButton.addEventListener("click", () => openCommentComposerForCurrentSelection());
         imageWidthInput.addEventListener("input", () => updateSelectedImageMeta({ width: Number(imageWidthInput.value) }));
         imageOpacityInput.addEventListener("input", () => updateSelectedImageMeta({ opacity: Number(imageOpacityInput.value) / 100 }));
         fileInput.addEventListener("change", async () => {
@@ -1529,12 +2437,17 @@ def render_editor_shell(
         document.addEventListener("click", (event) => {
             if (!contextMenu.contains(event.target)) hideContextMenu();
             if (!slashMenu.contains(event.target)) hideSlashMenu();
+            if (!selectionBubble.contains(event.target) && !editor.contains(event.target)) hideSelectionBubble();
         }, true);
         document.addEventListener("scroll", () => {
             hideContextMenu();
             hideSlashMenu();
+            hideSelectionBubble();
         }, true);
-        window.addEventListener("resize", queueFrameHeight);
+        window.addEventListener("resize", () => {
+            queueFrameHeight();
+            refreshSelectionBubble();
+        });
         parentWindow.__wikiliveInsertSnippet = insertSnippet;
         parentWindow.__wikiliveSyncEditor = syncHiddenState;
         parentWindow.__wikiliveSetActiveSnippet = (snippet, hint) => {
@@ -1552,6 +2465,8 @@ def render_editor_shell(
         storeDraft(initialRaw);
         setHiddenValue(initialRaw);
         pushHistory(initialRaw, true);
+        setCommentTarget(null);
+        scheduleCommentsRefresh(0);
         updateHistoryButtons();
         window.requestAnimationFrame(() => {
             placeCaretAtEnd(false);
@@ -1565,5 +2480,7 @@ def render_editor_shell(
     html = html.replace("__WIKILIVE_PAGE_BREAK_MARKER__", json.dumps(PAGE_BREAK_MARKER))
     html = html.replace("__WIKILIVE_ACTIVE_SNIPPET__", json.dumps(active_snippet))
     html = html.replace("__WIKILIVE_ACTIVE_HINT__", json.dumps(active_hint))
+    html = html.replace("__WIKILIVE_PAGE_ID__", json.dumps(page_id or ""))
+    html = html.replace("__WIKILIVE_BACKEND_URL__", json.dumps(backend_url))
     components.html(html, height=1180)
 

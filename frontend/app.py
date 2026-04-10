@@ -2532,7 +2532,7 @@ def comments_panel(client: ApiClient) -> None:
         thread_id = thread.get("threadId", "")
         messages = thread.get("messages", [])
         first = messages[0] if messages else {}
-        selection = escape(thread.get("selectionLabel", ""))
+        selection = escape(comment_selection_preview(thread.get("selectionLabel", "")))
         header = escape(first.get("body", "Комментарий"))
         meta_bits = [escape(first.get("author", "viewer"))]
         if selection:
@@ -2646,6 +2646,19 @@ def render_panel_shell(title: str) -> None:
 
 def close_panel_shell() -> None:
     st.markdown("</div>", unsafe_allow_html=True)
+
+
+def comment_selection_preview(label: str) -> str:
+    raw = str(label or "").strip()
+    if not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if not isinstance(parsed, dict):
+        return raw
+    return str(parsed.get("preview") or parsed.get("blockPreview") or "").strip()
 
 
 def render_insert_workspace(client: ApiClient) -> tuple[str, str]:
@@ -2828,6 +2841,8 @@ def main() -> None:
         draft_key,
         st.session_state.latest_insert_snippet,
         st.session_state.latest_insert_hint,
+        st.session_state.selected_page_id,
+        URL,
     )
 
 
