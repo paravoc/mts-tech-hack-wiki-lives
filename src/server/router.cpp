@@ -80,8 +80,9 @@ Router::Router(
     services::PageService& pageService,
     services::RenderService& renderService,
     ai::AiService* aiService,
-    WebSocketManager* webSocketManager)
-    : Router(pageService, renderService, nullptr, aiService, webSocketManager) {
+    WebSocketManager* webSocketManager,
+    std::vector<MwsTablePreset> tablePresets)
+    : Router(pageService, renderService, nullptr, aiService, webSocketManager, std::move(tablePresets)) {
 }
 
 Router::Router(
@@ -89,12 +90,14 @@ Router::Router(
     services::RenderService& renderService,
     api::MwsClient* mwsClient,
     ai::AiService* aiService,
-    WebSocketManager* webSocketManager)
+    WebSocketManager* webSocketManager,
+    std::vector<MwsTablePreset> tablePresets)
     : pageService_(pageService),
       renderService_(renderService),
       mwsClient_(mwsClient),
       aiService_(aiService),
-      webSocketManager_(webSocketManager) {
+      webSocketManager_(webSocketManager),
+      tablePresets_(std::move(tablePresets)) {
 }
 
 RouteResponse Router::handleHealth() const {
@@ -278,7 +281,7 @@ RouteResponse Router::renderContent(const std::string& payload) {
     }
 }
 
-RouteResponse Router::getMwsInsertOptions() {
+RouteResponse Router::getMwsInsertOptions(const std::string& tableId, const std::string& viewId) {
     try {
         if (mwsClient_ == nullptr) {
             return fail(utils::makeError(
@@ -288,17 +291,46 @@ RouteResponse Router::getMwsInsertOptions() {
                 false));
         }
 
-        const auto records = mwsClient_->getRecords();
+        const auto resolvedTableId = tableId.empty() ? mwsClient_->tableId() : tableId;
+        const auto resolvedViewId = tableId.empty() ? mwsClient_->viewId() : viewId;
+        const auto records = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId);
         if (!records) {
             return fail(records.error());
         }
 
+        std::string activeLabel = "Пользовательская таблица";
+        std::string activeRole = "data";
+        for (const auto& preset : tablePresets_) {
+            if (preset.tableId == resolvedTableId && preset.viewId == resolvedViewId) {
+                activeLabel = preset.label;
+                activeRole = preset.role;
+                break;
+            }
+        }
+
         nlohmann::json payload = {
-            {"tableId", mwsClient_->tableId()},
-            {"viewId", mwsClient_->viewId()},
+            {"tableId", resolvedTableId},
+            {"viewId", resolvedViewId},
+            {"activeTable", {
+                {"tableId", resolvedTableId},
+                {"viewId", resolvedViewId},
+                {"label", activeLabel},
+                {"role", activeRole},
+            }},
+            {"tablePresets", nlohmann::json::array()},
             {"records", nlohmann::json::array()},
             {"fieldNames", nlohmann::json::array()},
         };
+
+        for (const auto& preset : tablePresets_) {
+            payload["tablePresets"].push_back({
+                {"key", preset.key},
+                {"label", preset.label},
+                {"tableId", preset.tableId},
+                {"viewId", preset.viewId},
+                {"role", preset.role},
+            });
+        }
 
         std::unordered_set<std::string> fieldNames;
         for (const auto& record : records.value()) {

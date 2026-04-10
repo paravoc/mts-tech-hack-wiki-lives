@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
@@ -55,8 +55,20 @@ class ApiClient:
         data = self._request("POST", "/api/render", json_body={"content": content})
         return data["html"]
 
-    def get_insert_options(self) -> dict[str, Any]:
-        return self._request("GET", "/api/mws/insert-options")
+    def get_insert_options(
+        self,
+        table_id: str | None = None,
+        view_id: str | None = None,
+    ) -> dict[str, Any]:
+        query_parts: list[str] = []
+        if table_id:
+            query_parts.append(f"tableId={table_id}")
+        if view_id:
+            query_parts.append(f"viewId={view_id}")
+        path = "/api/mws/insert-options"
+        if query_parts:
+            path += "?" + "&".join(query_parts)
+        return self._request("GET", path)
 
     def suggest_insert(
         self,

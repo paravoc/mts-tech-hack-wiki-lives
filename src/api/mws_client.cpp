@@ -517,21 +517,32 @@ const std::string& MwsClient::viewId() const {
 }
 
 utils::Expected<std::vector<MwsRecord>> MwsClient::getRecords(const std::vector<std::string>& recordIds) {
+    return getRecordsForTable(tableId_, viewId_, recordIds);
+}
+
+utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsForTable(
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::vector<std::string>& recordIds) {
+    const auto resolvedTableId = tableId.empty() ? tableId_ : tableId;
+    const auto resolvedViewId = tableId.empty() ? viewId_ : viewId;
+    const bool usesConfiguredTable = resolvedTableId == tableId_ && resolvedViewId == viewId_;
+
     auto result = retryPolicy_.run(
-        [this, &recordIds]() {
-            return getRecordsOnce(recordIds);
+        [this, &resolvedTableId, &resolvedViewId, &recordIds]() {
+            return getRecordsOnce(resolvedTableId, resolvedViewId, recordIds);
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);
 
     if (result) {
-        if (recordIds.empty()) {
+        if (recordIds.empty() && usesConfiguredTable) {
             lastGoodRecords_ = result.value();
         }
         return result;
     }
 
-    if (recordIds.empty()) {
+    if (recordIds.empty() && usesConfiguredTable) {
         if (!lastGoodRecords_.empty()) {
             return lastGoodRecords_;
         }
@@ -579,12 +590,23 @@ utils::VoidExpected MwsClient::deleteRecord(const std::string& recordId) {
         options_.retryBaseDelayMs);
 }
 
-utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsOnce(const std::vector<std::string>& recordIds) const {
-    if (!hasConfiguration()) {
+utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsOnce(
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::vector<std::string>& recordIds) const {
+    if (token_.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidConfig,
+            "MWS client is missing MWS_TOKEN in .env.",
+            500,
+            false));
+    }
+
+    if (tableId.empty()) {
         return std::unexpected(missingConfigurationError());
     }
 
-    return requestRecordsForTable(token_, tableId_, viewId_, recordIds, options_.requestTimeoutMs);
+    return requestRecordsForTable(token_, tableId, viewId, recordIds, options_.requestTimeoutMs);
 }
 
 utils::Expected<MwsFieldValue> MwsClient::getFieldValueOnce(

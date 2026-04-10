@@ -1,9 +1,9 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from html import escape
 import re
-from typing import Any
+from typing import Any, Iterable
 
 
 FORMULA_PATTERN = re.compile(r"\{\{([^:}]+):([^:}]+):([^}]+)\}\}")
@@ -57,21 +57,35 @@ def count_words(content: str) -> int:
     return len([part for part in re.split(r"\s+", content.strip()) if part])
 
 
-def _insert_lookup(insert_options: dict[str, Any] | None) -> dict[tuple[str, str, str], str]:
+def _iter_insert_option_sets(insert_options: Any) -> Iterable[dict[str, Any]]:
     if not insert_options:
-        return {}
+        return []
+    if isinstance(insert_options, dict) and "records" in insert_options:
+        return [insert_options]
+    if isinstance(insert_options, dict):
+        return [
+            value
+            for value in insert_options.values()
+            if isinstance(value, dict) and "records" in value
+        ]
+    if isinstance(insert_options, list):
+        return [value for value in insert_options if isinstance(value, dict) and "records" in value]
+    return []
 
-    table_id = insert_options.get("tableId", "")
+
+def _insert_lookup(insert_options: Any) -> dict[tuple[str, str, str], str]:
     lookup: dict[tuple[str, str, str], str] = {}
-    for record in insert_options.get("records", []):
-        record_id = record.get("recordId", "")
-        fields = record.get("fields", {})
-        for field_name, value in fields.items():
-            lookup[(table_id, record_id, field_name)] = str(value)
+    for option_set in _iter_insert_option_sets(insert_options):
+        table_id = option_set.get("tableId", "")
+        for record in option_set.get("records", []):
+            record_id = record.get("recordId", "")
+            fields = record.get("fields", {})
+            for field_name, value in fields.items():
+                lookup[(table_id, record_id, field_name)] = str(value)
     return lookup
 
 
-def describe_formula(token: FormulaToken, insert_options: dict[str, Any] | None) -> tuple[str, str]:
+def describe_formula(token: FormulaToken, insert_options: Any) -> tuple[str, str]:
     lookup = _insert_lookup(insert_options)
     preview_value = lookup.get((token.table_id, token.record_id, token.field_name))
 
@@ -83,7 +97,7 @@ def describe_formula(token: FormulaToken, insert_options: dict[str, Any] | None)
 
 def _render_inline_formula(
     token: FormulaToken,
-    insert_options: dict[str, Any] | None,
+    insert_options: Any,
 ) -> str:
     label, preview_value = describe_formula(token, insert_options)
     return (
@@ -96,7 +110,7 @@ def _render_inline_formula(
     )
 
 
-def render_document_html(content: str, insert_options: dict[str, Any] | None = None) -> str:
+def render_document_html(content: str, insert_options: Any = None) -> str:
     if not content.strip():
         return """
         <div class="doc-empty-state">

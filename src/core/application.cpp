@@ -134,12 +134,25 @@ bool Application::initialize(const char* envPath) {
     } else {
         utils::Logger::instance().info("AI provider is disabled");
     }
+
+    std::vector<server::MwsTablePreset> tablePresets;
+    if (!config_.mwsTableId.empty()) {
+        tablePresets.push_back(server::MwsTablePreset{
+            .key = "primary-data",
+            .label = "Основная таблица данных",
+            .tableId = config_.mwsTableId,
+            .viewId = config_.mwsViewId,
+            .role = "data",
+        });
+    }
+
     router_ = std::make_unique<server::Router>(
         *pageService_,
         *renderService_,
         mwsClient_.get(),
         aiService_.get(),
-        webSocketManager_.get());
+        webSocketManager_.get(),
+        std::move(tablePresets));
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 
     initialized_ = true;

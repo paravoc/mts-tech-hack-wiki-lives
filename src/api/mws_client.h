@@ -38,6 +38,10 @@ public:
     [[nodiscard]] const std::string& tableId() const;
     [[nodiscard]] const std::string& viewId() const;
     [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecords(const std::vector<std::string>& recordIds = {});
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsForTable(
+        const std::string& tableId,
+        const std::string& viewId,
+        const std::vector<std::string>& recordIds = {});
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValue(
         const std::string& tableId,
         const std::string& recordId,
@@ -47,7 +51,10 @@ public:
     [[nodiscard]] utils::VoidExpected deleteRecord(const std::string& recordId);
 
 private:
-    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce(const std::vector<std::string>& recordIds) const;
+    [[nodiscard]] utils::Expected<std::vector<MwsRecord>> getRecordsOnce(
+        const std::string& tableId,
+        const std::string& viewId,
+        const std::vector<std::string>& recordIds) const;
     [[nodiscard]] utils::Expected<MwsFieldValue> getFieldValueOnce(
         const std::string& tableId,
         const std::string& recordId,

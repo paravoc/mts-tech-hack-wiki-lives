@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from html import escape
 import os
 import time
 from typing import Any
@@ -149,7 +150,14 @@ def ensure_state() -> None:
         "last_live_sync_at": "",
         "last_remote_sync_epoch": 0.0,
         "insert_options_cache": None,
+        "insert_options_catalog": {},
+        "insert_options_cache_key": "",
         "insert_options_error": "",
+        "saved_table_presets": [],
+        "active_table_key": "",
+        "custom_table_label": "Пользовательская таблица",
+        "custom_table_id": "",
+        "custom_view_id": "",
         "editor_dirty": False,
         "editor_dirty_at": 0.0,
         "last_preview_source": "",
@@ -234,6 +242,120 @@ def build_record_label(record: dict[str, Any]) -> str:
     return record.get("recordId", "record")
 
 
+def make_table_cache_key(table_id: str, view_id: str) -> str:
+    return f"{table_id.strip()}::{view_id.strip()}"
+
+
+def normalize_table_preset(preset: dict[str, Any]) -> dict[str, Any] | None:
+    table_id = str(preset.get("tableId", "")).strip()
+    if not table_id:
+        return None
+
+    view_id = str(preset.get("viewId", "")).strip()
+    key = str(preset.get("key", "")).strip() or make_table_cache_key(table_id, view_id)
+    label = str(preset.get("label", "")).strip() or table_id
+    return {
+        "key": key,
+        "label": label,
+        "tableId": table_id,
+        "viewId": view_id,
+        "role": str(preset.get("role", "data")).strip() or "data",
+    }
+
+
+def merge_table_presets(presets: list[dict[str, Any]] | None) -> None:
+    if presets is None:
+        return
+
+    merged: dict[str, dict[str, Any]] = {
+        preset["key"]: preset
+        for preset in st.session_state.saved_table_presets
+        if isinstance(preset, dict) and preset.get("key")
+    }
+    for preset in presets:
+        normalized = normalize_table_preset(preset)
+        if normalized is not None:
+            merged[normalized["key"]] = normalized
+
+    st.session_state.saved_table_presets = list(merged.values())
+    if not st.session_state.active_table_key and st.session_state.saved_table_presets:
+        st.session_state.active_table_key = st.session_state.saved_table_presets[0]["key"]
+
+
+def get_saved_table_presets() -> list[dict[str, Any]]:
+    return [preset for preset in st.session_state.saved_table_presets if isinstance(preset, dict)]
+
+
+def get_active_table_settings() -> dict[str, Any] | None:
+    presets = {preset["key"]: preset for preset in get_saved_table_presets() if preset.get("key")}
+    active_key = st.session_state.active_table_key
+    if active_key in presets:
+        return presets[active_key]
+
+    custom_table_id = st.session_state.custom_table_id.strip()
+    if active_key == "custom":
+        if custom_table_id:
+            return {
+                "key": "custom",
+                "label": st.session_state.custom_table_label.strip() or "Пользовательская таблица",
+                "tableId": custom_table_id,
+                "viewId": st.session_state.custom_view_id.strip(),
+                "role": "custom",
+            }
+        return None
+
+    if custom_table_id:
+        return {
+            "key": "custom",
+            "label": st.session_state.custom_table_label.strip() or "Пользовательская таблица",
+            "tableId": custom_table_id,
+            "viewId": st.session_state.custom_view_id.strip(),
+            "role": "custom",
+        }
+
+    if presets:
+        fallback = next(iter(presets.values()))
+        st.session_state.active_table_key = fallback["key"]
+        return fallback
+
+    return None
+
+
+def set_active_table_from_response(insert_options: dict[str, Any]) -> None:
+    active_table = insert_options.get("activeTable", {})
+    table_id = str(active_table.get("tableId", "")).strip()
+    view_id = str(active_table.get("viewId", "")).strip()
+    if not table_id:
+        return
+
+    cache_key = make_table_cache_key(table_id, view_id)
+    for preset in get_saved_table_presets():
+        if preset.get("tableId") == table_id and preset.get("viewId", "") == view_id:
+            st.session_state.active_table_key = preset["key"]
+            return
+
+    if st.session_state.active_table_key == "custom":
+        st.session_state.custom_table_id = table_id
+        st.session_state.custom_view_id = view_id
+        if not st.session_state.custom_table_label.strip():
+            st.session_state.custom_table_label = active_table.get("label", "Пользовательская таблица") or "Пользовательская таблица"
+        return
+
+    st.session_state.active_table_key = cache_key
+
+
+def get_cached_insert_options_for_table(table_id: str) -> dict[str, Any] | None:
+    active_options = st.session_state.insert_options_cache
+    if isinstance(active_options, dict) and active_options.get("tableId") == table_id:
+        return active_options
+
+    for option_set in st.session_state.insert_options_catalog.values():
+        if isinstance(option_set, dict) and option_set.get("tableId") == table_id:
+            return option_set
+
+    return None
+
+
 def backend_status(client: ApiClient) -> tuple[bool, str]:
     try:
         health = client.health()
@@ -249,16 +371,49 @@ def fetch_pages(client: ApiClient) -> tuple[list[dict[str, Any]], str | None]:
         return [], str(exc)
 
 
-def ensure_insert_options_loaded(client: ApiClient, force_refresh: bool = False) -> None:
-    if st.session_state.insert_options_cache is not None and not force_refresh:
-        return
-    try:
-        st.session_state.insert_options_cache = client.get_insert_options()
-        st.session_state.insert_options_error = ""
-    except ApiClientError as exc:
-        st.session_state.insert_options_cache = None
-        st.session_state.insert_options_error = str(exc)
+def ensure_insert_options_loaded(
+    client: ApiClient,
+    force_refresh: bool = False,
+    table_id: str | None = None,
+    view_id: str | None = None,
+    adopt_active_selection: bool = True,
+) -> dict[str, Any] | None:
+    requested_table_id = table_id
+    requested_view_id = view_id
 
+    if requested_table_id is None and requested_view_id is None:
+        active_table = get_active_table_settings()
+        if active_table is not None:
+            requested_table_id = active_table.get("tableId", "").strip() or None
+            requested_view_id = active_table.get("viewId", "").strip() or None
+
+    cache_key = "__default__"
+    if requested_table_id:
+        cache_key = make_table_cache_key(requested_table_id, requested_view_id or "")
+
+    if not force_refresh and cache_key in st.session_state.insert_options_catalog:
+        cached = st.session_state.insert_options_catalog[cache_key]
+        st.session_state.insert_options_cache = cached
+        st.session_state.insert_options_cache_key = cache_key
+        st.session_state.insert_options_error = ""
+        return cached
+
+    try:
+        response = client.get_insert_options(requested_table_id, requested_view_id)
+        merge_table_presets(response.get("tablePresets", []))
+        response_key = make_table_cache_key(response.get("tableId", ""), response.get("viewId", ""))
+        st.session_state.insert_options_catalog[response_key] = response
+        st.session_state.insert_options_cache = response
+        st.session_state.insert_options_cache_key = response_key
+        st.session_state.insert_options_error = ""
+        if adopt_active_selection:
+            set_active_table_from_response(response)
+        return response
+    except ApiClientError as exc:
+        if requested_table_id is None and requested_view_id is None:
+            st.session_state.insert_options_cache = None
+        st.session_state.insert_options_error = str(exc)
+        return None
 
 def has_unsaved_local_changes() -> bool:
     snapshot = st.session_state.loaded_page_snapshot or {}
@@ -388,49 +543,275 @@ def render_preview_panel() -> None:
         )
 
 
-def render_formula_studio(client: ApiClient) -> None:
-    ensure_insert_options_loaded(client)
-    tokens = extract_formula_tokens(st.session_state.editor_content)
+def build_source_snapshot_html(
+    insert_options: dict[str, Any],
+    selected_record_id: str,
+    selected_field_name: str,
+) -> str:
+    records = insert_options.get("records", [])
+    field_names = insert_options.get("fieldNames", [])
+    if not records or not field_names:
+        return ""
+
+    visible_fields: list[str] = []
+    if selected_field_name and selected_field_name in field_names:
+        visible_fields.append(selected_field_name)
+    for field_name in field_names:
+        if field_name not in visible_fields:
+            visible_fields.append(field_name)
+        if len(visible_fields) >= 4:
+            break
+
+    header_html = "".join(
+        f'<th style="padding:0.6rem 0.7rem; text-align:left; color:#5b5148; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid rgba(92,72,56,0.12);">{escape(field_name)}</th>'
+        for field_name in visible_fields
+    )
+
+    row_html: list[str] = []
+    for record in records[:6]:
+        row_id = record.get("recordId", "")
+        row_background = "rgba(47,126,105,0.10)" if row_id == selected_record_id else "rgba(255,255,255,0.76)"
+        cells = []
+        for field_name in visible_fields:
+            value = str(record.get("fields", {}).get(field_name, "—"))
+            cell_background = "rgba(187,90,50,0.10)" if row_id == selected_record_id and field_name == selected_field_name else "transparent"
+            cells.append(
+                f'<td style="padding:0.68rem 0.7rem; border-bottom:1px solid rgba(92,72,56,0.08); background:{cell_background}; vertical-align:top;">{escape(value)}</td>'
+            )
+        row_html.append(
+            f'<tr style="background:{row_background};"><td style="padding:0.68rem 0.7rem; border-bottom:1px solid rgba(92,72,56,0.08); font-family:IBM Plex Mono, monospace; color:#5b5148;">{escape(row_id)}</td>{"".join(cells)}</tr>'
+        )
+
+    return (
+        '<div style="border:1px solid rgba(92,72,56,0.12); border-radius:18px; overflow:hidden; background:rgba(255,255,255,0.88);">'
+        '<table style="width:100%; border-collapse:collapse; font-size:0.9rem; color:#2b241d;">'
+        '<thead><tr>'
+        '<th style="padding:0.6rem 0.7rem; text-align:left; color:#5b5148; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.06em; border-bottom:1px solid rgba(92,72,56,0.12);">Record</th>'
+        f'{header_html}'
+        '</tr></thead>'
+        f'<tbody>{"".join(row_html)}</tbody>'
+        '</table></div>'
+    )
+
+
+def render_insert_builder(client: ApiClient) -> None:
+    presets = get_saved_table_presets()
+    selector_options = [preset["key"] for preset in presets]
+    if "custom" not in selector_options:
+        selector_options.append("custom")
+    if not st.session_state.active_table_key and selector_options:
+        st.session_state.active_table_key = selector_options[0]
+
+    def format_table_option(option_key: str) -> str:
+        if option_key == "custom":
+            return "Подключить другую таблицу"
+        for preset in presets:
+            if preset.get("key") == option_key:
+                return preset.get("label", option_key)
+        return option_key
+
+    st.selectbox(
+        "Активная таблица",
+        options=selector_options,
+        key="active_table_key",
+        format_func=format_table_option,
+        help="Сначала выбираем источник данных, затем точную строку и поле. Так вставка становится осмысленной, а не технической.",
+    )
+
+    options: dict[str, Any] | None = None
+    if st.session_state.active_table_key == "custom":
+        st.text_input("Название в интерфейсе", key="custom_table_label", placeholder="Например, Проекты / KPI")
+        st.text_input("Table ID", key="custom_table_id", placeholder="dst...")
+        st.text_input("View ID", key="custom_view_id", placeholder="viw... (можно оставить пустым)")
+        custom_cols = st.columns(2)
+        if custom_cols[0].button("Подключить таблицу", key="connect-custom-table", use_container_width=True):
+            if not st.session_state.custom_table_id.strip():
+                st.session_state.last_error = "Сначала укажи Table ID для пользовательской таблицы."
+                st.rerun()
+            options = ensure_insert_options_loaded(
+                client,
+                force_refresh=True,
+                table_id=st.session_state.custom_table_id.strip(),
+                view_id=st.session_state.custom_view_id.strip() or None,
+            )
+            if options is not None:
+                st.session_state.last_success = "Пользовательская таблица подключена."
+                st.rerun()
+        if custom_cols[1].button("Сохранить в быстрый доступ", key="save-custom-table", use_container_width=True):
+            normalized = normalize_table_preset(
+                {
+                    "key": make_table_cache_key(st.session_state.custom_table_id, st.session_state.custom_view_id),
+                    "label": st.session_state.custom_table_label or st.session_state.custom_table_id,
+                    "tableId": st.session_state.custom_table_id,
+                    "viewId": st.session_state.custom_view_id,
+                    "role": "custom",
+                }
+            )
+            if normalized is None:
+                st.session_state.last_error = "Нельзя сохранить пустую таблицу. Укажи хотя бы Table ID."
+            else:
+                merge_table_presets([normalized])
+                st.session_state.active_table_key = normalized["key"]
+                st.session_state.last_success = "Таблица добавлена в быстрый доступ."
+            st.rerun()
+
+        custom_cache_key = make_table_cache_key(st.session_state.custom_table_id, st.session_state.custom_view_id)
+        if custom_cache_key in st.session_state.insert_options_catalog:
+            options = st.session_state.insert_options_catalog[custom_cache_key]
+        elif st.session_state.custom_table_id.strip():
+            st.info("Таблица указана, но еще не подключена. Нажми «Подключить таблицу», чтобы увидеть строки и поля.")
+            return
+        else:
+            st.info("Здесь можно вручную подключить любую MWS-таблицу по `tableId` и `viewId`, а затем выбрать конкретную ячейку.")
+            return
+    else:
+        options = ensure_insert_options_loaded(client)
+
     if st.session_state.insert_options_error:
         st.error(st.session_state.insert_options_error)
         return
-    insert_options = st.session_state.insert_options_cache or {}
-    records = insert_options.get("records", [])
-    field_names = insert_options.get("fieldNames", [])
-    table_id = insert_options.get("tableId", "")
+    if options is None:
+        st.info("Сначала выбери или подключи таблицу, из которой будем брать данные.")
+        return
+
+    active_info = options.get("activeTable", {})
+    table_label = active_info.get("label") or options.get("tableId", "Таблица")
+    table_id = options.get("tableId", "")
+    view_id = options.get("viewId", "")
+    records = options.get("records", [])
+    field_names = options.get("fieldNames", [])
+
+    st.markdown(
+        f"""
+        <div class="formula-card">
+            <div class="formula-title">
+                <span class="formula-index">T</span>
+                <span class="formula-field">{escape(str(table_label))}</span>
+            </div>
+            <div class="note-chip-row">
+                <span class="note-chip">Table: {escape(str(table_id))}</span>
+                <span class="note-chip">View: {escape(str(view_id or 'без view'))}</span>
+                <span class="note-chip">Строк: {len(records)}</span>
+                <span class="note-chip">Полей: {len(field_names)}</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not records or not field_names:
+        st.info("У выбранной таблицы пока нет доступных строк или полей. Попробуй обновить источник или проверить view.")
+        return
+
+    widget_suffix = st.session_state.insert_options_cache_key or make_table_cache_key(table_id, view_id)
+    selected_record_index = st.selectbox(
+        "Строка",
+        options=list(range(len(records))),
+        format_func=lambda index: build_record_label(records[index]),
+        key=f"insert-record-index-{widget_suffix}",
+        help="Это конкретная запись, из которой будет взято значение.",
+    )
+    selected_record = records[selected_record_index]
+    record_fields = selected_record.get("fields", {})
+    sorted_fields = sorted(field_names, key=lambda field_name: (field_name not in record_fields, field_name.lower()))
+    selected_field = st.selectbox(
+        "Поле / ячейка",
+        options=sorted_fields,
+        key=f"insert-field-name-{widget_suffix}",
+        help="После выбора поля ниже сразу покажется живое значение этой ячейки.",
+    )
+
+    selected_value = str(record_fields.get(selected_field, "—"))
+    st.markdown(
+        f"""
+        <div class="formula-card">
+            <div class="formula-title">
+                <span class="formula-index">#</span>
+                <span class="formula-field">Предпросмотр выбранной ячейки</span>
+            </div>
+            <div class="formula-help">Сначала смотришь реальное значение, только потом вставляешь его в документ.</div>
+            <div class="note-chip-row">
+                <span class="note-chip">Record: {escape(str(selected_record.get('recordId', 'record')))}</span>
+                <span class="note-chip">Поле: {escape(str(selected_field))}</span>
+            </div>
+            <div style="padding:0.95rem 1rem; border-radius:18px; background:rgba(187,90,50,0.08); border:1px solid rgba(187,90,50,0.14); color:#3a2b20; font-family:'Source Serif 4', serif; font-size:1.05rem; line-height:1.7;">{escape(selected_value)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(build_source_snapshot_html(options, selected_record.get("recordId", ""), selected_field), unsafe_allow_html=True)
+
+    token = build_formula_token(table_id, selected_record.get("recordId", "recordId"), selected_field)
+    with st.expander("Техническая формула под капотом", expanded=False):
+        st.code(token, language="text")
+
+    helper_cols = st.columns(2)
+    if helper_cols[0].button("Вставить в курс документа", key=f"insert-token-inline-{widget_suffix}", use_container_width=True):
+        insert_text_snippet(token, new_line=False)
+        st.session_state.last_success = "Ячейка вставлена в документ как живая привязка."
+        st.rerun()
+    if helper_cols[1].button("Вставить отдельным блоком", key=f"insert-token-block-{widget_suffix}", use_container_width=True):
+        insert_text_snippet(token, new_line=True)
+        st.session_state.last_success = "Ячейка добавлена отдельным блоком."
+        st.rerun()
+
+
+def render_formula_studio(client: ApiClient) -> None:
+    tokens = extract_formula_tokens(st.session_state.editor_content)
     if not tokens:
         st.info("В тексте пока нет живых формул. Добавить их можно через конструктор над документом.")
         return
-    if not records or not field_names:
-        st.info("Сначала обнови поля MWS, чтобы редактор увидел записи и столбцы текущей таблицы.")
-        return
+
+    options_by_table: dict[str, dict[str, Any] | None] = {}
     for token in tokens:
-        label, preview_value = describe_formula(token, insert_options)
+        if token.table_id not in options_by_table:
+            cached = get_cached_insert_options_for_table(token.table_id)
+            if cached is None:
+                cached = ensure_insert_options_loaded(client, table_id=token.table_id, adopt_active_selection=False)
+            options_by_table[token.table_id] = cached
+
+    for token in tokens:
+        token_options = options_by_table.get(token.table_id)
+        label, preview_value = describe_formula(token, st.session_state.insert_options_catalog)
         st.markdown(
             f"""
             <div class="formula-card">
                 <div class="formula-title">
                     <span class="formula-index">{token.index + 1}</span>
-                    <span class="formula-field">{label}</span>
+                    <span class="formula-field">{escape(label)}</span>
                 </div>
-                <div class="formula-help">Сейчас в документе эта формула выглядит как живой чип. Тут можно быстро переназначить запись или поле.</div>
+                <div class="formula-help">Формула уже живет в тексте. Здесь можно переназначить точную запись и поле без ручного редактирования идентификаторов.</div>
                 <div class="note-chip-row">
-                    <span class="note-chip">Значение: {preview_value}</span>
-                    <span class="note-chip">Record: {token.record_id}</span>
+                    <span class="note-chip">Таблица: {escape(token.table_id)}</span>
+                    <span class="note-chip">Значение: {escape(preview_value)}</span>
+                    <span class="note-chip">Record: {escape(token.record_id)}</span>
                 </div>
-                <div class="formula-raw">{token.raw}</div>
+                <div class="formula-raw">{escape(token.raw)}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
+
+        if token_options is None:
+            st.info("Для этой формулы таблица еще не загружена. Открой ее через конструктор вставки, и студия сможет показать точные записи и поля.")
+            continue
+
+        records = token_options.get("records", [])
+        field_names = token_options.get("fieldNames", [])
+        if not records or not field_names:
+            st.info("У этой формулы источник пока не отдает строки или поля. Проверь выбранную таблицу и ее view.")
+            continue
+
         matching_record_index = next((index for index, record in enumerate(records) if record.get("recordId") == token.record_id), 0)
+        popover_key = f"formula-{token.index}-{token.table_id}"
         with st.popover(f"Настроить формулу #{token.index + 1}", use_container_width=True):
             selected_record_index = st.selectbox(
                 "Запись",
                 options=list(range(len(records))),
                 index=matching_record_index,
-                format_func=lambda idx: build_record_label(records[idx]),
-                key=f"formula-record-{token.index}",
+                format_func=lambda index: build_record_label(records[index]),
+                key=f"{popover_key}-record",
             )
             selected_record = records[selected_record_index]
             record_fields = selected_record.get("fields", {})
@@ -439,22 +820,22 @@ def render_formula_studio(client: ApiClient) -> None:
                 "Поле",
                 options=sorted_fields,
                 index=sorted_fields.index(token.field_name) if token.field_name in sorted_fields else 0,
-                key=f"formula-field-{token.index}",
+                key=f"{popover_key}-field",
             )
-            rebuilt_token = build_formula_token(table_id, selected_record.get("recordId", token.record_id), selected_field)
+            st.markdown(build_source_snapshot_html(token_options, selected_record.get("recordId", ""), selected_field), unsafe_allow_html=True)
+            rebuilt_token = build_formula_token(token_options.get("tableId", token.table_id), selected_record.get("recordId", token.record_id), selected_field)
             st.code(rebuilt_token, language="text")
             cols = st.columns(2)
-            if cols[0].button("Применить", key=f"formula-apply-{token.index}", use_container_width=True):
+            if cols[0].button("Применить", key=f"{popover_key}-apply", use_container_width=True):
                 st.session_state.editor_content = replace_formula_token(st.session_state.editor_content, token.index, rebuilt_token)
                 mark_editor_dirty()
                 st.session_state.last_success = f"Формула #{token.index + 1} обновлена."
                 st.rerun()
-            if cols[1].button("Удалить", key=f"formula-remove-{token.index}", use_container_width=True):
+            if cols[1].button("Удалить", key=f"{popover_key}-remove", use_container_width=True):
                 st.session_state.editor_content = replace_formula_token(st.session_state.editor_content, token.index, "")
                 mark_editor_dirty()
                 st.session_state.last_success = f"Формула #{token.index + 1} удалена из текста."
                 st.rerun()
-
 
 def render_ai_panel(client: ApiClient) -> None:
     st.text_input("Что нужно вставить", key="ai_prompt", placeholder="Например, вставь статус проекта")
@@ -574,6 +955,21 @@ def main() -> None:
         """,
         unsafe_allow_html=True,
     )
+    active_table = get_active_table_settings()
+    if active_table is not None:
+        st.markdown(
+            f"""
+            <div class="glass-card" style="padding:0.85rem 1rem; margin-top:-0.15rem; margin-bottom:1rem;">
+                <div class="section-title">Активный источник живых данных</div>
+                <div class="note-chip-row">
+                    <span class="note-chip">{escape(active_table.get('label', 'Таблица'))}</span>
+                    <span class="note-chip">Table: {escape(active_table.get('tableId', ''))}</span>
+                    <span class="note-chip">View: {escape(active_table.get('viewId', '') or 'без view')}</span>
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
     render_background_worker(client)
 
     main_col, rail_col = st.columns([1.8, 1.0], gap="large")
@@ -591,40 +987,13 @@ def main() -> None:
         )
         toolbar_col1, toolbar_col2, toolbar_col3, toolbar_col4, toolbar_col5 = st.columns([1.45, 1.0, 0.75, 0.75, 0.75])
         with toolbar_col1:
-            with st.popover("Вставить живое поле", use_container_width=True):
-                if st.session_state.insert_options_error:
-                    st.error(st.session_state.insert_options_error)
-                else:
-                    options = st.session_state.insert_options_cache or {}
-                    records = options.get("records", [])
-                    field_names = options.get("fieldNames", [])
-                    st.caption("Собираем формулу из текущей MWS-таблицы и вставляем ее в документ одной кнопкой.")
-                    if not records or not field_names:
-                        st.info("Не удалось получить записи или поля из текущей таблицы MWS.")
-                    else:
-                        table_id = options.get("tableId", "tableId")
-                        selected_record_index = st.selectbox("Запись", options=list(range(len(records))), format_func=lambda idx: build_record_label(records[idx]), key="insert-record-index")
-                        selected_record = records[selected_record_index]
-                        record_fields = selected_record.get("fields", {})
-                        sorted_fields = sorted(field_names, key=lambda field_name: (field_name not in record_fields, field_name.lower()))
-                        selected_field = st.selectbox("Поле", options=sorted_fields, key="insert-field-name")
-                        token = build_formula_token(table_id, selected_record.get("recordId", "recordId"), selected_field)
-                        st.code(token, language="text")
-                        st.caption(f"Текущее значение: {record_fields.get(selected_field, '—')}")
-                        helper_cols = st.columns(2)
-                        if helper_cols[0].button("Вставить в строку", key="insert-token-inline", use_container_width=True):
-                            insert_text_snippet(token, new_line=False)
-                            st.session_state.last_success = "Живое поле добавлено в текущий текст."
-                            st.rerun()
-                        if helper_cols[1].button("Отдельным блоком", key="insert-token-newline", use_container_width=True):
-                            insert_text_snippet(token, new_line=True)
-                            st.session_state.last_success = "Живое поле добавлено отдельным блоком."
-                            st.rerun()
+            with st.popover("Выбрать ячейку из таблицы", use_container_width=True):
+                render_insert_builder(client)
         with toolbar_col2:
-            if st.button("Обновить поля MWS", use_container_width=True):
+            if st.button("Обновить активную таблицу", use_container_width=True):
                 ensure_insert_options_loaded(client, force_refresh=True)
                 st.session_state.last_error = st.session_state.insert_options_error if st.session_state.insert_options_error else ""
-                st.session_state.last_success = "Поля и записи MWS перечитаны." if not st.session_state.insert_options_error else ""
+                st.session_state.last_success = "Активная таблица перечитана." if not st.session_state.insert_options_error else ""
                 st.rerun()
         with toolbar_col3:
             if st.button("## Раздел", use_container_width=True):
@@ -642,7 +1011,7 @@ def main() -> None:
                 st.session_state.last_success = "Добавлен разделитель."
                 st.rerun()
         st.markdown('<div class="writer-shell">', unsafe_allow_html=True)
-        st.markdown(f'<div class="paper-sheet"><div class="paper-heading">{selected_label}</div><div class="paper-meta">Это локальный читабельный слой: формулы показаны как живые карточки, а не как сырые идентификаторы.</div>{render_document_html(st.session_state.editor_content, st.session_state.insert_options_cache)}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="paper-sheet"><div class="paper-heading">{selected_label}</div><div class="paper-meta">Это локальный читабельный слой: формулы показаны как живые карточки, а не как сырые идентификаторы.</div>{render_document_html(st.session_state.editor_content, st.session_state.insert_options_catalog)}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
         st.text_input("Заголовок", key="editor_title", placeholder="Например, Статус релиза или Операционная сводка", on_change=mark_editor_dirty)
         st.text_area("Текст документа", key="editor_content", height=760, placeholder="Пиши свободный текст. Формулы можно вставлять через конструктор, а сверху ты всегда видишь более человечную версию листа.", on_change=mark_editor_dirty)
@@ -684,3 +1053,14 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+
+
+
+
+
+
+
+
+

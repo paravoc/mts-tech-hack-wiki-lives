@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <string>
+#include <vector>
 
 #include "src/ai/ai_service.h"
 #include "src/api/mws_client.h"
@@ -11,6 +12,14 @@
 #include "src/utils/errors.h"
 
 namespace wikilive::server {
+
+struct MwsTablePreset {
+    std::string key;
+    std::string label;
+    std::string tableId;
+    std::string viewId;
+    std::string role = "data";
+};
 
 struct RouteResponse {
     int statusCode = 200;
@@ -23,13 +32,15 @@ public:
         services::PageService& pageService,
         services::RenderService& renderService,
         ai::AiService* aiService,
-        WebSocketManager* webSocketManager = nullptr);
+        WebSocketManager* webSocketManager = nullptr,
+        std::vector<MwsTablePreset> tablePresets = {});
     Router(
         services::PageService& pageService,
         services::RenderService& renderService,
         api::MwsClient* mwsClient = nullptr,
         ai::AiService* aiService = nullptr,
-        WebSocketManager* webSocketManager = nullptr);
+        WebSocketManager* webSocketManager = nullptr,
+        std::vector<MwsTablePreset> tablePresets = {});
 
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();
@@ -38,7 +49,9 @@ public:
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
-    [[nodiscard]] RouteResponse getMwsInsertOptions();
+    [[nodiscard]] RouteResponse getMwsInsertOptions(
+        const std::string& tableId = {},
+        const std::string& viewId = {});
     [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
 
 private:
@@ -57,6 +70,7 @@ private:
     api::MwsClient* mwsClient_ = nullptr;
     ai::AiService* aiService_ = nullptr;
     WebSocketManager* webSocketManager_ = nullptr;
+    std::vector<MwsTablePreset> tablePresets_{};
 };
 
 }  // namespace wikilive::server
