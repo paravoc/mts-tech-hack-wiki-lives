@@ -139,6 +139,60 @@ utils::VoidExpected HttpServer::start(const int port) {
             writeResponse(response, router_.listPages());
         });
 
+        app.get("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listVersions(std::string(request->getParameter(0))));
+        });
+
+        app.post("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createVersion(pageId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/versions/:versionId/restore", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(
+                response,
+                router_.restoreVersion(
+                    std::string(request->getParameter(0)),
+                    std::string(request->getParameter(1))));
+        });
+
+        app.get("/api/pages/:pageId/comments", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listComments(std::string(request->getParameter(0))));
+        });
+
+        app.post("/api/pages/:pageId/comments", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createComment(pageId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/replies", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.replyToComment(pageId, threadId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/resolve", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.resolveComment(pageId, threadId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/like", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.toggleCommentLike(pageId, threadId, body));
+            });
+        });
+
         app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
             writeResponse(response, router_.getPage(std::string(request->getParameter(0))));
         });

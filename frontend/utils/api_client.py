@@ -51,6 +51,68 @@ class ApiClient:
     def delete_page(self, page_id: str) -> dict[str, Any]:
         return self._request("DELETE", f"/api/pages/{page_id}")
 
+    def list_versions(self, page_id: str) -> list[dict[str, Any]]:
+        data = self._request("GET", f"/api/pages/{page_id}/versions")
+        return data.get("items", [])
+
+    def create_version(self, page_id: str, label: str, author: str = "manual") -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"/api/pages/{page_id}/versions",
+            json_body={"label": label, "author": author},
+        )
+        return data["item"]
+
+    def restore_version(self, page_id: str, version_id: str) -> dict[str, Any]:
+        data = self._request("POST", f"/api/pages/{page_id}/versions/{version_id}/restore", json_body={})
+        return data["item"]
+
+    def list_comments(self, page_id: str) -> list[dict[str, Any]]:
+        data = self._request("GET", f"/api/pages/{page_id}/comments")
+        return data.get("items", [])
+
+    def create_comment(
+        self,
+        page_id: str,
+        body: str,
+        selection_label: str = "",
+        author: str = "viewer",
+    ) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"/api/pages/{page_id}/comments",
+            json_body={
+                "body": body,
+                "selectionLabel": selection_label,
+                "author": author,
+            },
+        )
+        return data["item"]
+
+    def reply_to_comment(self, page_id: str, thread_id: str, body: str, author: str = "viewer") -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"/api/pages/{page_id}/comments/{thread_id}/replies",
+            json_body={"body": body, "author": author},
+        )
+        return data["item"]
+
+    def resolve_comment(self, page_id: str, thread_id: str, resolved: bool) -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"/api/pages/{page_id}/comments/{thread_id}/resolve",
+            json_body={"resolved": resolved},
+        )
+        return data["item"]
+
+    def toggle_comment_like(self, page_id: str, thread_id: str, author: str = "viewer") -> dict[str, Any]:
+        data = self._request(
+            "POST",
+            f"/api/pages/{page_id}/comments/{thread_id}/like",
+            json_body={"author": author},
+        )
+        return data["item"]
+
     def render_content(self, content: str) -> str:
         data = self._request("POST", "/api/render", json_body={"content": content})
         return data["html"]

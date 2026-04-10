@@ -19,11 +19,13 @@ class AiService;
 }
 
 namespace wikilive::services {
+class CollaborationService;
 class PageService;
 class RenderService;
 }
 
 namespace wikilive::storage {
+class LocalCollaborationStorage;
 class PageStorage;
 }
 
@@ -46,7 +48,9 @@ private:
     std::unique_ptr<api::MwsClient> mwsClient_{};
     std::unique_ptr<api::MwsClient> wikiPagesClient_{};
     std::unique_ptr<storage::PageStorage> pageStorage_{};
-    std::unique_ptr<services::PageService> pageService_{};
+    std::unique_ptr<storage::LocalCollaborationStorage> collaborationStorage_{};
+    std::unique_ptr<services::PageService> pageService_{}; 
+    std::unique_ptr<services::CollaborationService> collaborationService_{};
     std::unique_ptr<services::RenderService> renderService_{};
     std::unique_ptr<ai::AiService> aiService_{};
     std::unique_ptr<server::WebSocketManager> webSocketManager_{};

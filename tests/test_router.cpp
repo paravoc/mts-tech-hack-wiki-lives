@@ -1,10 +1,14 @@
+#include <filesystem>
+
 #include "src/ai/ai_provider.h"
 #include "src/ai/ai_service.h"
 #include "src/ai/ai_context_builder.h"
 #include "src/server/router.h"
+#include "src/services/collaboration_service.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/storage/in_memory_page_storage.h"
+#include "src/storage/local_collaboration_storage.h"
 #include "tests/test_common.h"
 
 namespace {
@@ -166,6 +170,64 @@ void buildsAiContextWhenPayloadDoesNotIncludeIt() {
         "provider should receive generated context");
 }
 
+void handlesVersionsAndCommentsFlow() {
+    const auto tempPath = std::filesystem::current_path() / "test-router-collaboration.json";
+    std::filesystem::remove(tempPath);
+
+    wikilive::storage::InMemoryPageStorage storage;
+    wikilive::storage::LocalCollaborationStorage collaborationStorage(tempPath.string());
+    wikilive::services::PageService pageService(storage);
+    wikilive::services::CollaborationService collaborationService(pageService, collaborationStorage);
+    wikilive::services::RenderService renderService;
+    wikilive::server::Router router(pageService, renderService, static_cast<wikilive::ai::AiService*>(nullptr), &collaborationService, nullptr);
+
+    const auto createResponse = router.createPage(R"({"title":"Wiki page","content":"Draft"})");
+    wikilive::tests::expectEqual(createResponse.statusCode, 201, "create should return 201");
+
+    const auto listVersionsResponse = router.listVersions("page-1");
+    wikilive::tests::expectEqual(listVersionsResponse.statusCode, 200, "versions should return 200");
+    wikilive::tests::expect(
+        listVersionsResponse.body.find("\"label\":\"Created page\"") != std::string::npos,
+        "created page snapshot should exist");
+
+    const auto manualVersionResponse = router.createVersion("page-1", R"({"label":"Checkpoint"})");
+    wikilive::tests::expectEqual(manualVersionResponse.statusCode, 201, "manual version should return 201");
+
+    const auto updateResponse = router.updatePage("page-1", R"({"title":"Wiki page","content":"Draft v2"})");
+    wikilive::tests::expectEqual(updateResponse.statusCode, 200, "update should return 200");
+
+    const auto commentResponse = router.createComment("page-1", R"({"body":"Needs review","selectionLabel":"Абзац 1"})");
+    wikilive::tests::expectEqual(commentResponse.statusCode, 201, "comment should return 201");
+    wikilive::tests::expect(commentResponse.body.find("\"selectionLabel\":\"Абзац 1\"") != std::string::npos, "selection label should be persisted");
+
+    const auto commentsResponse = router.listComments("page-1");
+    wikilive::tests::expectEqual(commentsResponse.statusCode, 200, "comments should return 200");
+    wikilive::tests::expect(commentsResponse.body.find("\"Needs review\"") != std::string::npos, "comment list should contain body");
+
+    const auto threadIdStart = commentsResponse.body.find("\"threadId\":\"");
+    wikilive::tests::expect(threadIdStart != std::string::npos, "threadId should be present");
+    const auto threadValueStart = threadIdStart + std::string("\"threadId\":\"").size();
+    const auto threadValueEnd = commentsResponse.body.find('"', threadValueStart);
+    const auto threadId = commentsResponse.body.substr(threadValueStart, threadValueEnd - threadValueStart);
+
+    const auto replyResponse = router.replyToComment("page-1", threadId, R"({"body":"Working on it"})");
+    wikilive::tests::expectEqual(replyResponse.statusCode, 200, "reply should return 200");
+    wikilive::tests::expect(replyResponse.body.find("\"Working on it\"") != std::string::npos, "reply body should be stored");
+
+    const auto likeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
+    wikilive::tests::expectEqual(likeResponse.statusCode, 200, "like should return 200");
+    wikilive::tests::expect(likeResponse.body.find("\"likeCount\":1") != std::string::npos, "like count should increase");
+
+    const auto resolveResponse = router.resolveComment("page-1", threadId, R"({"resolved":true})");
+    wikilive::tests::expectEqual(resolveResponse.statusCode, 200, "resolve should return 200");
+    wikilive::tests::expect(resolveResponse.body.find("\"resolved\":true") != std::string::npos, "thread should be resolved");
+
+    const auto versionsAfterUpdate = router.listVersions("page-1");
+    wikilive::tests::expect(versionsAfterUpdate.body.find("\"Saved changes\"") != std::string::npos, "update snapshot should exist");
+
+    std::filesystem::remove(tempPath);
+}
+
 }  // namespace
 
 int main() {
@@ -177,5 +239,6 @@ int main() {
         {"rejects AI request when service is missing", rejectsAiRequestWhenServiceIsMissing},
         {"handles AI suggest insert flow", handlesAiSuggestInsertFlow},
         {"builds AI context when payload does not include it", buildsAiContextWhenPayloadDoesNotIncludeIt},
+        {"handles versions and comments flow", handlesVersionsAndCommentsFlow},
     });
 }

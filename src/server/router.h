@@ -7,6 +7,7 @@
 #include "src/ai/ai_service.h"
 #include "src/api/mws_client.h"
 #include "src/server/websocket_manager.h"
+#include "src/services/collaboration_service.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/utils/errors.h"
@@ -32,6 +33,7 @@ public:
         services::PageService& pageService,
         services::RenderService& renderService,
         ai::AiService* aiService,
+        services::CollaborationService* collaborationService = nullptr,
         WebSocketManager* webSocketManager = nullptr,
         std::vector<MwsTablePreset> tablePresets = {});
     Router(
@@ -39,6 +41,7 @@ public:
         services::RenderService& renderService,
         api::MwsClient* mwsClient = nullptr,
         ai::AiService* aiService = nullptr,
+        services::CollaborationService* collaborationService = nullptr,
         WebSocketManager* webSocketManager = nullptr,
         std::vector<MwsTablePreset> tablePresets = {});
 
@@ -48,6 +51,23 @@ public:
     [[nodiscard]] RouteResponse createPage(const std::string& payload);
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
+    [[nodiscard]] RouteResponse listVersions(const std::string& pageId);
+    [[nodiscard]] RouteResponse createVersion(const std::string& pageId, const std::string& payload);
+    [[nodiscard]] RouteResponse restoreVersion(const std::string& pageId, const std::string& versionId);
+    [[nodiscard]] RouteResponse listComments(const std::string& pageId);
+    [[nodiscard]] RouteResponse createComment(const std::string& pageId, const std::string& payload);
+    [[nodiscard]] RouteResponse replyToComment(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& payload);
+    [[nodiscard]] RouteResponse resolveComment(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& payload);
+    [[nodiscard]] RouteResponse toggleCommentLike(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& payload);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
     [[nodiscard]] RouteResponse getMwsInsertOptions(
         const std::string& tableId = {},
@@ -69,6 +89,7 @@ private:
     services::RenderService& renderService_;
     api::MwsClient* mwsClient_ = nullptr;
     ai::AiService* aiService_ = nullptr;
+    services::CollaborationService* collaborationService_ = nullptr;
     WebSocketManager* webSocketManager_ = nullptr;
     std::vector<MwsTablePreset> tablePresets_{};
 };

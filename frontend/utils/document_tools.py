@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 
 FORMULA_PATTERN = re.compile(r"\{\{([^:}]+):([^:}]+):([^}]+)\}\}")
+TABLE_SEPARATOR_CELL_PATTERN = re.compile(r"^:?-{3,}:?$")
 
 
 @dataclass(slots=True)
@@ -115,9 +116,7 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
         return """
         <div class="doc-empty-state">
             <div class="doc-empty-state__title">Лист пока пуст</div>
-            <div class="doc-empty-state__text">
-                Начни писать текст, а живые поля MWS можно вставлять через конструктор справа.
-            </div>
+            <div class="doc-empty-state__text">Начни писать текст.</div>
         </div>
         """
 
@@ -157,12 +156,69 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
         )
         paragraph_parts.clear()
 
-    for raw_line in content.splitlines():
-        line = raw_line.rstrip()
+    def is_table_line(line: str) -> bool:
+        stripped = line.strip()
+        return stripped.startswith("|") and stripped.endswith("|") and "|" in stripped[1:-1]
+
+    def parse_table_cells(line: str) -> list[str]:
+        return [cell.strip() for cell in line.strip()[1:-1].split("|")]
+
+    def is_table_separator(line: str) -> bool:
+        cells = parse_table_cells(line)
+        return bool(cells) and all(TABLE_SEPARATOR_CELL_PATTERN.match(cell) for cell in cells)
+
+    def render_table_block(header_cells: list[str], body_rows: list[list[str]]) -> str:
+        header_html = "".join(
+            f'<th style="padding:0.72rem 0.8rem;text-align:left;border-bottom:1px solid rgba(20,23,28,0.08);background:rgba(227,6,19,0.05);">{replace_formulas(cell)}</th>'
+            for cell in header_cells
+        )
+        body_html = []
+        for row in body_rows:
+            cells_html = "".join(
+                f'<td style="padding:0.72rem 0.8rem;border-bottom:1px solid rgba(20,23,28,0.06);vertical-align:top;">{replace_formulas(cell)}</td>'
+                for cell in row
+            )
+            body_html.append(f"<tr>{cells_html}</tr>")
+        return (
+            '<div class="doc-table-wrap" style="overflow:auto;margin:0.85rem 0;border:1px solid rgba(20,23,28,0.08);border-radius:18px;background:#fff;">'
+            '<table class="doc-table" style="width:100%;border-collapse:collapse;font-size:0.97rem;">'
+            f"<thead><tr>{header_html}</tr></thead>"
+            f"<tbody>{''.join(body_html)}</tbody>"
+            "</table></div>"
+        )
+
+    lines = content.splitlines()
+    index = 0
+    while index < len(lines):
+        line = lines[index].rstrip()
         stripped = line.strip()
 
         if not stripped:
             flush_paragraph()
+            index += 1
+            continue
+
+        if (
+            is_table_line(stripped)
+            and index + 1 < len(lines)
+            and is_table_line(lines[index + 1].strip())
+            and is_table_separator(lines[index + 1].strip())
+        ):
+            flush_paragraph()
+            header_cells = parse_table_cells(stripped)
+            body_rows: list[list[str]] = []
+            index += 2
+            while index < len(lines):
+                candidate = lines[index].rstrip()
+                candidate_stripped = candidate.strip()
+                if not is_table_line(candidate_stripped):
+                    break
+                row_cells = parse_table_cells(candidate_stripped)
+                if len(row_cells) != len(header_cells):
+                    break
+                body_rows.append(row_cells)
+                index += 1
+            blocks.append(render_table_block(header_cells, body_rows))
             continue
 
         if stripped.startswith("## "):
@@ -170,11 +226,13 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
             blocks.append(
                 f'<h2 class="doc-heading">{replace_formulas(stripped[3:])}</h2>'
             )
+            index += 1
             continue
 
         if stripped == "---":
             flush_paragraph()
             blocks.append('<div class="doc-divider"></div>')
+            index += 1
             continue
 
         if stripped.startswith("> "):
@@ -184,9 +242,11 @@ def render_document_html(content: str, insert_options: Any = None) -> str:
                 f"{replace_formulas(stripped[2:])}"
                 "</div>"
             )
+            index += 1
             continue
 
         paragraph_parts.append(replace_formulas(line))
+        index += 1
 
     flush_paragraph()
     return "".join(blocks)

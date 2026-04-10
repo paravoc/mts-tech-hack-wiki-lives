@@ -14,9 +14,11 @@
 #include "src/server/http_server.h"
 #include "src/server/router.h"
 #include "src/server/websocket_manager.h"
+#include "src/services/collaboration_service.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/storage/in_memory_page_storage.h"
+#include "src/storage/local_collaboration_storage.h"
 #include "src/storage/mws_page_storage.h"
 #include "src/utils/logger.h"
 
@@ -112,6 +114,9 @@ bool Application::initialize(const char* envPath) {
     }
 
     pageService_ = std::make_unique<services::PageService>(*pageStorage_);
+    collaborationStorage_ = std::make_unique<storage::LocalCollaborationStorage>(
+        (std::filesystem::current_path() / "data" / "wikilive_collaboration.json").string());
+    collaborationService_ = std::make_unique<services::CollaborationService>(*pageService_, *collaborationStorage_);
     renderService_ = std::make_unique<services::RenderService>(mwsClient_.get());
     std::unique_ptr<ai::AiSuggestionValidator> aiSuggestionValidator;
     std::unique_ptr<ai::AiContextBuilder> aiContextBuilder;
@@ -151,6 +156,7 @@ bool Application::initialize(const char* envPath) {
         *renderService_,
         mwsClient_.get(),
         aiService_.get(),
+        collaborationService_.get(),
         webSocketManager_.get(),
         std::move(tablePresets));
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
@@ -181,7 +187,9 @@ void Application::stop() {
     router_.reset();
     aiService_.reset();
     renderService_.reset();
+    collaborationService_.reset();
     pageService_.reset();
+    collaborationStorage_.reset();
     pageStorage_.reset();
     wikiPagesClient_.reset();
     mwsClient_.reset();
