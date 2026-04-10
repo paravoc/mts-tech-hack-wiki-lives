@@ -426,6 +426,7 @@ def ensure_state() -> None:
         "comment_selection": "",
         "pages_cache": [],
         "pages_cache_loaded": False,
+        "insert_row_limit": 100,
     }
     for key, value in defaults.items():
         if key not in st.session_state:
@@ -2701,15 +2702,28 @@ def render_insert_workspace(client: ApiClient) -> tuple[str, str]:
             st.markdown('<div class="tiny">Не удалось загрузить таблицу</div>', unsafe_allow_html=True)
             return "", ""
 
-        dataframe, records, field_names = build_table_dataframe(payload)
+        total_rows = len(payload.get("records", []))
+        row_limit = max(50, int(st.session_state.insert_row_limit))
+        visible_payload = dict(payload)
+        visible_payload["records"] = payload.get("records", [])[:row_limit]
+        dataframe, records, field_names = build_table_dataframe(visible_payload)
         if dataframe.empty or not field_names:
             st.markdown('<div class="tiny">В таблице нет данных</div>', unsafe_allow_html=True)
             return "", ""
 
+        if total_rows > row_limit:
+            st.markdown(
+                f'<div class="tiny" style="margin:.1rem 0 .45rem">Показано {row_limit} из {total_rows}</div>',
+                unsafe_allow_html=True,
+            )
+            if st.button("Еще 100", key=f"more-rows-{st.session_state.active_table_key}", use_container_width=True):
+                st.session_state.insert_row_limit = row_limit + 100
+                st.rerun()
+
         selection_event = st.dataframe(
             dataframe,
             width=860,
-            height=260,
+            height=360,
             on_select="rerun",
             selection_mode="multi-cell",
             key=f"insert-grid-{st.session_state.active_table_key}",
@@ -2718,11 +2732,11 @@ def render_insert_workspace(client: ApiClient) -> tuple[str, str]:
         cells = extract_cells(selection_event)
         mode = st.session_state.insert_mode
         if mode == "table":
-            snippet, _preview, hint = build_table_selection_snippet(payload, cells)
+            snippet, _preview, hint = build_table_selection_snippet(visible_payload, cells)
         elif mode == "blocks":
-            snippet, _preview, hint = build_block_selection_snippet(payload, cells)
+            snippet, _preview, hint = build_block_selection_snippet(visible_payload, cells)
         else:
-            snippet, _preview, hint = build_selection_snippet(payload, cells)
+            snippet, _preview, hint = build_selection_snippet(visible_payload, cells)
         if not snippet:
             st.markdown('<div class="tiny">Выдели ячейку или диапазон</div>', unsafe_allow_html=True)
             return "", ""
