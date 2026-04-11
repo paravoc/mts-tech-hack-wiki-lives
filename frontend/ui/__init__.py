@@ -1,2 +1,2 @@
-"""UI package for the working WikiLive hackathon prototype."""
+"""Minimal UI package for the loading-page rebuild."""
 
