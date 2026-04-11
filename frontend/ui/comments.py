@@ -359,6 +359,10 @@ def comments_styles() -> str:
           padding: 0 24px;
         }
 
+        .comments-panel__body > [hidden] {
+          display: none !important;
+        }
+
         .comments-panel__error-inner {
           display: flex;
           flex-direction: column;
