@@ -113,6 +113,9 @@ let commentAccessMode = "all_users";
 let commentBootstrapPromise = null;
 let commentSaveTimer = null;
 let commentSyncTimer = null;
+let commentSocket = null;
+let commentSocketPageId = "";
+let commentSocketReconnectTimer = null;
 
 function commentIconSvg() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-7l-2.8 2V10.5H2.5z"></path><path d="M5.2 6.2h5.6M5.2 8.2h3.4"></path></svg>';
@@ -188,6 +191,87 @@ async function commentApiRequest(path, options = {}) {
   }
 
   return payload.data || {};
+}
+
+function getCommentSocketUrl() {
+  if (commentApiBase.startsWith("https://")) {
+    return commentApiBase.replace("https://", "wss://") + "/ws";
+  }
+  return commentApiBase.replace("http://", "ws://") + "/ws";
+}
+
+async function refreshCommentsFromServer() {
+  if (!commentPageId) {
+    return;
+  }
+  await syncThreadsFromServer();
+  if (commentOpenTargetId) {
+    const activeThread = getThread(commentOpenTargetId);
+    commentPanelMode = activeThread && activeThread.comments.length ? "list" : "empty";
+    renderCommentsPanel();
+  }
+  if (commentsHistoryModal && commentsHistoryModal.classList.contains("is-open") && commentHistoryMode !== "error") {
+    renderHistoryModal();
+  }
+  scheduleCommentAnchors();
+}
+
+function subscribeCommentSocketToPage() {
+  if (!commentSocket || commentSocket.readyState !== WebSocket.OPEN || !commentPageId || commentSocketPageId === commentPageId) {
+    return;
+  }
+  commentSocket.send(JSON.stringify({ action: "subscribe", pageId: commentPageId }));
+  commentSocketPageId = commentPageId;
+}
+
+function ensureCommentSocket() {
+  if (typeof window.WebSocket !== "function") {
+    return;
+  }
+  if (commentSocket && (commentSocket.readyState === WebSocket.OPEN || commentSocket.readyState === WebSocket.CONNECTING)) {
+    subscribeCommentSocketToPage();
+    return;
+  }
+
+  try {
+    commentSocket = new WebSocket(getCommentSocketUrl());
+  } catch (error) {
+    console.warn("Failed to open comment socket", error);
+    return;
+  }
+
+  commentSocketPageId = "";
+  commentSocket.addEventListener("open", () => {
+    subscribeCommentSocketToPage();
+  });
+  commentSocket.addEventListener("message", (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      if (!payload || payload.pageId !== commentPageId) {
+        return;
+      }
+      if (payload.event === "comments.changed" || payload.event === "comments.access.changed" || payload.event === "page.updated") {
+        refreshCommentsFromServer().catch((error) => console.warn("Failed to refresh comments from socket", error));
+      }
+    } catch (error) {
+      console.warn("Failed to parse comment socket payload", error);
+    }
+  });
+  commentSocket.addEventListener("close", () => {
+    commentSocket = null;
+    commentSocketPageId = "";
+    if (commentSocketReconnectTimer) {
+      clearTimeout(commentSocketReconnectTimer);
+    }
+    commentSocketReconnectTimer = window.setTimeout(() => {
+      ensureCommentSocket();
+    }, 1800);
+  });
+  commentSocket.addEventListener("error", () => {
+    if (commentSocket) {
+      commentSocket.close();
+    }
+  });
 }
 
 function inferTargetType(target) {
@@ -415,6 +499,8 @@ async function ensureCommentPage() {
     commentPageId = page.pageId;
     window.localStorage.setItem(commentPageStorageKey, commentPageId);
     await syncThreadsFromServer();
+    ensureCommentSocket();
+    subscribeCommentSocketToPage();
     scheduleCommentAnchors();
     renderCommentsPanel();
     return page;
@@ -1304,6 +1390,7 @@ function initializeCommentsSystem() {
   window.setTimeout(scheduleCommentAnchors, 420);
   window.setTimeout(scheduleCommentAnchors, 980);
   window.setTimeout(scheduleCommentAnchors, 1400);
+  ensureCommentSocket();
   commentSyncTimer = window.setInterval(() => {
     if (!commentPageId || !commentsPanel.classList.contains("is-open")) {
       return;
@@ -1313,6 +1400,14 @@ function initializeCommentsSystem() {
       scheduleCommentAnchors();
     }).catch(() => {});
   }, 6000);
+  window.addEventListener("beforeunload", () => {
+    if (commentSocketReconnectTimer) {
+      clearTimeout(commentSocketReconnectTimer);
+    }
+    if (commentSocket && commentSocket.readyState === WebSocket.OPEN) {
+      commentSocket.close();
+    }
+  });
 }
 
 window.initializeCommentsSystem = initializeCommentsSystem;

@@ -576,6 +576,10 @@ RouteResponse Router::createComment(const std::string& pageId, const std::string
             return fail(thread.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
+        }
+
         return created("{\"item\":" + commentThreadToJson(thread.value()) + "}");
     } catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
@@ -616,6 +620,10 @@ RouteResponse Router::replyToComment(
             return fail(thread.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
+        }
+
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
     } catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
@@ -652,6 +660,10 @@ RouteResponse Router::updateCommentMessage(
             parsedPayload.value("body", std::string{}));
         if (!thread) {
             return fail(thread.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
         }
 
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
@@ -693,6 +705,10 @@ RouteResponse Router::deleteCommentMessage(
             return fail(thread.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
+        }
+
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
     } catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
@@ -729,6 +745,10 @@ RouteResponse Router::deleteCommentThread(
         const auto thread = collaborationService_->deleteThread(pageId, threadId, author);
         if (!thread) {
             return fail(thread.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
         }
 
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
@@ -769,6 +789,10 @@ RouteResponse Router::resolveComment(
             return fail(thread.error());
         }
 
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
+        }
+
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
     } catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
@@ -805,6 +829,10 @@ RouteResponse Router::toggleCommentLike(
         const auto thread = collaborationService_->toggleLike(pageId, threadId, author);
         if (!thread) {
             return fail(thread.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
         }
 
         return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
@@ -863,6 +891,10 @@ RouteResponse Router::setCommentAccess(const std::string& pageId, const std::str
         const auto savedMode = collaborationService_->setCommentAccess(pageId, mode);
         if (!savedMode) {
             return fail(savedMode.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.access.changed");
         }
 
         return ok("{\"mode\":\"" + utils::escapeJson(savedMode.value()) + "\"}");
