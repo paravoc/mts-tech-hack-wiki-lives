@@ -1450,6 +1450,50 @@ def render_editor_page() -> None:
               cursor: nwse-resize;
             }
 
+            .embedded-image-handle--w,
+            .embedded-image-handle--e,
+            .embedded-image-handle--n,
+            .embedded-image-handle--s {
+              border: 0;
+              background: transparent;
+            }
+
+            .embedded-image-handle--w,
+            .embedded-image-handle--e {
+              top: 8px;
+              bottom: 8px;
+              width: 14px;
+              height: auto;
+            }
+
+            .embedded-image-handle--w {
+              left: -8px;
+              cursor: ew-resize;
+            }
+
+            .embedded-image-handle--e {
+              right: -8px;
+              cursor: ew-resize;
+            }
+
+            .embedded-image-handle--n,
+            .embedded-image-handle--s {
+              left: 8px;
+              right: 8px;
+              width: auto;
+              height: 14px;
+            }
+
+            .embedded-image-handle--n {
+              top: -8px;
+              cursor: ns-resize;
+            }
+
+            .embedded-image-handle--s {
+              bottom: -8px;
+              cursor: ns-resize;
+            }
+
             .image-drop-indicator {
               position: absolute;
               display: none;
@@ -2608,6 +2652,39 @@ def render_editor_page() -> None:
               return Math.max(260, Math.min(shellWidth, bodyWidth));
             }
 
+            function getImageMaxHeight() {
+              return Math.max(200, Math.min(window.innerHeight - 160, 900));
+            }
+
+            function setImageBlockDimensions(block, width, height) {
+              if (!block) {
+                return;
+              }
+              const maxWidth = getImageMaxWidth();
+              const nextWidth = Math.max(220, Math.min(maxWidth, Math.round(width || maxWidth)));
+              block.style.width = nextWidth + "px";
+              block.dataset.width = String(nextWidth);
+
+              const frame = block.querySelector(".embedded-image-frame");
+              const image = block.querySelector("img");
+              const hasExplicitHeight = Number.isFinite(height) && height !== null;
+
+              if (frame && image) {
+                if (hasExplicitHeight) {
+                  const nextHeight = Math.max(120, Math.min(getImageMaxHeight(), Math.round(height)));
+                  frame.style.height = nextHeight + "px";
+                  image.style.height = "100%";
+                  image.style.objectFit = "fill";
+                  block.dataset.height = String(nextHeight);
+                } else {
+                  frame.style.height = "";
+                  image.style.height = "auto";
+                  image.style.objectFit = "";
+                  delete block.dataset.height;
+                }
+              }
+            }
+
             function setImageAlignment(block, align) {
               if (!block) {
                 return;
@@ -2622,10 +2699,16 @@ def render_editor_page() -> None:
               if (!block) {
                 return;
               }
-              const maxWidth = getImageMaxWidth();
-              const nextWidth = Math.max(220, Math.min(maxWidth, Math.round(width || maxWidth)));
-              block.style.width = nextWidth + "px";
-              block.dataset.width = String(nextWidth);
+              const explicitHeight = block.dataset.height ? Number(block.dataset.height) : null;
+              setImageBlockDimensions(block, width, explicitHeight);
+            }
+
+            function setImageBlockHeight(block, height) {
+              if (!block) {
+                return;
+              }
+              const currentWidth = Number(block.dataset.width) || Math.round(block.getBoundingClientRect().width || getImageMaxWidth());
+              setImageBlockDimensions(block, currentWidth, height);
             }
 
             function hideImageGhost() {
@@ -2701,7 +2784,7 @@ def render_editor_page() -> None:
               image.draggable = false;
               frame.appendChild(image);
 
-              ["nw", "ne", "sw", "se"].forEach((handle) => {
+              ["nw", "ne", "sw", "se", "w", "e", "n", "s"].forEach((handle) => {
                 const node = document.createElement("button");
                 node.type = "button";
                 node.className = "embedded-image-handle embedded-image-handle--" + handle;
@@ -2837,7 +2920,13 @@ def render_editor_page() -> None:
               document.removeEventListener("pointerup", finishImageInteraction);
 
               if (interaction.type === "resize" && interaction.previewRect) {
-                setImageBlockWidth(interaction.block, interaction.previewRect.width);
+                if (interaction.handle === "e" || interaction.handle === "w") {
+                  setImageBlockWidth(interaction.block, interaction.previewRect.width);
+                } else if (interaction.handle === "n" || interaction.handle === "s") {
+                  setImageBlockHeight(interaction.block, interaction.previewRect.height);
+                } else {
+                  setImageBlockDimensions(interaction.block, interaction.previewRect.width, interaction.previewRect.height);
+                }
               }
 
               if (interaction.type === "move" && interaction.hasMoved) {
@@ -2865,22 +2954,47 @@ def render_editor_page() -> None:
                 let left = startRect.left;
                 let top = startRect.top;
                 const ratio = imageInteraction.aspectRatio || 1;
+                const handle = imageInteraction.handle;
 
-                if (imageInteraction.handle.includes("e")) {
-                  width = startRect.width + dx;
-                }
-                if (imageInteraction.handle.includes("w")) {
-                  width = startRect.width - dx;
-                }
+                if (handle === "e" || handle === "w") {
+                  if (handle === "e") {
+                    width = startRect.width + dx;
+                  } else {
+                    width = startRect.width - dx;
+                  }
+                  width = Math.max(220, Math.min(getImageMaxWidth(), width));
+                  height = startRect.height;
+                  if (handle === "w") {
+                    left = startRect.right - width;
+                  }
+                } else if (handle === "n" || handle === "s") {
+                  if (handle === "s") {
+                    height = startRect.height + dy;
+                  } else {
+                    height = startRect.height - dy;
+                  }
+                  height = Math.max(120, Math.min(getImageMaxHeight(), height));
+                  width = startRect.width;
+                  if (handle === "n") {
+                    top = startRect.bottom - height;
+                  }
+                } else {
+                  if (handle.includes("e")) {
+                    width = startRect.width + dx;
+                  }
+                  if (handle.includes("w")) {
+                    width = startRect.width - dx;
+                  }
 
-                width = Math.max(220, Math.min(getImageMaxWidth(), width));
-                height = width / ratio;
+                  width = Math.max(220, Math.min(getImageMaxWidth(), width));
+                  height = Math.max(120, Math.min(getImageMaxHeight(), width / ratio));
 
-                if (imageInteraction.handle.includes("w")) {
-                  left = startRect.right - width;
-                }
-                if (imageInteraction.handle.includes("n")) {
-                  top = startRect.bottom - height;
+                  if (handle.includes("w")) {
+                    left = startRect.right - width;
+                  }
+                  if (handle.includes("n")) {
+                    top = startRect.bottom - height;
+                  }
                 }
 
                 imageInteraction.previewRect = { left, top, width, height };
