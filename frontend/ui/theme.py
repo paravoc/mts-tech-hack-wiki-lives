@@ -53,10 +53,20 @@ __CURSOR_ROOT_VARIABLES__
         header[data-testid="stHeader"],
         [data-testid="stToolbar"],
         [data-testid="stSidebar"],
+        [data-testid="stStatusWidget"],
+        [data-testid="stSpinner"],
+        .stSpinner,
         #MainMenu,
         footer {
             display: none !important;
             visibility: hidden !important;
+        }
+
+        [data-testid="stAppViewContainer"]::before,
+        [data-testid="stAppViewContainer"]::after,
+        .stApp::before,
+        .stApp::after {
+            background: #ffffff !important;
         }
 
         .block-container {
