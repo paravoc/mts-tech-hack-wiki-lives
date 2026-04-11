@@ -4,6 +4,7 @@ from textwrap import dedent
 
 import streamlit.components.v1 as components
 
+from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
 
 
@@ -196,6 +197,7 @@ def render_editor_page() -> None:
               --selection: #d4e5ff;
               --skeleton: #f0f1f4;
               --top-shell-height: 94px;
+__CURSOR_ROOT_VARIABLES__
             }
 
             * {
@@ -215,10 +217,75 @@ def render_editor_page() -> None:
               overflow: hidden;
             }
 
+            body,
+            .app,
+            .screen,
+            .doc-head,
+            .doc-body,
+            .doc-shell,
+            .editor-shell,
+            .page-shell {
+              cursor: var(--cursor-default);
+            }
+
             button,
             input,
             textarea {
               font: inherit;
+            }
+
+            button,
+            .toolbar-button,
+            .slash-item,
+            .menu-item,
+            .menu-panel button,
+            .selection-toolbar button,
+            .upload-preview__retry,
+            .upload-modal__action,
+            .embedded-file-chip a,
+            .body-editor a.is-ctrl-ready,
+            .title-editor a.is-ctrl-ready,
+            [role="button"] {
+              cursor: var(--cursor-pointer);
+            }
+
+            input,
+            textarea,
+            [contenteditable="true"],
+            .title-editor,
+            .body-editor {
+              cursor: var(--cursor-text);
+            }
+
+            .embedded-image-block,
+            .embedded-image-frame,
+            .block-handle {
+              cursor: var(--cursor-grab);
+            }
+
+            body[data-cursor-state="grabbing"],
+            body[data-cursor-state="grabbing"] * {
+              cursor: var(--cursor-grabbing) !important;
+            }
+
+            body[data-cursor-state="resize-ew"],
+            body[data-cursor-state="resize-ew"] * {
+              cursor: var(--cursor-ew) !important;
+            }
+
+            body[data-cursor-state="resize-ns"],
+            body[data-cursor-state="resize-ns"] * {
+              cursor: var(--cursor-ns) !important;
+            }
+
+            body[data-cursor-state="resize-nwse"],
+            body[data-cursor-state="resize-nwse"] * {
+              cursor: var(--cursor-nwse) !important;
+            }
+
+            body[data-cursor-state="resize-nesw"],
+            body[data-cursor-state="resize-nesw"] * {
+              cursor: var(--cursor-nesw) !important;
             }
 
             .app {
@@ -1393,7 +1460,7 @@ def render_editor_page() -> None:
               width: 100%;
               border: 2px solid transparent;
               background: #ffffff;
-              cursor: grab;
+              cursor: var(--cursor-grab);
             }
 
             .embedded-image-block:hover .embedded-image-frame,
@@ -1429,25 +1496,25 @@ def render_editor_page() -> None:
             .embedded-image-handle--nw {
               top: -6px;
               left: -6px;
-              cursor: nwse-resize;
+              cursor: var(--cursor-nwse);
             }
 
             .embedded-image-handle--ne {
               top: -6px;
               right: -6px;
-              cursor: nesw-resize;
+              cursor: var(--cursor-nesw);
             }
 
             .embedded-image-handle--sw {
               bottom: -6px;
               left: -6px;
-              cursor: nesw-resize;
+              cursor: var(--cursor-nesw);
             }
 
             .embedded-image-handle--se {
               bottom: -6px;
               right: -6px;
-              cursor: nwse-resize;
+              cursor: var(--cursor-nwse);
             }
 
             .embedded-image-handle--w,
@@ -1468,12 +1535,12 @@ def render_editor_page() -> None:
 
             .embedded-image-handle--w {
               left: -8px;
-              cursor: ew-resize;
+              cursor: var(--cursor-ew);
             }
 
             .embedded-image-handle--e {
               right: -8px;
-              cursor: ew-resize;
+              cursor: var(--cursor-ew);
             }
 
             .embedded-image-handle--n,
@@ -1486,12 +1553,12 @@ def render_editor_page() -> None:
 
             .embedded-image-handle--n {
               top: -8px;
-              cursor: ns-resize;
+              cursor: var(--cursor-ns);
             }
 
             .embedded-image-handle--s {
               bottom: -8px;
-              cursor: ns-resize;
+              cursor: var(--cursor-ns);
             }
 
             .image-drop-indicator {
@@ -1786,6 +1853,31 @@ def render_editor_page() -> None:
             let uploadState = null;
             let selectedImageBlock = null;
             let imageInteraction = null;
+
+            function setCursorState(state) {
+              if (!state) {
+                document.body.removeAttribute("data-cursor-state");
+                return;
+              }
+              document.body.setAttribute("data-cursor-state", state);
+            }
+
+            function clearCursorState() {
+              document.body.removeAttribute("data-cursor-state");
+            }
+
+            function getResizeCursorState(handle) {
+              if (handle === "e" || handle === "w") {
+                return "resize-ew";
+              }
+              if (handle === "n" || handle === "s") {
+                return "resize-ns";
+              }
+              if (handle === "nw" || handle === "se") {
+                return "resize-nwse";
+              }
+              return "resize-nesw";
+            }
 
             const imageGhost = document.createElement("div");
             imageGhost.className = "image-ghost";
@@ -2916,8 +3008,10 @@ def render_editor_page() -> None:
 
               const interaction = imageInteraction;
               imageInteraction = null;
+              clearCursorState();
               document.removeEventListener("pointermove", handleImageInteractionMove);
               document.removeEventListener("pointerup", finishImageInteraction);
+              document.removeEventListener("pointercancel", finishImageInteraction);
 
               if (interaction.type === "resize" && interaction.previewRect) {
                 if (interaction.handle === "e" || interaction.handle === "w") {
@@ -3028,6 +3122,7 @@ def render_editor_page() -> None:
               event.preventDefault();
               event.stopPropagation();
               selectImageBlock(block);
+              setCursorState(getResizeCursorState(handle));
               const rect = block.getBoundingClientRect();
               const image = block.querySelector("img");
               imageInteraction = {
@@ -3044,6 +3139,7 @@ def render_editor_page() -> None:
               showImageGhost(imageInteraction.previewRect, imageInteraction.src);
               document.addEventListener("pointermove", handleImageInteractionMove);
               document.addEventListener("pointerup", finishImageInteraction);
+              document.addEventListener("pointercancel", finishImageInteraction);
             }
 
             function startImageMove(block, event) {
@@ -3052,6 +3148,7 @@ def render_editor_page() -> None:
               }
               event.preventDefault();
               selectImageBlock(block);
+              setCursorState("grabbing");
               const rect = block.getBoundingClientRect();
               const image = block.querySelector("img");
               imageInteraction = {
@@ -3068,6 +3165,7 @@ def render_editor_page() -> None:
               };
               document.addEventListener("pointermove", handleImageInteractionMove);
               document.addEventListener("pointerup", finishImageInteraction);
+              document.addEventListener("pointercancel", finishImageInteraction);
             }
 
             async function confirmUpload() {
@@ -4171,6 +4269,7 @@ def render_editor_page() -> None:
             setLoadingState();
             pinComponentFrame();
             window.addEventListener("resize", pinComponentFrame);
+            window.addEventListener("blur", clearCursorState);
             window.setTimeout(() => {
               pinComponentFrame();
               showEditorState();
@@ -4193,5 +4292,6 @@ def render_editor_page() -> None:
     html = html.replace("__TOOLBAR__", _toolbar_markup())
     html = html.replace("__SELECTION_TOOLBAR__", _selection_toolbar_markup())
     html = html.replace("__EMPTY_HINT__", _EMPTY_HINT)
+    html = html.replace("__CURSOR_ROOT_VARIABLES__", cursor_root_variables("              "))
 
     components.html(html, height=780, scrolling=False)

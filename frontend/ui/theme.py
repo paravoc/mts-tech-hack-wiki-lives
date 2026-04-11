@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from ui.cursors import cursor_root_variables
+
 
 def configure_page() -> None:
     st.set_page_config(
@@ -13,9 +15,12 @@ def configure_page() -> None:
 
 
 def inject_global_styles() -> None:
-    st.markdown(
-        """
+    styles = """
         <style>
+        :root {
+__CURSOR_ROOT_VARIABLES__
+        }
+
         html, body, [class*="css"] {
             font-family: Inter, "Segoe UI", Arial, sans-serif;
         }
@@ -28,6 +33,21 @@ def inject_global_styles() -> None:
             background: #ffffff !important;
             overflow: hidden !important;
             height: 100vh !important;
+            cursor: var(--cursor-default) !important;
+        }
+
+        a,
+        button,
+        [role="button"],
+        [data-testid="baseButton-secondary"],
+        [data-testid="baseButton-primary"] {
+            cursor: var(--cursor-pointer) !important;
+        }
+
+        input,
+        textarea,
+        [contenteditable="true"] {
+            cursor: var(--cursor-text) !important;
         }
 
         header[data-testid="stHeader"],
@@ -57,6 +77,9 @@ def inject_global_styles() -> None:
             gap: 0 !important;
         }
         </style>
-        """,
+        """
+    styles = styles.replace("__CURSOR_ROOT_VARIABLES__", cursor_root_variables("            "))
+    st.markdown(
+        styles,
         unsafe_allow_html=True,
     )
