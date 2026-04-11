@@ -1356,13 +1356,137 @@ def render_editor_page() -> None:
             }
 
             .embedded-image-block {
-              margin: 18px 0;
+              position: relative;
+              display: inline-block;
+              width: min(100%, 610px);
+              margin: 8px 10px 10px 0;
+              vertical-align: top;
+              user-select: none;
             }
 
-            .embedded-image-block img {
+            .embedded-image-block.is-align-inline {
+              float: none;
+              display: inline-block;
+              margin: 8px 10px 10px 0;
+            }
+
+            .embedded-image-block.is-align-left {
+              float: left;
               display: block;
-              max-width: 100%;
-              border-radius: 14px;
+              margin: 8px 18px 12px 0;
+            }
+
+            .embedded-image-block.is-align-center {
+              float: none;
+              display: block;
+              margin: 18px auto;
+            }
+
+            .embedded-image-block.is-align-right {
+              float: right;
+              display: block;
+              margin: 8px 0 12px 18px;
+            }
+
+            .embedded-image-frame {
+              position: relative;
+              width: 100%;
+              border: 2px solid transparent;
+              background: #ffffff;
+              cursor: grab;
+            }
+
+            .embedded-image-block:hover .embedded-image-frame,
+            .embedded-image-block.is-selected .embedded-image-frame {
+              border-color: var(--danger);
+            }
+
+            .embedded-image-frame img {
+              display: block;
+              width: 100%;
+              height: auto;
+              border-radius: 0;
+              pointer-events: none;
+              -webkit-user-drag: none;
+            }
+
+            .embedded-image-handle {
+              position: absolute;
+              width: 10px;
+              height: 10px;
+              padding: 0;
+              border: 1px solid var(--danger);
+              background: var(--danger);
+              display: none;
+              z-index: 9;
+            }
+
+            .embedded-image-block:hover .embedded-image-handle,
+            .embedded-image-block.is-selected .embedded-image-handle {
+              display: block;
+            }
+
+            .embedded-image-handle--nw {
+              top: -6px;
+              left: -6px;
+              cursor: nwse-resize;
+            }
+
+            .embedded-image-handle--ne {
+              top: -6px;
+              right: -6px;
+              cursor: nesw-resize;
+            }
+
+            .embedded-image-handle--sw {
+              bottom: -6px;
+              left: -6px;
+              cursor: nesw-resize;
+            }
+
+            .embedded-image-handle--se {
+              bottom: -6px;
+              right: -6px;
+              cursor: nwse-resize;
+            }
+
+            .image-drop-indicator {
+              position: absolute;
+              display: none;
+              width: 2px;
+              background: var(--danger);
+              box-shadow: 0 0 0 1px rgba(255, 79, 139, 0.06);
+              z-index: 9;
+            }
+
+            .image-drop-indicator::before {
+              content: "";
+              position: absolute;
+              left: -3px;
+              top: -2px;
+              width: 8px;
+              height: 8px;
+              border-radius: 999px;
+              background: var(--danger);
+            }
+
+            .image-ghost {
+              position: fixed;
+              display: none;
+              pointer-events: none;
+              opacity: 0.36;
+              border: 2px solid rgba(255, 79, 139, 0.55);
+              background: rgba(255, 255, 255, 0.1);
+              box-shadow: 0 18px 36px rgba(17, 24, 39, 0.12);
+              z-index: 60;
+              overflow: hidden;
+            }
+
+            .image-ghost img {
+              width: 100%;
+              height: 100%;
+              display: block;
+              object-fit: cover;
             }
 
             .embedded-file-chip {
@@ -1565,6 +1689,7 @@ def render_editor_page() -> None:
             const loadingScreen = document.getElementById("loadingScreen");
             const editorScreen = document.getElementById("editorScreen");
             const editorCanvas = document.getElementById("editorCanvas");
+            const editorShell = document.querySelector(".editor-shell");
             const bodyEditor = document.getElementById("bodyEditor");
             const titleEditor = document.getElementById("titleEditor");
             const slashMenu = document.getElementById("slashMenu");
@@ -1615,6 +1740,18 @@ def render_editor_page() -> None:
             let ctrlPressed = false;
             let uploadMode = "image";
             let uploadState = null;
+            let selectedImageBlock = null;
+            let imageInteraction = null;
+
+            const imageGhost = document.createElement("div");
+            imageGhost.className = "image-ghost";
+            imageGhost.innerHTML = '<img alt="" />';
+            editorCanvas.appendChild(imageGhost);
+            const imageGhostImage = imageGhost.querySelector("img");
+
+            const imageDropIndicator = document.createElement("div");
+            imageDropIndicator.className = "image-drop-indicator";
+            editorCanvas.appendChild(imageDropIndicator);
 
             const slashItems = [
               { icon: "T", label: "Обычный текст", queries: ["текст", "text"], kind: "block", value: "p" },
@@ -1784,6 +1921,27 @@ def render_editor_page() -> None:
             }
 
             function updateActiveToolbarButtons() {
+              if (selectedImageBlock) {
+                const align = selectedImageBlock.dataset.align || "inline";
+                toolbarButtons.forEach((button) => {
+                  button.classList.remove("is-active");
+                  if (button.classList.contains("toolbar-button--ghost")) {
+                    return;
+                  }
+                  const command = button.dataset.command;
+                  if (command === "justifyLeft" && align === "left") {
+                    button.classList.add("is-active");
+                  }
+                  if (command === "justifyCenter" && align === "center") {
+                    button.classList.add("is-active");
+                  }
+                  if (command === "justifyRight" && align === "right") {
+                    button.classList.add("is-active");
+                  }
+                });
+                return;
+              }
+
               const currentBlockTag = getCurrentBlockTag();
               toolbarButtons.forEach((button) => {
                 const isOpen = button.classList.contains("is-open");
@@ -2317,6 +2475,46 @@ def render_editor_page() -> None:
               renderUploadModal();
             }
 
+            async function insertImageFile(file) {
+              if (!file) {
+                return;
+              }
+
+              const imageConfig = getUploadConfig("image");
+              const type = String(file.type || "").toLowerCase();
+              const extension = file.name && file.name.includes(".")
+                ? file.name.split(".").pop().toLowerCase()
+                : "";
+
+              if (
+                !type.startsWith("image/") &&
+                (!extension || !imageConfig.formats.includes(extension))
+              ) {
+                showTooltip("Только JPG, PNG, GIF");
+                return;
+              }
+
+              if (file.size > imageConfig.maxBytes) {
+                showTooltip("Не более 5 МБ");
+                return;
+              }
+
+              const safeName = file.name || "clipboard-image.png";
+              const normalizedFile = file.name
+                ? file
+                : new File([file], safeName, { type: file.type || "image/png" });
+
+              const dataUrl = await readFileAsDataUrl(normalizedFile);
+              const block = createImageBlock(dataUrl, safeName);
+              insertInlineNode(block);
+              selectImageBlock(block);
+              saveCurrentRange();
+              updateActiveToolbarButtons();
+              updateSelectionToolbar();
+              updateBlockHandleFromSelection();
+              showTooltip("Изображение");
+            }
+
             function insertNodeWithTrailingParagraph(node) {
               if (hasPlaceholder()) {
                 clearPlaceholderIfNeeded();
@@ -2345,23 +2543,429 @@ def render_editor_page() -> None:
               placeCaretAtEnd(paragraph);
             }
 
+            function insertInlineNode(node) {
+              if (hasPlaceholder()) {
+                clearPlaceholderIfNeeded();
+              }
+
+              bodyEditor.focus();
+              restoreSavedRange();
+
+              const selection = window.getSelection();
+              if (!selection.rangeCount) {
+                const paragraph = createEmptyParagraph();
+                paragraph.innerHTML = "";
+                const spacer = document.createTextNode("\u00A0");
+                paragraph.appendChild(node);
+                paragraph.appendChild(spacer);
+                bodyEditor.appendChild(paragraph);
+                const range = document.createRange();
+                range.setStartAfter(spacer);
+                range.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(range);
+                savedRange = range.cloneRange();
+                return;
+              }
+
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(node);
+
+              const spacer = document.createTextNode("\u00A0");
+              if (node.parentNode) {
+                node.parentNode.insertBefore(spacer, node.nextSibling);
+              }
+
+              const nextRange = document.createRange();
+              nextRange.setStartAfter(spacer);
+              nextRange.collapse(true);
+              selection.removeAllRanges();
+              selection.addRange(nextRange);
+              savedRange = nextRange.cloneRange();
+            }
+
+            function createEmptyParagraph() {
+              const paragraph = document.createElement("p");
+              paragraph.innerHTML = "<br>";
+              return paragraph;
+            }
+
+            function ensureTrailingParagraphAfter(node) {
+              if (!node || !node.parentNode) {
+                return;
+              }
+              const next = node.nextElementSibling;
+              if (next && isEditableBlock(next)) {
+                return;
+              }
+              node.parentNode.insertBefore(createEmptyParagraph(), node.nextSibling);
+            }
+
+            function getImageMaxWidth() {
+              const shellWidth = editorShell ? editorShell.clientWidth : 640;
+              const bodyWidth = bodyEditor ? bodyEditor.clientWidth : shellWidth;
+              return Math.max(260, Math.min(shellWidth, bodyWidth));
+            }
+
+            function setImageAlignment(block, align) {
+              if (!block) {
+                return;
+              }
+              const nextAlign = ["left", "center", "right", "inline"].includes(align) ? align : "inline";
+              block.dataset.align = nextAlign;
+              block.classList.remove("is-align-inline", "is-align-left", "is-align-center", "is-align-right");
+              block.classList.add("is-align-" + nextAlign);
+            }
+
+            function setImageBlockWidth(block, width) {
+              if (!block) {
+                return;
+              }
+              const maxWidth = getImageMaxWidth();
+              const nextWidth = Math.max(220, Math.min(maxWidth, Math.round(width || maxWidth)));
+              block.style.width = nextWidth + "px";
+              block.dataset.width = String(nextWidth);
+            }
+
+            function hideImageGhost() {
+              imageGhost.style.display = "none";
+              imageGhostImage.removeAttribute("src");
+            }
+
+            function showImageGhost(rect, src) {
+              if (!rect || !src) {
+                hideImageGhost();
+                return;
+              }
+              imageGhostImage.src = src;
+              imageGhost.style.display = "block";
+              imageGhost.style.left = rect.left + "px";
+              imageGhost.style.top = rect.top + "px";
+              imageGhost.style.width = rect.width + "px";
+              imageGhost.style.height = rect.height + "px";
+            }
+
+            function hideImageDropIndicator() {
+              imageDropIndicator.style.display = "none";
+            }
+
+            function showImageDropIndicator(target) {
+              if (!target) {
+                hideImageDropIndicator();
+                return;
+              }
+              const canvasRect = editorCanvas.getBoundingClientRect();
+              const rect = target.rect;
+              imageDropIndicator.style.display = "block";
+              imageDropIndicator.style.left = rect.left - canvasRect.left + editorCanvas.scrollLeft + "px";
+              imageDropIndicator.style.top = rect.top - canvasRect.top + editorCanvas.scrollTop + "px";
+              imageDropIndicator.style.height = Math.max(24, rect.height || 24) + "px";
+            }
+
+            function clearSelectedImageBlock() {
+              if (selectedImageBlock) {
+                selectedImageBlock.classList.remove("is-selected");
+              }
+              selectedImageBlock = null;
+              hideImageGhost();
+              hideImageDropIndicator();
+            }
+
+            function selectImageBlock(block) {
+              if (!block) {
+                clearSelectedImageBlock();
+                return;
+              }
+              if (selectedImageBlock && selectedImageBlock !== block) {
+                selectedImageBlock.classList.remove("is-selected");
+              }
+              selectedImageBlock = block;
+              selectedImageBlock.classList.add("is-selected");
+              hideFloatingMenus();
+              selectionToolbarWrap.classList.remove("is-visible");
+              hideBlockHandle();
+            }
+
+            function createImageBlock(dataUrl, name) {
+              const block = document.createElement("span");
+              block.className = "embedded-image-block";
+              block.contentEditable = "false";
+              block.dataset.kind = "image";
+
+              const frame = document.createElement("div");
+              frame.className = "embedded-image-frame";
+              const image = document.createElement("img");
+              image.src = dataUrl;
+              image.alt = name;
+              image.draggable = false;
+              frame.appendChild(image);
+
+              ["nw", "ne", "sw", "se"].forEach((handle) => {
+                const node = document.createElement("button");
+                node.type = "button";
+                node.className = "embedded-image-handle embedded-image-handle--" + handle;
+                node.dataset.imageResize = handle;
+                frame.appendChild(node);
+              });
+
+              block.appendChild(frame);
+              setImageBlockWidth(block, Math.min(getImageMaxWidth(), 610));
+              setImageAlignment(block, "inline");
+              return block;
+            }
+
+            function removeSelectedImageBlock(block) {
+              const target = block || selectedImageBlock;
+              if (!target || !target.parentNode) {
+                return;
+              }
+              const nextFocus = target.nextElementSibling && isEditableBlock(target.nextElementSibling)
+                ? target.nextElementSibling
+                : target.previousElementSibling && isEditableBlock(target.previousElementSibling)
+                  ? target.previousElementSibling
+                  : null;
+              target.remove();
+              clearSelectedImageBlock();
+              if (!bodyEditor.children.length) {
+                resetBodyPlaceholder();
+              } else if (nextFocus) {
+                bodyEditor.focus();
+                placeCaretAtEnd(nextFocus);
+              }
+            }
+
+            function getCaretRangeFromPoint(clientX, clientY) {
+              if (document.caretRangeFromPoint) {
+                return document.caretRangeFromPoint(clientX, clientY);
+              }
+              if (document.caretPositionFromPoint) {
+                const position = document.caretPositionFromPoint(clientX, clientY);
+                if (!position) {
+                  return null;
+                }
+                const range = document.createRange();
+                range.setStart(position.offsetNode, position.offset);
+                range.collapse(true);
+                return range;
+              }
+              return null;
+            }
+
+            function getImageDropTarget(clientX, clientY, draggedBlock) {
+              const range = getCaretRangeFromPoint(clientX, clientY);
+              if (!range) {
+                return null;
+              }
+              if (!bodyEditor.contains(range.commonAncestorContainer)) {
+                return null;
+              }
+
+              const owner = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
+              const ownerImage = owner ? owner.closest(".embedded-image-block") : null;
+              if (ownerImage && ownerImage === draggedBlock) {
+                const rect = draggedBlock.getBoundingClientRect();
+                return {
+                  range: null,
+                  rect: {
+                    left: rect.right,
+                    top: rect.top,
+                    height: rect.height
+                  }
+                };
+              }
+
+              let rect = null;
+              const rects = Array.from(range.getClientRects()).filter((item) => item.width || item.height);
+              if (rects.length) {
+                rect = rects[0];
+              } else {
+                const block = findEditableBlock(range.startContainer);
+                if (block) {
+                  const blockRect = block.getBoundingClientRect();
+                  rect = {
+                    left: blockRect.left,
+                    top: blockRect.top,
+                    height: blockRect.height
+                  };
+                }
+              }
+
+              return {
+                range: range.cloneRange(),
+                rect: rect || { left: bodyEditor.getBoundingClientRect().left, top: bodyEditor.getBoundingClientRect().top, height: 26 }
+              };
+            }
+
+            function commitImageMove(block, clientX, clientY) {
+              if (!block || !block.parentNode) {
+                return;
+              }
+              const target = getImageDropTarget(clientX, clientY, block);
+              if (!target || !target.range) {
+                return;
+              }
+
+              const range = target.range;
+              const selection = window.getSelection();
+              block.remove();
+              range.insertNode(block);
+
+              const spacer = document.createTextNode("\u00A0");
+              if (block.parentNode) {
+                block.parentNode.insertBefore(spacer, block.nextSibling);
+              }
+
+              if (selection) {
+                const nextRange = document.createRange();
+                nextRange.setStartAfter(spacer);
+                nextRange.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(nextRange);
+                savedRange = nextRange.cloneRange();
+              }
+            }
+
+            function finishImageInteraction(event) {
+              if (!imageInteraction) {
+                return;
+              }
+
+              const interaction = imageInteraction;
+              imageInteraction = null;
+              document.removeEventListener("pointermove", handleImageInteractionMove);
+              document.removeEventListener("pointerup", finishImageInteraction);
+
+              if (interaction.type === "resize" && interaction.previewRect) {
+                setImageBlockWidth(interaction.block, interaction.previewRect.width);
+              }
+
+              if (interaction.type === "move" && interaction.hasMoved) {
+                commitImageMove(interaction.block, event.clientX, event.clientY);
+              }
+
+              hideImageGhost();
+              hideImageDropIndicator();
+              selectImageBlock(interaction.block);
+              updateBlockHandleFromSelection();
+            }
+
+            function handleImageInteractionMove(event) {
+              if (!imageInteraction) {
+                return;
+              }
+              event.preventDefault();
+
+              if (imageInteraction.type === "resize") {
+                const dx = event.clientX - imageInteraction.startX;
+                const dy = event.clientY - imageInteraction.startY;
+                const startRect = imageInteraction.startRect;
+                let width = startRect.width;
+                let height = startRect.height;
+                let left = startRect.left;
+                let top = startRect.top;
+                const ratio = imageInteraction.aspectRatio || 1;
+
+                if (imageInteraction.handle.includes("e")) {
+                  width = startRect.width + dx;
+                }
+                if (imageInteraction.handle.includes("w")) {
+                  width = startRect.width - dx;
+                }
+
+                width = Math.max(220, Math.min(getImageMaxWidth(), width));
+                height = width / ratio;
+
+                if (imageInteraction.handle.includes("w")) {
+                  left = startRect.right - width;
+                }
+                if (imageInteraction.handle.includes("n")) {
+                  top = startRect.bottom - height;
+                }
+
+                imageInteraction.previewRect = { left, top, width, height };
+                showImageGhost(imageInteraction.previewRect, imageInteraction.src);
+                return;
+              }
+
+              const moveX = Math.abs(event.clientX - imageInteraction.startX);
+              const moveY = Math.abs(event.clientY - imageInteraction.startY);
+              if (!imageInteraction.hasMoved && moveX + moveY < 6) {
+                return;
+              }
+
+              imageInteraction.hasMoved = true;
+              const rect = {
+                left: event.clientX - imageInteraction.offsetX,
+                top: event.clientY - imageInteraction.offsetY,
+                width: imageInteraction.startRect.width,
+                height: imageInteraction.startRect.height
+              };
+              showImageGhost(rect, imageInteraction.src);
+              const target = getImageDropTarget(event.clientX, event.clientY, imageInteraction.block);
+              imageInteraction.dropTarget = target;
+              showImageDropIndicator(target);
+            }
+
+            function startImageResize(block, handle, event) {
+              if (!block) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              selectImageBlock(block);
+              const rect = block.getBoundingClientRect();
+              const image = block.querySelector("img");
+              imageInteraction = {
+                type: "resize",
+                block,
+                handle,
+                startX: event.clientX,
+                startY: event.clientY,
+                startRect: rect,
+                aspectRatio: rect.width / Math.max(rect.height, 1),
+                src: image ? image.src : "",
+                previewRect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height }
+              };
+              showImageGhost(imageInteraction.previewRect, imageInteraction.src);
+              document.addEventListener("pointermove", handleImageInteractionMove);
+              document.addEventListener("pointerup", finishImageInteraction);
+            }
+
+            function startImageMove(block, event) {
+              if (!block || event.button !== 0) {
+                return;
+              }
+              event.preventDefault();
+              selectImageBlock(block);
+              const rect = block.getBoundingClientRect();
+              const image = block.querySelector("img");
+              imageInteraction = {
+                type: "move",
+                block,
+                startX: event.clientX,
+                startY: event.clientY,
+                startRect: rect,
+                offsetX: event.clientX - rect.left,
+                offsetY: event.clientY - rect.top,
+                src: image ? image.src : "",
+                hasMoved: false,
+                dropTarget: null
+              };
+              document.addEventListener("pointermove", handleImageInteractionMove);
+              document.addEventListener("pointerup", finishImageInteraction);
+            }
+
             async function confirmUpload() {
               if (!uploadState || uploadState.error) {
                 return;
               }
 
               try {
-                const dataUrl = await readFileAsDataUrl(uploadState.file);
                 if (uploadMode === "image") {
-                  const block = document.createElement("div");
-                  block.className = "embedded-image-block";
-                  block.contentEditable = "false";
-                  const image = document.createElement("img");
-                  image.src = dataUrl;
-                  image.alt = uploadState.file.name;
-                  block.appendChild(image);
-                  insertNodeWithTrailingParagraph(block);
+                  await insertImageFile(uploadState.file);
                 } else {
+                  const dataUrl = await readFileAsDataUrl(uploadState.file);
                   const block = document.createElement("div");
                   block.className = "embedded-file-chip";
                   block.contentEditable = "false";
@@ -2807,6 +3411,10 @@ def render_editor_page() -> None:
             }
 
             function updateSelectionToolbar() {
+              if (selectedImageBlock) {
+                selectionToolbarWrap.classList.remove("is-visible");
+                return;
+              }
               const selection = window.getSelection();
               if (!selection.rangeCount || selection.isCollapsed) {
                 selectionToolbarWrap.classList.remove("is-visible");
@@ -2855,6 +3463,23 @@ def render_editor_page() -> None:
 
               if (upload) {
                 openUploadModal(upload);
+                return;
+              }
+
+              if (selectedImageBlock) {
+                if (command === "justifyLeft") {
+                  setImageAlignment(selectedImageBlock, "left");
+                  updateActiveToolbarButtons();
+                  showTooltip(button.dataset.tip);
+                } else if (command === "justifyCenter") {
+                  setImageAlignment(selectedImageBlock, "center");
+                  updateActiveToolbarButtons();
+                  showTooltip(button.dataset.tip);
+                } else if (command === "justifyRight") {
+                  setImageAlignment(selectedImageBlock, "right");
+                  updateActiveToolbarButtons();
+                  showTooltip(button.dataset.tip);
+                }
                 return;
               }
 
@@ -3120,6 +3745,62 @@ def render_editor_page() -> None:
             }
 
             bodyEditor.addEventListener("focus", clearPlaceholderIfNeeded);
+            bodyEditor.addEventListener("paste", async (event) => {
+              const clipboard = event.clipboardData;
+              if (!clipboard) {
+                return;
+              }
+
+              const imageItem = Array.from(clipboard.items || []).find((item) => {
+                return item.kind === "file" && String(item.type || "").toLowerCase().startsWith("image/");
+              });
+
+              if (!imageItem) {
+                return;
+              }
+
+              const file = imageItem.getAsFile();
+              if (!file) {
+                return;
+              }
+
+              event.preventDefault();
+              try {
+                await insertImageFile(file);
+              } catch (error) {
+                showTooltip("Ошибка вставки");
+              }
+            });
+            bodyEditor.addEventListener("dragstart", (event) => {
+              if (event.target.closest(".embedded-image-block")) {
+                event.preventDefault();
+              }
+            });
+            bodyEditor.addEventListener("pointerdown", (event) => {
+              const resizeHandle = event.target.closest("[data-image-resize]");
+              if (resizeHandle) {
+                startImageResize(resizeHandle.closest(".embedded-image-block"), resizeHandle.dataset.imageResize || "", event);
+                return;
+              }
+
+              const imageBlock = event.target.closest(".embedded-image-block");
+              if (imageBlock) {
+                startImageMove(imageBlock, event);
+                return;
+              }
+
+              if (selectedImageBlock) {
+                clearSelectedImageBlock();
+              }
+            });
+            bodyEditor.addEventListener("click", (event) => {
+              const imageBlock = event.target.closest(".embedded-image-block");
+              if (imageBlock) {
+                event.preventDefault();
+                event.stopPropagation();
+                selectImageBlock(imageBlock);
+              }
+            });
             bodyEditor.addEventListener("beforeinput", (event) => {
               if (
                 event.inputType === "insertText" &&
@@ -3144,6 +3825,12 @@ def render_editor_page() -> None:
               if (uploadModal && uploadModal.classList.contains("is-visible") && event.key === "Escape") {
                 event.preventDefault();
                 closeUploadModal();
+                return;
+              }
+
+              if (selectedImageBlock && (event.key === "Backspace" || event.key === "Delete")) {
+                event.preventDefault();
+                removeSelectedImageBlock();
                 return;
               }
 
@@ -3195,6 +3882,10 @@ def render_editor_page() -> None:
 
             document.addEventListener("selectionchange", () => {
               saveCurrentRange();
+              const selection = window.getSelection();
+              if (selectedImageBlock && selection && selection.rangeCount && !selection.isCollapsed) {
+                clearSelectedImageBlock();
+              }
               if (activeMenuKey === "font-size") {
                 syncFontSizeControls(getCurrentFontSize());
               }
@@ -3210,6 +3901,12 @@ def render_editor_page() -> None:
               if (uploadModal && uploadModal.classList.contains("is-visible") && event.key === "Escape") {
                 event.preventDefault();
                 closeUploadModal();
+                return;
+              }
+
+              if (selectedImageBlock && (event.key === "Backspace" || event.key === "Delete")) {
+                event.preventDefault();
+                removeSelectedImageBlock();
                 return;
               }
 
@@ -3249,6 +3946,13 @@ def render_editor_page() -> None:
                 hideFloatingMenus();
                 updateActiveToolbarButtons();
               }
+
+              if (
+                selectedImageBlock &&
+                !event.target.closest(".embedded-image-block")
+              ) {
+                clearSelectedImageBlock();
+              }
             });
 
             function handleCtrlLinkClick(event) {
@@ -3269,6 +3973,11 @@ def render_editor_page() -> None:
 
             bodyEditor.addEventListener("mousemove", (event) => {
               setHoveredLink(event.target.closest("a"));
+              const imageBlock = event.target.closest(".embedded-image-block");
+              if (imageBlock) {
+                hideBlockHandle();
+                return;
+              }
               const block = findEditableBlock(event.target);
               if (block) {
                 showBlockHandle(block);
