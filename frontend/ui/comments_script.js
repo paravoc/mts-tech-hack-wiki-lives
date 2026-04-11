@@ -553,6 +553,7 @@ function scheduleCommentDocumentSave() {
 }
 
 function mapThreadFromApi(item) {
+  const resolvedTargetId = findResolvedTargetId(item);
   const threadAttachment = inferAttachmentForThread(item.targetType || "", item.targetPreview || item.selectionLabel || "");
   const comments = (item.messages || []).map((message, index) => createComment(
     message.messageId,
@@ -571,7 +572,7 @@ function mapThreadFromApi(item) {
   if (comments.length) {
     comments[comments.length - 1].likes = item.likeCount || 0;
   }
-  return createThread(item.threadId, item.targetId, {
+  return createThread(item.threadId, resolvedTargetId, {
     badgeCount: item.messages ? item.messages.length : 0,
     status: item.resolved ? "resolved" : "open",
     preview: item.targetPreview || item.selectionLabel || "",
@@ -595,7 +596,26 @@ async function syncThreadsFromServer() {
 
   const nextThreads = new Map();
   (threadsData.items || []).forEach((item) => {
-    nextThreads.set(item.targetId, mapThreadFromApi(item));
+    const mappedThread = mapThreadFromApi(item);
+    const existingThread = nextThreads.get(mappedThread.targetId);
+    if (!existingThread) {
+      nextThreads.set(mappedThread.targetId, mappedThread);
+      return;
+    }
+
+    const existingScore =
+      (existingThread.status === "resolved" ? 0 : 1000) +
+      ((existingThread.comments || []).length * 100) +
+      normalizePreviewText(existingThread.preview || "").length;
+    const incomingScore =
+      (mappedThread.status === "resolved" ? 0 : 1000) +
+      ((mappedThread.comments || []).length * 100) +
+      normalizePreviewText(mappedThread.preview || "").length;
+
+    nextThreads.set(
+      mappedThread.targetId,
+      incomingScore >= existingScore ? mappedThread : existingThread
+    );
   });
   commentThreads = nextThreads;
 
@@ -662,6 +682,7 @@ async function ensureCommentPage() {
 
     commentPageId = page.pageId;
     window.localStorage.setItem(commentPageStorageKey, commentPageId);
+    await ensurePersistedCommentTargets();
     await syncThreadsFromServer();
     if (!commentThreads.size && !commentHistoryItems.length) {
       await seedServerDemoThreadsIfNeeded(commentPageId);
@@ -733,6 +754,58 @@ function getTargetPreview(target) {
     return "Файл • " + target.textContent.replace(/\s+/g, " ").trim();
   }
   return target.textContent.replace(/\s+/g, " ").trim() || "Пустой блок";
+}
+
+function normalizePreviewText(value) {
+  return String(value || "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function findResolvedTargetId(item) {
+  const directTarget = document.querySelector(`[data-comment-target-id="${item.targetId}"]`);
+  if (directTarget) {
+    return item.targetId;
+  }
+
+  const expectedPreview = normalizePreviewText(item.targetPreview || item.selectionLabel || "");
+  const expectedType = item.targetType || "";
+  const targets = getCommentableTargets();
+  let bestMatch = null;
+
+  targets.forEach((target) => {
+    const targetId = ensureTargetId(target);
+    const targetPreview = normalizePreviewText(getTargetPreview(target));
+    const targetType = inferTargetType(target);
+    if (expectedPreview && targetPreview === expectedPreview && (!expectedType || targetType === expectedType)) {
+      bestMatch = targetId;
+    }
+  });
+
+  return bestMatch || item.targetId;
+}
+
+async function ensurePersistedCommentTargets() {
+  const targets = getCommentableTargets();
+  let changed = false;
+  targets.forEach((target) => {
+    if (!target.dataset.blockId) {
+      changed = true;
+    }
+    ensureTargetId(target);
+  });
+
+  if (changed && commentPageId) {
+    try {
+      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
+        method: "PUT",
+        body: JSON.stringify(serializeEditorDocument())
+      });
+    } catch (error) {
+      console.warn("Failed to persist comment target ids", error);
+    }
+  }
 }
 
 function collectHistoryItems(pageItems, page, totalPages) {
