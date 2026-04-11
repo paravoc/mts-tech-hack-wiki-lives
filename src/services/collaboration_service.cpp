@@ -230,6 +230,32 @@ utils::Expected<models::CommentThread> CollaborationService::toggleLike(
     return thread.value();
 }
 
+utils::Expected<std::string> CollaborationService::getCommentAccess(const std::string& pageId) const {
+    const auto pageExists = ensurePageExists(pageId);
+    if (!pageExists) {
+        return std::unexpected(pageExists.error());
+    }
+
+    return storage_.getCommentAccess(pageId);
+}
+
+utils::Expected<std::string> CollaborationService::setCommentAccess(
+    const std::string& pageId,
+    const std::string& accessMode) {
+    const auto pageExists = ensurePageExists(pageId);
+    if (!pageExists) {
+        return std::unexpected(pageExists.error());
+    }
+
+    const auto normalized = accessMode == "owner_only" ? std::string("owner_only") : std::string("all_users");
+    const auto saveResult = storage_.saveCommentAccess(pageId, normalized);
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return normalized;
+}
+
 utils::VoidExpected CollaborationService::deletePageData(const std::string& pageId) {
     return storage_.deletePageData(pageId);
 }

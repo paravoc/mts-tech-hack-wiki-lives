@@ -193,6 +193,17 @@ utils::VoidExpected HttpServer::start(const int port) {
             });
         });
 
+        app.get("/api/pages/:pageId/comment-access", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.getCommentAccess(std::string(request->getParameter(0))));
+        });
+
+        app.put("/api/pages/:pageId/comment-access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setCommentAccess(pageId, body));
+            });
+        });
+
         app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
             writeResponse(response, router_.getPage(std::string(request->getParameter(0))));
         });

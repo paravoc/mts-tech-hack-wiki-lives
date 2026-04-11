@@ -57,6 +57,10 @@ public:
         const std::string& pageId,
         const std::string& threadId,
         const std::string& actor);
+    [[nodiscard]] utils::Expected<std::string> getCommentAccess(const std::string& pageId) const;
+    [[nodiscard]] utils::Expected<std::string> setCommentAccess(
+        const std::string& pageId,
+        const std::string& accessMode);
 
     [[nodiscard]] utils::VoidExpected deletePageData(const std::string& pageId);
 

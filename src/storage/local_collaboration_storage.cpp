@@ -232,6 +232,31 @@ utils::VoidExpected LocalCollaborationStorage::saveThread(const models::CommentT
     return persistStateUnlocked(*state);
 }
 
+utils::Expected<std::string> LocalCollaborationStorage::getCommentAccess(const std::string& pageId) const {
+    std::scoped_lock lock(mutex_);
+    const auto state = loadStateUnlocked();
+    if (!state) {
+        return std::unexpected(state.error());
+    }
+
+    const auto it = state->commentAccessByPage.find(pageId);
+    if (it == state->commentAccessByPage.end()) {
+        return std::string("all_users");
+    }
+    return it->second;
+}
+
+utils::VoidExpected LocalCollaborationStorage::saveCommentAccess(const std::string& pageId, const std::string& accessMode) {
+    std::scoped_lock lock(mutex_);
+    auto state = loadStateUnlocked();
+    if (!state) {
+        return std::unexpected(state.error());
+    }
+
+    state->commentAccessByPage[pageId] = accessMode;
+    return persistStateUnlocked(*state);
+}
+
 utils::VoidExpected LocalCollaborationStorage::deletePageData(const std::string& pageId) {
     std::scoped_lock lock(mutex_);
     auto state = loadStateUnlocked();
@@ -249,6 +274,7 @@ utils::VoidExpected LocalCollaborationStorage::deletePageData(const std::string&
             return item.pageId == pageId;
         }),
         state->threads.end());
+    state->commentAccessByPage.erase(pageId);
 
     return persistStateUnlocked(*state);
 }
@@ -293,6 +319,11 @@ utils::Expected<LocalCollaborationStorage::State> LocalCollaborationStorage::loa
             state.threads.push_back(commentThreadFromJson(item));
         }
     }
+    if (root.contains("commentAccess") && root["commentAccess"].is_object()) {
+        for (auto it = root["commentAccess"].begin(); it != root["commentAccess"].end(); ++it) {
+            state.commentAccessByPage[it.key()] = it.value().get<std::string>();
+        }
+    }
 
     return state;
 }
@@ -311,12 +342,16 @@ utils::VoidExpected LocalCollaborationStorage::persistStateUnlocked(const State&
         json root = {
             {"versions", json::array()},
             {"threads", json::array()},
+            {"commentAccess", json::object()},
         };
         for (const auto& version : state.versions) {
             root["versions"].push_back(toJson(version));
         }
         for (const auto& thread : state.threads) {
             root["threads"].push_back(toJson(thread));
+        }
+        for (const auto& [pageId, accessMode] : state.commentAccessByPage) {
+            root["commentAccess"][pageId] = accessMode;
         }
 
         std::ofstream stream(storagePath_, std::ios::binary | std::ios::trunc);

@@ -68,6 +68,8 @@ public:
         const std::string& pageId,
         const std::string& threadId,
         const std::string& payload);
+    [[nodiscard]] RouteResponse getCommentAccess(const std::string& pageId);
+    [[nodiscard]] RouteResponse setCommentAccess(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
     [[nodiscard]] RouteResponse getMwsInsertOptions(
         const std::string& tableId = {},

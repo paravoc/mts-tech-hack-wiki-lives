@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "src/models/comment_thread.h"
@@ -26,6 +27,8 @@ public:
         const std::string& pageId,
         const std::string& threadId) const;
     [[nodiscard]] utils::VoidExpected saveThread(const models::CommentThread& thread);
+    [[nodiscard]] utils::Expected<std::string> getCommentAccess(const std::string& pageId) const;
+    [[nodiscard]] utils::VoidExpected saveCommentAccess(const std::string& pageId, const std::string& accessMode);
 
     [[nodiscard]] utils::VoidExpected deletePageData(const std::string& pageId);
 
@@ -33,6 +36,7 @@ private:
     struct State {
         std::vector<models::PageVersion> versions;
         std::vector<models::CommentThread> threads;
+        std::unordered_map<std::string, std::string> commentAccessByPage;
     };
 
     [[nodiscard]] utils::Expected<State> loadStateUnlocked() const;

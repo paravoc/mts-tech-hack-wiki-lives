@@ -113,6 +113,18 @@ class ApiClient:
         )
         return data["item"]
 
+    def get_comment_access(self, page_id: str) -> str:
+        data = self._request("GET", f"/api/pages/{page_id}/comment-access")
+        return str(data.get("mode", "all_users"))
+
+    def set_comment_access(self, page_id: str, mode: str) -> str:
+        data = self._request(
+            "PUT",
+            f"/api/pages/{page_id}/comment-access",
+            json_body={"mode": mode},
+        )
+        return str(data.get("mode", "all_users"))
+
     def render_content(self, content: str) -> str:
         data = self._request("POST", "/api/render", json_body={"content": content})
         return data["html"]

@@ -657,6 +657,64 @@ RouteResponse Router::toggleCommentLike(
     }
 }
 
+RouteResponse Router::getCommentAccess(const std::string& pageId) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        const auto accessMode = collaborationService_->getCommentAccess(pageId);
+        if (!accessMode) {
+            return fail(accessMode.error());
+        }
+
+        return ok("{\"mode\":\"" + utils::escapeJson(accessMode.value()) + "\"}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::setCommentAccess(const std::string& pageId, const std::string& payload) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        std::string mode = "all_users";
+        if (!payload.empty()) {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            mode = parsedPayload.value("mode", mode);
+        }
+
+        const auto savedMode = collaborationService_->setCommentAccess(pageId, mode);
+        if (!savedMode) {
+            return fail(savedMode.error());
+        }
+
+        return ok("{\"mode\":\"" + utils::escapeJson(savedMode.value()) + "\"}");
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed comment access JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
 RouteResponse Router::renderContent(const std::string& payload) {
     try {
         std::string content = payload;
