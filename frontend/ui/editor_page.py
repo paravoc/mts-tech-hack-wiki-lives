@@ -52,6 +52,9 @@ def _toolbar_markup() -> str:
           <div class="toolbar-sep"></div>
           <div class="toolbar-group">
             <button class="toolbar-button" data-tip="Вставить объект">@</button>
+            <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
+              <span>L</span>
+            </button>
             <button class="toolbar-button" data-tip="Ссылка">&lt;/&gt;</button>
             <button class="toolbar-button" data-tip="Цитата" data-block="blockquote">``</button>
             <button class="toolbar-button" data-tip="Изображение">&#9633;</button>
@@ -96,6 +99,11 @@ def _selection_toolbar_markup() -> str:
               <button class="toolbar-button" data-tip="Вставить объект">@</button>
             </div>
             <div class="selection-toolbar__group">
+              <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
+                <span>L</span>
+              </button>
+            </div>
+            <div class="selection-toolbar__group">
               <button class="toolbar-button" data-tip="Ссылка">&lt;/&gt;</button>
             </div>
             <div class="selection-toolbar__group">
@@ -137,6 +145,28 @@ def _selection_toolbar_markup() -> str:
           <div class="floating-menu" id="floatingMenuList" data-menu-panel="list">
             <button class="floating-menu__item" data-tip="Маркированный список" data-command="insertUnorderedList">Маркированный список</button>
             <button class="floating-menu__item" data-tip="Нумерованный список" data-command="insertOrderedList">Нумерованный список</button>
+          </div>
+
+          <div class="floating-menu floating-menu--link" id="floatingMenuLink" data-menu-panel="link">
+            <div class="link-menu">
+              <div class="link-menu__field">
+                <label class="link-menu__label" for="linkTextInput">Выделенный текст</label>
+                <input class="link-menu__input" id="linkTextInput" type="text" placeholder="Введите текст ссылки" />
+              </div>
+              <div class="link-menu__field">
+                <label class="link-menu__label" for="linkTargetInput">Ссылка или заголовок</label>
+                <input class="link-menu__input" id="linkTargetInput" type="text" placeholder="https://site.ru или выберите заголовок" />
+              </div>
+              <label class="link-menu__checkbox">
+                <input id="linkOpenInNewTab" type="checkbox" />
+                <span>Открывать в новой вкладке</span>
+              </label>
+              <div class="link-menu__headings" id="linkHeadingList"></div>
+              <div class="link-menu__actions">
+                <button class="link-menu__button link-menu__button--primary" id="linkConfirmButton" type="button">Подтвердить</button>
+                <button class="link-menu__button" id="linkCancelButton" type="button">Отменить</button>
+              </div>
+            </div>
           </div>
         </div>
         """
@@ -413,6 +443,13 @@ def render_editor_page() -> None:
               flex: 1;
               overflow: auto;
               background: #ffffff;
+              scrollbar-width: none;
+              -ms-overflow-style: none;
+            }
+
+            .editor-canvas::-webkit-scrollbar {
+              width: 0;
+              height: 0;
             }
 
             .editor-shell {
@@ -420,6 +457,143 @@ def render_editor_page() -> None:
               max-width: calc(100vw - 80px);
               margin: 0 auto;
               padding: 54px 0 180px;
+            }
+
+            .outline-sidebar {
+              position: absolute;
+              top: 34px;
+              left: 18px;
+              display: flex;
+              align-items: flex-start;
+              gap: 10px;
+              z-index: 9;
+            }
+
+            .outline-sidebar__rail {
+              width: 28px;
+              height: 44px;
+              border-radius: 14px;
+              border: 1px solid #e3e8ef;
+              background: #f7f9fc;
+              color: #96a0af;
+              box-shadow: 0 8px 22px rgba(17, 24, 39, 0.08);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              flex: none;
+            }
+
+            .outline-sidebar__rail svg {
+              width: 13px;
+              height: 13px;
+              display: block;
+            }
+
+            .outline-sidebar__panel {
+              width: 0;
+              opacity: 0;
+              overflow: hidden;
+              pointer-events: none;
+              transform: translateX(-4px);
+              transition: width .18s ease, opacity .18s ease, transform .18s ease;
+            }
+
+            .outline-sidebar:hover .outline-sidebar__panel,
+            .outline-sidebar:focus-within .outline-sidebar__panel {
+              width: 232px;
+              opacity: 1;
+              transform: translateX(0);
+              pointer-events: auto;
+            }
+
+            .outline-sidebar__card {
+              width: 232px;
+              max-height: min(56vh, 520px);
+              overflow: auto;
+              padding: 10px 8px;
+              border-radius: 16px;
+              background: rgba(255, 255, 255, 0.96);
+              border: 1px solid #eef1f5;
+              box-shadow: 0 16px 36px rgba(17, 24, 39, 0.10);
+              scrollbar-width: none;
+            }
+
+            .outline-sidebar__card::-webkit-scrollbar {
+              width: 0;
+              height: 0;
+            }
+
+            .outline-sidebar__title {
+              padding: 0 8px 8px;
+              font-size: 11px;
+              font-weight: 700;
+              letter-spacing: 0.04em;
+              text-transform: uppercase;
+              color: #9aa3b2;
+            }
+
+            .outline-sidebar__list {
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+            }
+
+            .outline-sidebar__item {
+              width: 100%;
+              min-height: 30px;
+              padding: 0 10px;
+              border: 0;
+              border-radius: 10px;
+              background: transparent;
+              color: #38404d;
+              font-size: 13px;
+              font-weight: 500;
+              text-align: left;
+              cursor: pointer;
+              display: flex;
+              align-items: center;
+              gap: 8px;
+            }
+
+            .outline-sidebar__item:hover {
+              background: #f5f7fb;
+            }
+
+            .outline-sidebar__item-badge {
+              flex: none;
+              min-width: 24px;
+              height: 18px;
+              padding: 0 5px;
+              border-radius: 999px;
+              border: 1px solid #dde3eb;
+              background: #ffffff;
+              color: #8c96a7;
+              font-size: 10px;
+              font-weight: 700;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .outline-sidebar__item-text {
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+            }
+
+            .outline-sidebar__item--depth-1 {
+              padding-left: 20px;
+            }
+
+            .outline-sidebar__item--depth-2 {
+              padding-left: 30px;
+            }
+
+            .outline-sidebar__empty {
+              padding: 0 10px;
+              color: #a1a9b7;
+              font-size: 12px;
+              line-height: 1.5;
             }
 
             .title-editor {
@@ -481,6 +655,18 @@ def render_editor_page() -> None:
             .body-editor h3 {
               font-weight: 700;
               color: #242933;
+            }
+
+            .body-editor a,
+            .title-editor a {
+              color: var(--danger);
+              text-decoration: none;
+            }
+
+            .body-editor a.is-ctrl-ready,
+            .title-editor a.is-ctrl-ready {
+              color: var(--danger);
+              cursor: pointer;
             }
 
             .body-editor b,
@@ -717,6 +903,11 @@ def render_editor_page() -> None:
               width: 220px;
             }
 
+            .floating-menu--link {
+              width: 360px;
+              padding: 14px;
+            }
+
             .font-size-control {
               display: flex;
               flex-direction: column;
@@ -767,6 +958,133 @@ def render_editor_page() -> None:
               justify-content: center;
               min-height: 28px;
               padding: 0;
+            }
+
+            .link-menu {
+              display: flex;
+              flex-direction: column;
+              gap: 12px;
+            }
+
+            .link-menu__field {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+
+            .link-menu__label {
+              font-size: 12px;
+              line-height: 1.2;
+              color: #8f96a4;
+            }
+
+            .link-menu__input {
+              width: 100%;
+              height: 30px;
+              padding: 0 10px;
+              border-radius: 8px;
+              border: 1px solid #d8dde6;
+              outline: none;
+              color: #363c49;
+              background: #ffffff;
+            }
+
+            .link-menu__input:focus {
+              border-color: var(--danger);
+            }
+
+            .link-menu__checkbox {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              font-size: 12px;
+              color: #4b5261;
+              cursor: pointer;
+            }
+
+            .link-menu__checkbox input {
+              margin: 0;
+              accent-color: var(--danger);
+            }
+
+            .link-menu__headings {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              max-height: 132px;
+              overflow: auto;
+            }
+
+            .link-menu__heading {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              min-height: 32px;
+              padding: 0 10px;
+              border: 0;
+              border-radius: 9px;
+              background: #f7f8fb;
+              color: #363c49;
+              font-size: 12px;
+              text-align: left;
+              cursor: pointer;
+            }
+
+            .link-menu__heading:hover {
+              background: #f1f3f8;
+            }
+
+            .link-menu__heading-badge {
+              flex: none;
+              min-width: 26px;
+              height: 20px;
+              padding: 0 6px;
+              border-radius: 999px;
+              background: #ffffff;
+              border: 1px solid #d8dde6;
+              color: #7b8394;
+              font-size: 10px;
+              font-weight: 700;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            }
+
+            .link-menu__empty {
+              min-height: 32px;
+              padding: 8px 10px;
+              border-radius: 9px;
+              background: #f7f8fb;
+              color: #8f96a4;
+              font-size: 12px;
+            }
+
+            .link-menu__actions {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 8px;
+            }
+
+            .link-menu__button {
+              appearance: none;
+              border: 0;
+              height: 30px;
+              border-radius: 8px;
+              background: #eceff4;
+              color: #2d3340;
+              font-size: 13px;
+              font-weight: 600;
+              cursor: pointer;
+            }
+
+            .link-menu__button:disabled {
+              opacity: 0.45;
+              cursor: default;
+            }
+
+            .link-menu__button--primary {
+              background: var(--danger);
+              color: #ffffff;
             }
 
             .block-handle {
@@ -832,6 +1150,10 @@ def render_editor_page() -> None:
                 padding: 14px 18px 11px;
               }
 
+              .outline-sidebar {
+                display: none;
+              }
+
               .editor-shell {
                 max-width: calc(100vw - 36px);
                 padding-top: 42px;
@@ -864,6 +1186,21 @@ def render_editor_page() -> None:
               __DOCUMENT_HEADER__
               __TOOLBAR__
               <div class="editor-canvas" id="editorCanvas">
+                <aside class="outline-sidebar" id="outlineSidebar">
+                  <div class="outline-sidebar__rail" aria-hidden="true">
+                    <svg viewBox="0 0 16 16" fill="currentColor">
+                      <rect x="3" y="4" width="10" height="1.5" rx="0.75"></rect>
+                      <rect x="3" y="7.25" width="10" height="1.5" rx="0.75"></rect>
+                      <rect x="3" y="10.5" width="7" height="1.5" rx="0.75"></rect>
+                    </svg>
+                  </div>
+                  <div class="outline-sidebar__panel">
+                    <div class="outline-sidebar__card">
+                      <div class="outline-sidebar__title">Навигация</div>
+                      <div class="outline-sidebar__list" id="outlineList"></div>
+                    </div>
+                  </div>
+                </aside>
                 <div class="editor-shell">
                   <h1 class="title-editor" id="titleEditor" contenteditable="true" spellcheck="false">Новая страница</h1>
                   <div class="body-editor" id="bodyEditor" contenteditable="true" spellcheck="false">
@@ -900,15 +1237,23 @@ def render_editor_page() -> None:
             const selectionToolbar = document.getElementById("selectionToolbar");
             const selectionToolbarWrap = document.querySelector(".selection-toolbar-wrap");
             const blockHandle = document.getElementById("blockHandle");
+            const outlineList = document.getElementById("outlineList");
             const toolbarButtons = Array.from(document.querySelectorAll(".toolbar-button"));
             const floatingMenuItems = Array.from(document.querySelectorAll(".floating-menu__item"));
             const fontSizeRange = document.getElementById("fontSizeRange");
             const fontSizeInput = document.getElementById("fontSizeInput");
+            const linkTextInput = document.getElementById("linkTextInput");
+            const linkTargetInput = document.getElementById("linkTargetInput");
+            const linkOpenInNewTab = document.getElementById("linkOpenInNewTab");
+            const linkHeadingList = document.getElementById("linkHeadingList");
+            const linkConfirmButton = document.getElementById("linkConfirmButton");
+            const linkCancelButton = document.getElementById("linkCancelButton");
             const floatingMenus = {
               "font-size": document.getElementById("floatingMenuFontSize"),
               "text-style": document.getElementById("floatingMenuTextStyle"),
               "alignment": document.getElementById("floatingMenuAlignment"),
-              "list": document.getElementById("floatingMenuList")
+              "list": document.getElementById("floatingMenuList"),
+              "link": document.getElementById("floatingMenuLink")
             };
             const emptyHint = "__EMPTY_HINT__";
             let savedRange = null;
@@ -917,6 +1262,9 @@ def render_editor_page() -> None:
             let isHandleHovered = false;
             let activeMenuKey = null;
             let pendingFontSize = "14px";
+            let pendingLinkTarget = "";
+            let hoveredLink = null;
+            let ctrlPressed = false;
 
             const slashItems = [
               { icon: "T", label: "Обычный текст", queries: ["текст", "text"], kind: "block", value: "p" },
@@ -1063,6 +1411,10 @@ def render_editor_page() -> None:
                   button.classList.add("is-active");
                 }
 
+                if (activeGroup === "link" && getSelectionLink()) {
+                  button.classList.add("is-active");
+                }
+
                 if (command && safeQueryCommandState(command)) {
                   button.classList.add("is-active");
                 }
@@ -1083,6 +1435,270 @@ def render_editor_page() -> None:
                 return null;
               }
               return savedRange ? savedRange.commonAncestorContainer : selection.anchorNode;
+            }
+
+            function getClosestLink(node) {
+              if (!node) {
+                return null;
+              }
+              const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+              return element ? element.closest("a") : null;
+            }
+
+            function getSelectionLink() {
+              const selection = window.getSelection();
+              const sourceNode = savedRange ? savedRange.commonAncestorContainer : selection.anchorNode;
+              return getClosestLink(sourceNode);
+            }
+
+            function clearHoveredLink() {
+              if (hoveredLink) {
+                hoveredLink.classList.remove("is-ctrl-ready");
+              }
+              hoveredLink = null;
+            }
+
+            function setHoveredLink(link) {
+              if (hoveredLink === link) {
+                if (hoveredLink && ctrlPressed) {
+                  hoveredLink.classList.add("is-ctrl-ready");
+                }
+                return;
+              }
+              clearHoveredLink();
+              hoveredLink = link;
+              if (hoveredLink && ctrlPressed) {
+                hoveredLink.classList.add("is-ctrl-ready");
+              }
+            }
+
+            function navigateToLink(link) {
+              if (!link) {
+                return;
+              }
+              const href = (link.getAttribute("href") || "").trim();
+              if (!href) {
+                return;
+              }
+
+              if (href.startsWith("#")) {
+                const target = document.querySelector(href);
+                if (target) {
+                  target.scrollIntoView({ behavior: "smooth", block: "center" });
+                  showTooltip("Переход к заголовку");
+                }
+                return;
+              }
+
+              if (link.getAttribute("target") === "_blank") {
+                window.open(href, "_blank", "noopener,noreferrer");
+                return;
+              }
+
+              window.location.href = href;
+            }
+
+            function getSavedSelectionText() {
+              if (savedRange) {
+                return savedRange.cloneContents().textContent.replace(/\\u200B/g, "").trim();
+              }
+              const selection = window.getSelection();
+              return selection ? selection.toString().trim() : "";
+            }
+
+            function ensureHeadingAnchors() {
+              const headings = Array.from(bodyEditor.querySelectorAll("h1, h2, h3"));
+              headings.forEach((heading, index) => {
+                if (!heading.id) {
+                  heading.id = "heading-" + (index + 1);
+                }
+              });
+              return headings
+                .map((heading, index) => ({
+                  id: heading.id || "heading-" + (index + 1),
+                  label: heading.textContent.replace(/\\u200B/g, "").trim(),
+                  level: heading.tagName.toUpperCase()
+                }))
+                .filter((item) => item.label);
+            }
+
+            function getOutlineItems() {
+              const items = [];
+              const titleText = titleEditor.textContent.replace(/\\u200B/g, "").trim();
+              if (titleText) {
+                items.push({
+                  id: "titleEditor",
+                  label: titleText,
+                  level: "H1",
+                  depth: 0
+                });
+              }
+
+              const headings = ensureHeadingAnchors();
+              headings.forEach((item) => {
+                items.push({
+                  id: item.id,
+                  label: item.label,
+                  level: item.level,
+                  depth: item.level === "H1" ? 0 : item.level === "H2" ? 1 : 2
+                });
+              });
+
+              return items;
+            }
+
+            function renderOutline() {
+              if (!outlineList) {
+                return;
+              }
+
+              const items = getOutlineItems();
+              if (!items.length) {
+                outlineList.innerHTML = '<div class="outline-sidebar__empty">Пока нет заголовков для навигации</div>';
+                return;
+              }
+
+              outlineList.innerHTML = items.map((item) => `
+                <button
+                  class="outline-sidebar__item outline-sidebar__item--depth-${item.depth}"
+                  type="button"
+                  data-outline-target="${item.id}"
+                >
+                  <span class="outline-sidebar__item-badge">${item.level}</span>
+                  <span class="outline-sidebar__item-text">${item.label}</span>
+                </button>
+              `).join("");
+            }
+
+            function normalizeLinkTarget(value) {
+              const trimmed = String(value || "").trim();
+              if (!trimmed) {
+                return "";
+              }
+              if (trimmed.startsWith("#") || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) {
+                return trimmed;
+              }
+              if (trimmed.startsWith("www.")) {
+                return "https://" + trimmed;
+              }
+              if (trimmed.includes(".") && !trimmed.includes(" ")) {
+                return "https://" + trimmed;
+              }
+              return trimmed;
+            }
+
+            function updateLinkConfirmState() {
+              if (!linkConfirmButton) {
+                return;
+              }
+              const hasText = Boolean(linkTextInput && linkTextInput.value.trim());
+              const hasTarget = Boolean(normalizeLinkTarget(linkTargetInput ? linkTargetInput.value : ""));
+              linkConfirmButton.disabled = !(hasText && hasTarget);
+            }
+
+            function renderLinkHeadingList() {
+              if (!linkHeadingList) {
+                return;
+              }
+              const headings = ensureHeadingAnchors();
+              if (!headings.length) {
+                linkHeadingList.innerHTML = '<div class="link-menu__empty">Нет заголовков в текущем тексте</div>';
+                return;
+              }
+              linkHeadingList.innerHTML = headings.map((item) => `
+                <button class="link-menu__heading" type="button" data-heading-target="#${item.id}">
+                  <span class="link-menu__heading-badge">${item.level}</span>
+                  <span>${item.label}</span>
+                </button>
+              `).join("");
+            }
+
+            function populateLinkMenu() {
+              const selectedText = getSavedSelectionText();
+              const activeLink = getSelectionLink();
+              const existingTarget = activeLink ? activeLink.getAttribute("href") || "" : "";
+              const existingText = activeLink ? activeLink.textContent.trim() : "";
+
+              if (linkTextInput) {
+                linkTextInput.value = selectedText || existingText || "";
+              }
+              if (linkTargetInput) {
+                linkTargetInput.value = pendingLinkTarget || existingTarget;
+              }
+              if (linkOpenInNewTab) {
+                linkOpenInNewTab.checked = Boolean(
+                  activeLink &&
+                  activeLink.getAttribute("target") === "_blank"
+                );
+              }
+
+              renderLinkHeadingList();
+              updateLinkConfirmState();
+            }
+
+            function applyLink() {
+              const rawText = linkTextInput ? linkTextInput.value.trim() : "";
+              const href = normalizeLinkTarget(linkTargetInput ? linkTargetInput.value : "");
+
+              if (!rawText || !href) {
+                updateLinkConfirmState();
+                return;
+              }
+
+              pendingLinkTarget = href;
+              const activeRoot = getActiveEditableRoot();
+              activeRoot.focus();
+              restoreSavedRange();
+
+              const selection = window.getSelection();
+              if (!selection.rangeCount) {
+                return;
+              }
+
+              const range = selection.getRangeAt(0);
+              const activeLink = getSelectionLink();
+
+              if (range.collapsed) {
+                const anchor = activeLink || document.createElement("a");
+                anchor.href = href;
+                anchor.textContent = rawText;
+                if (linkOpenInNewTab && linkOpenInNewTab.checked && !href.startsWith("#")) {
+                  anchor.target = "_blank";
+                  anchor.rel = "noopener noreferrer";
+                } else {
+                  anchor.removeAttribute("target");
+                  anchor.removeAttribute("rel");
+                }
+                if (!activeLink) {
+                  range.insertNode(anchor);
+                }
+                const nextRange = document.createRange();
+                nextRange.setStartAfter(anchor);
+                nextRange.collapse(true);
+                selection.removeAllRanges();
+                selection.addRange(nextRange);
+                savedRange = nextRange.cloneRange();
+              } else {
+                document.execCommand("createLink", false, href);
+                const linkNode = getClosestLink(selection.anchorNode) || getClosestLink(selection.focusNode) || activeLink;
+                if (linkNode) {
+                  linkNode.setAttribute("href", href);
+                  linkNode.textContent = rawText;
+                  if (linkOpenInNewTab && linkOpenInNewTab.checked && !href.startsWith("#")) {
+                    linkNode.setAttribute("target", "_blank");
+                    linkNode.setAttribute("rel", "noopener noreferrer");
+                  } else {
+                    linkNode.removeAttribute("target");
+                    linkNode.removeAttribute("rel");
+                  }
+                }
+                saveCurrentRange();
+              }
+
+              hideFloatingMenus();
+              updateActiveToolbarButtons();
+              updateSelectionToolbar();
+              showTooltip("Ссылка");
             }
 
             function getCurrentFontSize() {
@@ -1270,6 +1886,10 @@ def render_editor_page() -> None:
               if (menuKey === "font-size") {
                 syncFontSizeControls(getCurrentFontSize());
               }
+
+              if (menuKey === "link") {
+                populateLinkMenu();
+              }
             }
 
             function showTooltip(text) {
@@ -1438,6 +2058,7 @@ def render_editor_page() -> None:
               hideSlashMenu();
               placeCaretAtEnd(targetNode);
               saveCurrentRange();
+              renderOutline();
               updateActiveToolbarButtons();
               updateSelectionToolbar();
               showTooltip(item.label);
@@ -1661,6 +2282,77 @@ def render_editor_page() -> None:
               });
             }
 
+            if (linkTextInput) {
+              linkTextInput.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkTextInput.addEventListener("click", (event) => event.stopPropagation());
+              linkTextInput.addEventListener("input", updateLinkConfirmState);
+            }
+
+            if (linkTargetInput) {
+              linkTargetInput.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkTargetInput.addEventListener("click", (event) => event.stopPropagation());
+              linkTargetInput.addEventListener("input", () => {
+                pendingLinkTarget = linkTargetInput.value;
+                updateLinkConfirmState();
+              });
+            }
+
+            if (linkOpenInNewTab) {
+              linkOpenInNewTab.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkOpenInNewTab.addEventListener("click", (event) => event.stopPropagation());
+            }
+
+            if (linkHeadingList) {
+              linkHeadingList.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkHeadingList.addEventListener("click", (event) => {
+                event.stopPropagation();
+                const option = event.target.closest("[data-heading-target]");
+                if (!option || !linkTargetInput) {
+                  return;
+                }
+                const target = option.dataset.headingTarget || "";
+                linkTargetInput.value = target;
+                pendingLinkTarget = target;
+                updateLinkConfirmState();
+              });
+            }
+
+            if (linkConfirmButton) {
+              linkConfirmButton.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkConfirmButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                applyLink();
+              });
+            }
+
+            if (linkCancelButton) {
+              linkCancelButton.addEventListener("mousedown", (event) => event.stopPropagation());
+              linkCancelButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                hideFloatingMenus();
+                updateActiveToolbarButtons();
+              });
+            }
+
+            if (outlineList) {
+              outlineList.addEventListener("click", (event) => {
+                const item = event.target.closest("[data-outline-target]");
+                if (!item) {
+                  return;
+                }
+                const target = document.getElementById(item.dataset.outlineTarget || "");
+                if (!target) {
+                  return;
+                }
+                target.scrollIntoView({ behavior: "smooth", block: "center" });
+                if (target === titleEditor) {
+                  titleEditor.focus();
+                } else {
+                  bodyEditor.focus();
+                }
+              });
+            }
+
             bodyEditor.addEventListener("focus", clearPlaceholderIfNeeded);
             bodyEditor.addEventListener("beforeinput", (event) => {
               if (
@@ -1705,6 +2397,7 @@ def render_editor_page() -> None:
             });
 
             bodyEditor.addEventListener("input", () => {
+              renderOutline();
               updateActiveToolbarButtons();
               updateSlashMenu();
               updateSelectionToolbar();
@@ -1733,9 +2426,35 @@ def render_editor_page() -> None:
               if (activeMenuKey === "font-size") {
                 syncFontSizeControls(getCurrentFontSize());
               }
+              if (activeMenuKey === "link") {
+                populateLinkMenu();
+              }
               updateActiveToolbarButtons();
               updateSelectionToolbar();
               updateBlockHandleFromSelection();
+            });
+
+            document.addEventListener("keydown", (event) => {
+              if (event.key !== "Control") {
+                return;
+              }
+              ctrlPressed = true;
+              if (hoveredLink) {
+                hoveredLink.classList.add("is-ctrl-ready");
+              }
+              if (!event.repeat && hoveredLink) {
+                navigateToLink(hoveredLink);
+              }
+            });
+
+            document.addEventListener("keyup", (event) => {
+              if (event.key !== "Control") {
+                return;
+              }
+              ctrlPressed = false;
+              if (hoveredLink) {
+                hoveredLink.classList.remove("is-ctrl-ready");
+              }
             });
 
             document.addEventListener("click", (event) => {
@@ -1754,7 +2473,24 @@ def render_editor_page() -> None:
               }
             });
 
+            function handleCtrlLinkClick(event) {
+              const link = event.target.closest("a");
+              if (!link) {
+                return;
+              }
+              if (!(event.ctrlKey || ctrlPressed)) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              navigateToLink(link);
+            }
+
+            bodyEditor.addEventListener("click", handleCtrlLinkClick);
+            titleEditor.addEventListener("click", handleCtrlLinkClick);
+
             bodyEditor.addEventListener("mousemove", (event) => {
+              setHoveredLink(event.target.closest("a"));
               const block = findEditableBlock(event.target);
               if (block) {
                 showBlockHandle(block);
@@ -1764,10 +2500,21 @@ def render_editor_page() -> None:
             });
 
             bodyEditor.addEventListener("mouseleave", (event) => {
+              if (!event.relatedTarget || !bodyEditor.contains(event.relatedTarget)) {
+                clearHoveredLink();
+              }
               if (event.relatedTarget === blockHandle || blockHandle.contains(event.relatedTarget)) {
                 return;
               }
               updateBlockHandleFromSelection();
+            });
+
+            titleEditor.addEventListener("mousemove", (event) => {
+              setHoveredLink(event.target.closest("a"));
+            });
+
+            titleEditor.addEventListener("mouseleave", () => {
+              clearHoveredLink();
             });
 
             blockHandle.addEventListener("mouseenter", () => {
@@ -1796,10 +2543,14 @@ def render_editor_page() -> None:
               if (pendingFontSize) {
                 titleEditor.style.fontSize = pendingFontSize;
               }
+              renderOutline();
               updateActiveToolbarButtons();
               updateSelectionToolbar();
             });
-            titleEditor.addEventListener("input", updateActiveToolbarButtons);
+            titleEditor.addEventListener("input", () => {
+              renderOutline();
+              updateActiveToolbarButtons();
+            });
 
             slashMenu.addEventListener("mousedown", (event) => event.preventDefault());
             slashMenu.addEventListener("click", (event) => {
@@ -1820,6 +2571,7 @@ def render_editor_page() -> None:
             window.setTimeout(() => {
               showEditorState();
               window.setTimeout(() => {
+                renderOutline();
                 titleEditor.focus();
                 placeCaretAtEnd(titleEditor);
                 updateActiveToolbarButtons();
