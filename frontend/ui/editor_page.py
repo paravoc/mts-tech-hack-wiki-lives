@@ -4,6 +4,7 @@ from textwrap import dedent
 
 import streamlit.components.v1 as components
 
+from ui.comments import comments_markup, comments_script, comments_styles
 from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
 
@@ -1728,6 +1729,7 @@ __CURSOR_ROOT_VARIABLES__
                 width: 100%;
               }
             }
+__COMMENTS_STYLES__
           </style>
         </head>
         <body>
@@ -1762,6 +1764,7 @@ __CURSOR_ROOT_VARIABLES__
                   </div>
                 </div>
 
+                __COMMENTS_MARKUP__
                 __SELECTION_TOOLBAR__
                 <button class="block-handle" id="blockHandle" aria-hidden="true">
                   <svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
@@ -2880,6 +2883,7 @@ __CURSOR_ROOT_VARIABLES__
               block.className = "embedded-image-block";
               block.contentEditable = "false";
               block.dataset.kind = "image";
+              block.dataset.commentObject = "1";
 
               const frame = document.createElement("div");
               frame.className = "embedded-image-frame";
@@ -3194,6 +3198,7 @@ __CURSOR_ROOT_VARIABLES__
                   const block = document.createElement("div");
                   block.className = "embedded-file-chip";
                   block.contentEditable = "false";
+                  block.dataset.commentObject = "1";
                   const ext = uploadState.file.name.includes(".")
                     ? uploadState.file.name.split(".").pop().toUpperCase()
                     : "FILE";
@@ -4294,6 +4299,7 @@ __CURSOR_ROOT_VARIABLES__
                 updateActiveToolbarButtons();
               }, 120);
             }, 900);
+__COMMENTS_SCRIPT__
           </script>
         </body>
         </html>
@@ -4306,5 +4312,8 @@ __CURSOR_ROOT_VARIABLES__
     html = html.replace("__SELECTION_TOOLBAR__", _selection_toolbar_markup())
     html = html.replace("__EMPTY_HINT__", _EMPTY_HINT)
     html = html.replace("__CURSOR_ROOT_VARIABLES__", cursor_root_variables("              "))
+    html = html.replace("__COMMENTS_STYLES__", comments_styles())
+    html = html.replace("__COMMENTS_MARKUP__", comments_markup())
+    html = html.replace("__COMMENTS_SCRIPT__", comments_script() + "\n            window.initializeCommentsSystem && window.initializeCommentsSystem();")
 
     components.html(html, height=780, scrolling=False)
