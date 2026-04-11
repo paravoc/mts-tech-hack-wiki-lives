@@ -26,6 +26,8 @@ def inject_global_styles() -> None:
         [data-testid="stAppViewContainer"],
         [data-testid="stAppViewBlockContainer"] {
             background: #ffffff !important;
+            overflow: hidden !important;
+            height: 100vh !important;
         }
 
         header[data-testid="stHeader"],
@@ -49,6 +51,10 @@ def inject_global_styles() -> None:
         iframe {
             width: 100% !important;
             border: 0 !important;
+        }
+
+        [data-testid="stVerticalBlock"] {
+            gap: 0 !important;
         }
         </style>
         """,

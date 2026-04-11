@@ -51,13 +51,13 @@ def _toolbar_markup() -> str:
           </div>
           <div class="toolbar-sep"></div>
           <div class="toolbar-group">
-            <button class="toolbar-button" data-tip="Вставить объект">@</button>
+            <button class="toolbar-button" data-tip="Вставить файл" data-upload="file">@</button>
             <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
               <span>L</span>
             </button>
             <button class="toolbar-button" data-tip="Ссылка">&lt;/&gt;</button>
             <button class="toolbar-button" data-tip="Цитата" data-block="blockquote">``</button>
-            <button class="toolbar-button" data-tip="Изображение">&#9633;</button>
+            <button class="toolbar-button" data-tip="Изображение" data-upload="image">&#9633;</button>
           </div>
         </div>
         """
@@ -96,7 +96,7 @@ def _selection_toolbar_markup() -> str:
               </button>
             </div>
             <div class="selection-toolbar__group">
-              <button class="toolbar-button" data-tip="Вставить объект">@</button>
+              <button class="toolbar-button" data-tip="Вставить файл" data-upload="file">@</button>
             </div>
             <div class="selection-toolbar__group">
               <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
@@ -195,6 +195,7 @@ def render_editor_page() -> None:
               --danger: #ff4f8b;
               --selection: #d4e5ff;
               --skeleton: #f0f1f4;
+              --top-shell-height: 94px;
             }
 
             * {
@@ -439,8 +440,11 @@ def render_editor_page() -> None:
             }
 
             .editor-canvas {
-              position: relative;
-              flex: 1;
+              position: absolute;
+              top: var(--top-shell-height);
+              left: 0;
+              right: 0;
+              bottom: 0;
               overflow: auto;
               background: #ffffff;
               scrollbar-width: none;
@@ -460,13 +464,23 @@ def render_editor_page() -> None:
             }
 
             .outline-sidebar {
-              position: absolute;
-              top: 34px;
-              left: 18px;
+              position: fixed;
+              top: 50%;
+              left: max(34px, calc(50vw - 470px));
+              transform: translateY(-50%);
               display: flex;
               align-items: flex-start;
               gap: 10px;
-              z-index: 9;
+              z-index: 31;
+            }
+
+            .editor-top-shell {
+              position: fixed;
+              top: 0;
+              left: 0;
+              right: 0;
+              z-index: 30;
+              background: #ffffff;
             }
 
             .outline-sidebar__rail {
@@ -474,8 +488,8 @@ def render_editor_page() -> None:
               height: 44px;
               border-radius: 14px;
               border: 1px solid #e3e8ef;
-              background: #f7f9fc;
-              color: #96a0af;
+              background: #ffffff;
+              color: var(--danger);
               box-shadow: 0 8px 22px rgba(17, 24, 39, 0.08);
               display: inline-flex;
               align-items: center;
@@ -1087,6 +1101,302 @@ def render_editor_page() -> None:
               color: #ffffff;
             }
 
+            .upload-modal {
+              position: fixed;
+              inset: 0;
+              display: none;
+              align-items: center;
+              justify-content: center;
+              padding: 24px;
+              z-index: 40;
+            }
+
+            .upload-modal.is-visible {
+              display: flex;
+            }
+
+            .upload-modal__backdrop {
+              position: absolute;
+              inset: 0;
+              background: rgba(21, 28, 38, 0.16);
+            }
+
+            .upload-modal__dialog {
+              position: relative;
+              width: min(660px, calc(100vw - 32px));
+              padding: 22px 22px 18px;
+              border-radius: 18px;
+              background: #ffffff;
+              box-shadow: 0 24px 54px rgba(17, 24, 39, 0.16);
+              border: 1px solid #edf1f5;
+            }
+
+            .upload-modal__close {
+              position: absolute;
+              top: 16px;
+              right: 16px;
+              width: 30px;
+              height: 30px;
+              border: 0;
+              border-radius: 10px;
+              background: #f5f7fb;
+              color: #39414e;
+              font-size: 22px;
+              line-height: 1;
+              cursor: pointer;
+            }
+
+            .upload-modal__title {
+              margin: 0 36px 22px 0;
+              font-size: 18px;
+              line-height: 1.2;
+              font-weight: 700;
+              color: #2a303a;
+            }
+
+            .upload-modal__alert {
+              display: none;
+              margin-bottom: 18px;
+              min-height: 34px;
+              padding: 0 16px;
+              border-radius: 10px;
+              background: rgba(255, 108, 69, 0.12);
+              color: #ff6c45;
+              font-size: 14px;
+              font-weight: 500;
+              align-items: center;
+              justify-content: center;
+              text-align: center;
+            }
+
+            .upload-modal__alert.is-visible {
+              display: flex;
+            }
+
+            .upload-modal__field {
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            }
+
+            .upload-modal__label {
+              font-size: 13px;
+              color: #7f8796;
+            }
+
+            .upload-dropzone {
+              position: relative;
+              min-height: 84px;
+              padding: 0 18px;
+              border-radius: 12px;
+              border: 2px dashed #dde5f0;
+              background: #ffffff;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+              text-align: center;
+            }
+
+            .upload-dropzone.is-dragover {
+              border-color: #8f7cff;
+              background: #faf9ff;
+            }
+
+            .upload-dropzone__input {
+              position: absolute;
+              inset: 0;
+              opacity: 0;
+              pointer-events: none;
+            }
+
+            .upload-dropzone__button {
+              border: 0;
+              background: transparent;
+              color: #3279ff;
+              font-size: 14px;
+              font-weight: 500;
+              cursor: pointer;
+            }
+
+            .upload-dropzone__text {
+              font-size: 14px;
+              color: #3e4654;
+            }
+
+            .upload-modal__hint {
+              font-size: 12px;
+              color: #9aa2b0;
+            }
+
+            .upload-preview {
+              display: none;
+              margin-top: 16px;
+            }
+
+            .upload-preview.is-visible {
+              display: block;
+            }
+
+            .upload-preview__card {
+              position: relative;
+              width: 128px;
+            }
+
+            .upload-preview__thumb {
+              width: 128px;
+              height: 82px;
+              border-radius: 8px;
+              background: #f3f5f9 center / cover no-repeat;
+              border: 1px solid #eef1f5;
+              overflow: hidden;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #8e97a6;
+              font-size: 28px;
+            }
+
+            .upload-preview__thumb img {
+              width: 100%;
+              height: 100%;
+              object-fit: cover;
+              display: block;
+            }
+
+            .upload-preview__remove {
+              position: absolute;
+              top: -6px;
+              right: -6px;
+              width: 18px;
+              height: 18px;
+              border: 0;
+              border-radius: 999px;
+              background: #ffffff;
+              box-shadow: 0 4px 12px rgba(17, 24, 39, 0.12);
+              color: #ff7b53;
+              font-size: 14px;
+              line-height: 1;
+              cursor: pointer;
+            }
+
+            .upload-preview__name-row {
+              display: flex;
+              justify-content: space-between;
+              gap: 10px;
+              margin-top: 8px;
+              font-size: 13px;
+              color: #535c6c;
+            }
+
+            .upload-preview__size {
+              color: #7f8796;
+              white-space: nowrap;
+            }
+
+            .upload-preview__error {
+              position: absolute;
+              inset: 0;
+              border-radius: 8px;
+              background: rgba(255, 255, 255, 0.84);
+              display: none;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+              text-align: center;
+              padding: 12px;
+            }
+
+            .upload-preview__error.is-visible {
+              display: flex;
+            }
+
+            .upload-preview__error-title {
+              font-size: 14px;
+              font-weight: 600;
+              color: #505968;
+            }
+
+            .upload-preview__retry {
+              border: 0;
+              background: transparent;
+              color: #3279ff;
+              font-size: 14px;
+              cursor: pointer;
+            }
+
+            .upload-modal__actions {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 8px;
+              margin-top: 18px;
+            }
+
+            .upload-modal__action {
+              appearance: none;
+              border: 0;
+              height: 30px;
+              border-radius: 8px;
+              background: #eef1f5;
+              color: #2e3542;
+              font-size: 13px;
+              font-weight: 600;
+              cursor: pointer;
+            }
+
+            .upload-modal__action--primary {
+              background: var(--danger);
+              color: #ffffff;
+            }
+
+            .upload-modal__action:disabled {
+              opacity: 0.45;
+              cursor: default;
+            }
+
+            .embedded-image-block {
+              margin: 18px 0;
+            }
+
+            .embedded-image-block img {
+              display: block;
+              max-width: 100%;
+              border-radius: 14px;
+            }
+
+            .embedded-file-chip {
+              display: inline-flex;
+              align-items: center;
+              gap: 10px;
+              margin: 8px 0;
+              padding: 10px 12px;
+              border-radius: 14px;
+              background: #f7f9fc;
+              border: 1px solid #e8edf3;
+              color: #343b49;
+            }
+
+            .embedded-file-chip a {
+              color: #343b49;
+              text-decoration: none;
+            }
+
+            .embedded-file-chip__ext {
+              min-width: 34px;
+              height: 22px;
+              padding: 0 8px;
+              border-radius: 999px;
+              background: #ffffff;
+              border: 1px solid #dbe2ec;
+              color: #8a93a3;
+              font-size: 11px;
+              font-weight: 700;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+            }
+
             .block-handle {
               position: absolute;
               display: none;
@@ -1183,8 +1493,10 @@ def render_editor_page() -> None:
             __LOADING_SCREEN__
 
             <section class="screen is-hidden" id="editorScreen">
-              __DOCUMENT_HEADER__
-              __TOOLBAR__
+              <div class="editor-top-shell">
+                __DOCUMENT_HEADER__
+                __TOOLBAR__
+              </div>
               <div class="editor-canvas" id="editorCanvas">
                 <aside class="outline-sidebar" id="outlineSidebar">
                   <div class="outline-sidebar__rail" aria-hidden="true">
@@ -1224,6 +1536,29 @@ def render_editor_page() -> None:
             </section>
 
             <div class="tooltip" id="tooltip">Tooltip Text</div>
+
+            <div class="upload-modal" id="uploadModal" aria-hidden="true">
+              <div class="upload-modal__backdrop" data-upload-close="1"></div>
+              <div class="upload-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
+                <button class="upload-modal__close" id="uploadModalClose" type="button" aria-label="Закрыть">&times;</button>
+                <h2 class="upload-modal__title" id="uploadModalTitle">Вставить изображение</h2>
+                <div class="upload-modal__alert" id="uploadModalAlert"></div>
+                <div class="upload-modal__field">
+                  <label class="upload-modal__label" id="uploadModalLabel" for="uploadModalInput">Файл изображения</label>
+                  <div class="upload-dropzone" id="uploadDropzone">
+                    <input class="upload-dropzone__input" id="uploadModalInput" type="file" />
+                    <button class="upload-dropzone__button" id="uploadBrowseButton" type="button">Выберите файл</button>
+                    <span class="upload-dropzone__text" id="uploadDropzoneText">или переместите его сюда</span>
+                  </div>
+                  <div class="upload-modal__hint" id="uploadModalHint">Формат файла: JPG, PNG, GIF. Не более 5 МБ</div>
+                </div>
+                <div class="upload-preview" id="uploadPreview"></div>
+                <div class="upload-modal__actions">
+                  <button class="upload-modal__action" id="uploadCancelButton" type="button">Отменить</button>
+                  <button class="upload-modal__action upload-modal__action--primary" id="uploadConfirmButton" type="button" disabled>Подтвердить</button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <script>
@@ -1248,6 +1583,19 @@ def render_editor_page() -> None:
             const linkHeadingList = document.getElementById("linkHeadingList");
             const linkConfirmButton = document.getElementById("linkConfirmButton");
             const linkCancelButton = document.getElementById("linkCancelButton");
+            const uploadModal = document.getElementById("uploadModal");
+            const uploadModalClose = document.getElementById("uploadModalClose");
+            const uploadModalTitle = document.getElementById("uploadModalTitle");
+            const uploadModalAlert = document.getElementById("uploadModalAlert");
+            const uploadModalLabel = document.getElementById("uploadModalLabel");
+            const uploadModalInput = document.getElementById("uploadModalInput");
+            const uploadModalHint = document.getElementById("uploadModalHint");
+            const uploadDropzone = document.getElementById("uploadDropzone");
+            const uploadDropzoneText = document.getElementById("uploadDropzoneText");
+            const uploadBrowseButton = document.getElementById("uploadBrowseButton");
+            const uploadPreview = document.getElementById("uploadPreview");
+            const uploadCancelButton = document.getElementById("uploadCancelButton");
+            const uploadConfirmButton = document.getElementById("uploadConfirmButton");
             const floatingMenus = {
               "font-size": document.getElementById("floatingMenuFontSize"),
               "text-style": document.getElementById("floatingMenuTextStyle"),
@@ -1265,6 +1613,8 @@ def render_editor_page() -> None:
             let pendingLinkTarget = "";
             let hoveredLink = null;
             let ctrlPressed = false;
+            let uploadMode = "image";
+            let uploadState = null;
 
             const slashItems = [
               { icon: "T", label: "Обычный текст", queries: ["текст", "text"], kind: "block", value: "p" },
@@ -1287,6 +1637,57 @@ def render_editor_page() -> None:
             function showEditorState() {
               loadingScreen.classList.add("is-hidden");
               editorScreen.classList.remove("is-hidden");
+            }
+
+            function pinComponentFrame() {
+              try {
+                const frame = window.frameElement;
+                if (frame) {
+                  frame.style.position = "fixed";
+                  frame.style.inset = "0";
+                  frame.style.width = "100vw";
+                  frame.style.height = "100vh";
+                  frame.style.border = "0";
+                  frame.style.margin = "0";
+                  frame.style.padding = "0";
+                  frame.style.zIndex = "1";
+                  frame.style.background = "#ffffff";
+                }
+
+                const parentDocument = window.parent && window.parent.document;
+                if (parentDocument) {
+                  const html = parentDocument.documentElement;
+                  const body = parentDocument.body;
+                  if (html) {
+                    html.style.overflow = "hidden";
+                    html.style.height = "100vh";
+                    html.style.background = "#ffffff";
+                  }
+                  if (body) {
+                    body.style.overflow = "hidden";
+                    body.style.height = "100vh";
+                    body.style.background = "#ffffff";
+                  }
+
+                  const appRoot = parentDocument.querySelector(".stApp");
+                  const view = parentDocument.querySelector('[data-testid="stAppViewContainer"]');
+                  const block = parentDocument.querySelector('[data-testid="stAppViewBlockContainer"]');
+                  const mainBlock = parentDocument.querySelector(".stMainBlockContainer");
+                  [appRoot, view, block, mainBlock].forEach((node) => {
+                    if (!node) {
+                      return;
+                    }
+                    node.style.overflow = "hidden";
+                    node.style.height = "100vh";
+                    node.style.maxHeight = "100vh";
+                    node.style.padding = "0";
+                    node.style.margin = "0";
+                    node.style.background = "#ffffff";
+                  });
+                }
+              } catch (error) {
+                // Keep the editor usable even if parent iframe styling is unavailable.
+              }
             }
 
             function placeCaretAtEnd(node) {
@@ -1699,6 +2100,298 @@ def render_editor_page() -> None:
               updateActiveToolbarButtons();
               updateSelectionToolbar();
               showTooltip("Ссылка");
+            }
+
+            function getUploadConfig(mode) {
+              if (mode === "file") {
+                return {
+                  mode: "file",
+                  title: "Вставить файл",
+                  label: "Файл",
+                  browse: "Выберите файлы",
+                  trail: "или переместите их сюда",
+                  hint: "Формат файла: TXT, CSV, XLS, XLSX. Не более 2 МБ",
+                  maxBytes: 2 * 1024 * 1024,
+                  accept: ".txt,.csv,.xls,.xlsx,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                  formats: ["txt", "csv", "xls", "xlsx"]
+                };
+              }
+
+              return {
+                mode: "image",
+                title: "Вставить изображение",
+                label: "Файл изображения",
+                browse: "Выберите файл",
+                trail: "или переместите его сюда",
+                hint: "Формат файла: JPG, PNG, GIF. Не более 5 МБ",
+                maxBytes: 5 * 1024 * 1024,
+                accept: ".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif",
+                formats: ["jpg", "jpeg", "png", "gif"]
+              };
+            }
+
+            function formatFileSize(bytes) {
+              if (!bytes) {
+                return "0 Б";
+              }
+              if (bytes >= 1024 * 1024) {
+                return (bytes / (1024 * 1024)).toFixed(1).replace(".0", "") + " МБ";
+              }
+              if (bytes >= 1024) {
+                return Math.round(bytes / 1024) + " КБ";
+              }
+              return bytes + " Б";
+            }
+
+            function resetUploadState() {
+              if (uploadState && uploadState.objectUrl) {
+                URL.revokeObjectURL(uploadState.objectUrl);
+              }
+              uploadState = null;
+              if (uploadModalInput) {
+                uploadModalInput.value = "";
+              }
+            }
+
+            function setUploadAlert(message) {
+              if (!uploadModalAlert) {
+                return;
+              }
+              uploadModalAlert.textContent = message || "";
+              uploadModalAlert.classList.toggle("is-visible", Boolean(message));
+            }
+
+            function buildUploadPreviewCard() {
+              if (!uploadState) {
+                return "";
+              }
+
+              const name = uploadState.file.name || "file";
+              const size = formatFileSize(uploadState.file.size || 0);
+              const ext = name.includes(".") ? name.split(".").pop().toUpperCase() : "FILE";
+              const thumbContent = uploadMode === "image" && uploadState.objectUrl
+                ? `<img src="${uploadState.objectUrl}" alt="${name}" />`
+                : `<span>${ext}</span>`;
+              const errorHtml = uploadState.error === "load"
+                ? `
+                    <div class="upload-preview__error is-visible">
+                      <div class="upload-preview__error-title">Ошибка загрузки</div>
+                      <button class="upload-preview__retry" id="uploadRetryButton" type="button">Повторить</button>
+                    </div>
+                  `
+                : "";
+
+              return `
+                <div class="upload-preview__card">
+                  <div class="upload-preview__thumb">
+                    ${thumbContent}
+                    ${errorHtml}
+                  </div>
+                  <button class="upload-preview__remove" id="uploadRemoveButton" type="button" aria-label="Удалить">&times;</button>
+                  <div class="upload-preview__name-row">
+                    <span>${name}</span>
+                    <span class="upload-preview__size">${size}</span>
+                  </div>
+                </div>
+              `;
+            }
+
+            function renderUploadModal() {
+              const config = getUploadConfig(uploadMode);
+
+              if (uploadModalTitle) {
+                uploadModalTitle.textContent = config.title;
+              }
+              if (uploadModalLabel) {
+                uploadModalLabel.textContent = config.label;
+              }
+              if (uploadModalHint) {
+                uploadModalHint.textContent = config.hint;
+              }
+              if (uploadBrowseButton) {
+                uploadBrowseButton.textContent = config.browse;
+              }
+              if (uploadDropzoneText) {
+                uploadDropzoneText.textContent = config.trail;
+              }
+              if (uploadModalInput) {
+                uploadModalInput.accept = config.accept;
+              }
+
+              let alertMessage = "";
+              if (uploadState && uploadState.error === "format") {
+                alertMessage = uploadMode === "image"
+                  ? "Для загрузки доступны файлы в форматах JPG, PNG, GIF"
+                  : "Для загрузки доступны файлы в форматах TXT, CSV, XLS, XLSX";
+              } else if (uploadState && uploadState.error === "size") {
+                alertMessage = uploadMode === "image"
+                  ? "Для загрузки доступны файлы не более 5 МБ"
+                  : "Для загрузки доступны файлы не более 2 МБ";
+              }
+              setUploadAlert(alertMessage);
+
+              const showPreview = Boolean(
+                uploadState &&
+                (!uploadState.error || uploadState.error === "load")
+              );
+
+              if (uploadPreview) {
+                uploadPreview.innerHTML = showPreview ? buildUploadPreviewCard() : "";
+                uploadPreview.classList.toggle("is-visible", showPreview);
+              }
+
+              if (uploadConfirmButton) {
+                uploadConfirmButton.disabled = !uploadState || Boolean(uploadState.error);
+              }
+            }
+
+            function closeUploadModal() {
+              if (!uploadModal) {
+                return;
+              }
+              uploadModal.classList.remove("is-visible");
+              uploadModal.setAttribute("aria-hidden", "true");
+              uploadDropzone.classList.remove("is-dragover");
+              resetUploadState();
+              renderUploadModal();
+            }
+
+            function openUploadModal(mode) {
+              uploadMode = mode === "file" ? "file" : "image";
+              hideFloatingMenus();
+              resetUploadState();
+              renderUploadModal();
+              if (!uploadModal) {
+                return;
+              }
+              uploadModal.classList.add("is-visible");
+              uploadModal.setAttribute("aria-hidden", "false");
+            }
+
+            function readFileAsDataUrl(file) {
+              return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(String(reader.result || ""));
+                reader.onerror = () => reject(new Error("read"));
+                reader.readAsDataURL(file);
+              });
+            }
+
+            function createImageState(file) {
+              return new Promise((resolve) => {
+                const objectUrl = URL.createObjectURL(file);
+                const image = new Image();
+                image.onload = () => resolve({ file, objectUrl, error: null });
+                image.onerror = () => resolve({ file, objectUrl, error: "load" });
+                image.src = objectUrl;
+              });
+            }
+
+            async function handleUploadFile(file) {
+              const config = getUploadConfig(uploadMode);
+              if (!file) {
+                return;
+              }
+
+              const extension = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
+              if (!config.formats.includes(extension)) {
+                resetUploadState();
+                uploadState = { file, error: "format" };
+                renderUploadModal();
+                return;
+              }
+
+              if (file.size > config.maxBytes) {
+                resetUploadState();
+                uploadState = { file, error: "size" };
+                renderUploadModal();
+                return;
+              }
+
+              resetUploadState();
+              if (uploadMode === "image") {
+                uploadState = await createImageState(file);
+              } else {
+                uploadState = { file, error: null };
+              }
+              renderUploadModal();
+            }
+
+            function insertNodeWithTrailingParagraph(node) {
+              if (hasPlaceholder()) {
+                clearPlaceholderIfNeeded();
+              }
+
+              bodyEditor.focus();
+              restoreSavedRange();
+
+              const selection = window.getSelection();
+              if (!selection.rangeCount) {
+                bodyEditor.appendChild(node);
+                const paragraph = document.createElement("p");
+                paragraph.innerHTML = "<br>";
+                bodyEditor.appendChild(paragraph);
+                placeCaretAtEnd(paragraph);
+                return;
+              }
+
+              const range = selection.getRangeAt(0);
+              range.deleteContents();
+              range.insertNode(node);
+
+              const paragraph = document.createElement("p");
+              paragraph.innerHTML = "<br>";
+              node.parentNode.insertBefore(paragraph, node.nextSibling);
+              placeCaretAtEnd(paragraph);
+            }
+
+            async function confirmUpload() {
+              if (!uploadState || uploadState.error) {
+                return;
+              }
+
+              try {
+                const dataUrl = await readFileAsDataUrl(uploadState.file);
+                if (uploadMode === "image") {
+                  const block = document.createElement("div");
+                  block.className = "embedded-image-block";
+                  block.contentEditable = "false";
+                  const image = document.createElement("img");
+                  image.src = dataUrl;
+                  image.alt = uploadState.file.name;
+                  block.appendChild(image);
+                  insertNodeWithTrailingParagraph(block);
+                } else {
+                  const block = document.createElement("div");
+                  block.className = "embedded-file-chip";
+                  block.contentEditable = "false";
+                  const ext = uploadState.file.name.includes(".")
+                    ? uploadState.file.name.split(".").pop().toUpperCase()
+                    : "FILE";
+                  const badge = document.createElement("span");
+                  badge.className = "embedded-file-chip__ext";
+                  badge.textContent = ext;
+                  const anchor = document.createElement("a");
+                  anchor.href = dataUrl;
+                  anchor.download = uploadState.file.name;
+                  anchor.textContent = uploadState.file.name;
+                  block.appendChild(badge);
+                  block.appendChild(anchor);
+                  insertNodeWithTrailingParagraph(block);
+                }
+
+                closeUploadModal();
+                saveCurrentRange();
+                updateActiveToolbarButtons();
+                updateSelectionToolbar();
+                updateBlockHandleFromSelection();
+                showTooltip(uploadMode === "image" ? "Изображение" : "Файл");
+              } catch (error) {
+                if (uploadState) {
+                  uploadState.error = "load";
+                }
+                renderUploadModal();
+              }
             }
 
             function getCurrentFontSize() {
@@ -2153,9 +2846,15 @@ def render_editor_page() -> None:
               const command = button.dataset.command;
               const block = button.dataset.block;
               const menu = button.dataset.menu;
+              const upload = button.dataset.upload;
 
               if (menu) {
                 toggleFloatingMenu(button);
+                return;
+              }
+
+              if (upload) {
+                openUploadModal(upload);
                 return;
               }
 
@@ -2353,6 +3052,73 @@ def render_editor_page() -> None:
               });
             }
 
+            if (uploadBrowseButton && uploadModalInput) {
+              uploadBrowseButton.addEventListener("click", (event) => {
+                event.preventDefault();
+                uploadModalInput.click();
+              });
+            }
+
+            if (uploadModalInput) {
+              uploadModalInput.addEventListener("change", () => {
+                const [file] = Array.from(uploadModalInput.files || []);
+                handleUploadFile(file);
+              });
+            }
+
+            if (uploadDropzone) {
+              uploadDropzone.addEventListener("dragover", (event) => {
+                event.preventDefault();
+                uploadDropzone.classList.add("is-dragover");
+              });
+              uploadDropzone.addEventListener("dragleave", () => {
+                uploadDropzone.classList.remove("is-dragover");
+              });
+              uploadDropzone.addEventListener("drop", (event) => {
+                event.preventDefault();
+                uploadDropzone.classList.remove("is-dragover");
+                const [file] = Array.from(event.dataTransfer?.files || []);
+                handleUploadFile(file);
+              });
+            }
+
+            if (uploadPreview) {
+              uploadPreview.addEventListener("click", (event) => {
+                const removeButton = event.target.closest("#uploadRemoveButton");
+                if (removeButton) {
+                  resetUploadState();
+                  renderUploadModal();
+                  return;
+                }
+                const retryButton = event.target.closest("#uploadRetryButton");
+                if (retryButton && uploadState && uploadState.file) {
+                  handleUploadFile(uploadState.file);
+                }
+              });
+            }
+
+            if (uploadCancelButton) {
+              uploadCancelButton.addEventListener("click", closeUploadModal);
+            }
+
+            if (uploadModalClose) {
+              uploadModalClose.addEventListener("click", closeUploadModal);
+            }
+
+            if (uploadModal) {
+              uploadModal.addEventListener("click", (event) => {
+                if (event.target.closest("[data-upload-close='1']")) {
+                  closeUploadModal();
+                }
+              });
+            }
+
+            if (uploadConfirmButton) {
+              uploadConfirmButton.addEventListener("click", () => {
+                confirmUpload();
+              });
+            }
+
             bodyEditor.addEventListener("focus", clearPlaceholderIfNeeded);
             bodyEditor.addEventListener("beforeinput", (event) => {
               if (
@@ -2375,6 +3141,12 @@ def render_editor_page() -> None:
             });
 
             bodyEditor.addEventListener("keydown", (event) => {
+              if (uploadModal && uploadModal.classList.contains("is-visible") && event.key === "Escape") {
+                event.preventDefault();
+                closeUploadModal();
+                return;
+              }
+
               if (hasPlaceholder() && event.key.length === 1) {
                 clearPlaceholderIfNeeded();
               }
@@ -2435,6 +3207,12 @@ def render_editor_page() -> None:
             });
 
             document.addEventListener("keydown", (event) => {
+              if (uploadModal && uploadModal.classList.contains("is-visible") && event.key === "Escape") {
+                event.preventDefault();
+                closeUploadModal();
+                return;
+              }
+
               if (event.key !== "Control") {
                 return;
               }
@@ -2568,9 +3346,13 @@ def render_editor_page() -> None:
             });
 
             setLoadingState();
+            pinComponentFrame();
+            window.addEventListener("resize", pinComponentFrame);
             window.setTimeout(() => {
+              pinComponentFrame();
               showEditorState();
               window.setTimeout(() => {
+                pinComponentFrame();
                 renderOutline();
                 titleEditor.focus();
                 placeCaretAtEnd(titleEditor);
@@ -2589,4 +3371,4 @@ def render_editor_page() -> None:
     html = html.replace("__SELECTION_TOOLBAR__", _selection_toolbar_markup())
     html = html.replace("__EMPTY_HINT__", _EMPTY_HINT)
 
-    components.html(html, height=920, scrolling=False)
+    components.html(html, height=780, scrolling=False)
