@@ -446,10 +446,27 @@ def comments_styles() -> str:
           color: var(--comment-text);
         }
 
+        .comment-card__meta-line {
+          margin-top: 4px;
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          align-items: center;
+        }
+
         .comment-card__date {
           margin-top: 2px;
           font-size: 12px;
           color: #8e97a8;
+        }
+
+        .comment-card__role {
+          padding: 2px 7px;
+          border-radius: 999px;
+          background: #f4f6fb;
+          color: #6f7b90;
+          font-size: 11px;
+          font-weight: 700;
         }
 
         .comment-card__text {
@@ -463,6 +480,84 @@ def comments_styles() -> str:
         .comment-card__text .comment-mention {
           color: var(--comment-accent-strong);
           font-weight: 600;
+        }
+
+        .comment-card__target {
+          margin-top: 10px;
+          display: inline-flex;
+          flex-wrap: wrap;
+          gap: 8px;
+          align-items: center;
+        }
+
+        .comment-card__target-type {
+          padding: 3px 8px;
+          border-radius: 999px;
+          background: #f4f1ff;
+          color: var(--comment-accent-strong);
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .comment-card__target-preview {
+          color: #8b95a7;
+          font-size: 12px;
+        }
+
+        .comment-card__quote {
+          margin-top: 10px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          border: 1px solid #eceafc;
+          background: rgba(248, 247, 255, 0.92);
+        }
+
+        .comment-card__quote-label {
+          color: var(--comment-accent-strong);
+          font-size: 11px;
+          font-weight: 700;
+        }
+
+        .comment-card__quote-text {
+          margin-top: 4px;
+          color: #5c6678;
+          font-size: 12px;
+          line-height: 1.45;
+        }
+
+        .comment-card__attachment {
+          margin-top: 10px;
+          display: inline-flex;
+          align-items: center;
+          gap: 10px;
+          padding: 9px 11px;
+          border-radius: 12px;
+          background: #f7f8fc;
+          color: #465163;
+          font-size: 12px;
+          font-weight: 600;
+        }
+
+        .comment-card__attachment-thumb {
+          width: 46px;
+          height: 28px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #d78f65 0%, #eac49d 45%, #6a7bdc 100%);
+          flex: none;
+        }
+
+        .comment-card__attachment-icon {
+          width: 20px;
+          height: 20px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: #eceffd;
+          color: var(--comment-accent-strong);
+          font-size: 12px;
+          font-weight: 800;
+          flex: none;
         }
 
         .comment-card__actions {
@@ -583,6 +678,71 @@ def comments_styles() -> str:
           backdrop-filter: blur(10px);
         }
 
+        .comments-panel__meta {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 12px;
+          margin-bottom: 8px;
+        }
+
+        .comments-panel__actor {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+        }
+
+        .comments-panel__actor-label {
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.02em;
+          text-transform: uppercase;
+          color: #8b95a7;
+        }
+
+        .comments-panel__actor-select {
+          min-width: 172px;
+          height: 34px;
+          padding: 0 12px;
+          border-radius: 10px;
+          border: 1px solid #e2e6f0;
+          background: #ffffff;
+          color: #334052;
+          font-size: 13px;
+          font-weight: 600;
+          outline: none;
+        }
+
+        .comments-panel__actor-select:focus {
+          border-color: rgba(139, 124, 255, 0.56);
+          box-shadow: 0 0 0 3px rgba(139, 124, 255, 0.14);
+        }
+
+        .comments-panel__actor-note {
+          font-size: 12px;
+          color: #8e97a8;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .comments-panel__group-hints {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 6px;
+        }
+
+        .comments-panel__group-hint {
+          padding: 5px 9px;
+          border-radius: 999px;
+          background: #f4f1ff;
+          color: var(--comment-accent-strong);
+          font-size: 11px;
+          font-weight: 700;
+        }
+
         .comments-panel__reply {
           display: none;
           align-items: center;
@@ -688,6 +848,15 @@ def comments_styles() -> str:
           transform: translateY(0);
         }
 
+        .comments-mentions__section {
+          padding: 8px 12px 4px;
+          font-size: 10px;
+          font-weight: 800;
+          letter-spacing: 0.08em;
+          text-transform: uppercase;
+          color: #98a1b3;
+        }
+
         .comments-mentions__item,
         .comments-mentions__more {
           width: 100%;
@@ -716,6 +885,26 @@ def comments_styles() -> str:
           margin-top: 2px;
           font-size: 12px;
           color: #8b7cff;
+        }
+
+        .comments-mentions__meta {
+          margin-top: 3px;
+          font-size: 11px;
+          color: #99a1b1;
+        }
+
+        .comments-mentions__group-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 30px;
+          height: 30px;
+          border-radius: 999px;
+          background: linear-gradient(135deg, #8b7cff 0%, #ac8dff 100%);
+          color: #ffffff;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
         }
 
         .comments-mentions__more {
@@ -849,6 +1038,14 @@ def comments_styles() -> str:
           border-radius: 10px;
           background: linear-gradient(135deg, #d78f65 0%, #eac49d 45%, #6a7bdc 100%);
           box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5);
+          overflow: hidden;
+        }
+
+        .comments-history-item__thumb img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
         }
 
         .comments-history-item__actions {
@@ -1049,6 +1246,14 @@ def comments_markup() -> str:
             </div>
           </div>
           <div class="comments-panel__composer">
+            <div class="comments-panel__meta">
+              <label class="comments-panel__actor">
+                <span class="comments-panel__actor-label">От имени</span>
+                <select class="comments-panel__actor-select" id="commentsActorSelect"></select>
+                <span class="comments-panel__actor-note" id="commentsActorNote"></span>
+              </label>
+              <div class="comments-panel__group-hints" id="commentsGroupHints"></div>
+            </div>
             <div class="comments-panel__reply" id="commentsReplyPill">
               <div id="commentsReplyText">Ответ</div>
               <button class="comments-panel__reply-cancel" id="commentsReplyCancel" type="button" aria-label="Отменить ответ">×</button>

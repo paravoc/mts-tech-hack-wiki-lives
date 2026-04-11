@@ -12,6 +12,9 @@ const commentsCloseButton = document.getElementById("commentsCloseButton");
 const commentsResolveButton = document.getElementById("commentsResolveButton");
 const commentsComposerInput = document.getElementById("commentsComposerInput");
 const commentsComposerSend = document.getElementById("commentsComposerSend");
+const commentsActorSelect = document.getElementById("commentsActorSelect");
+const commentsActorNote = document.getElementById("commentsActorNote");
+const commentsGroupHints = document.getElementById("commentsGroupHints");
 const commentsReplyPill = document.getElementById("commentsReplyPill");
 const commentsReplyText = document.getElementById("commentsReplyText");
 const commentsReplyCancel = document.getElementById("commentsReplyCancel");
@@ -28,17 +31,21 @@ const commentsHistoryFooter = document.getElementById("commentsHistoryFooter");
 const commentsHistoryClose = document.getElementById("commentsHistoryClose");
 
 const commentUsers = [
-  { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "#Tabs" },
-  { id: "sergei", name: "Сергей Иванов", handle: "sergei", short: "С", color: "#7b68ee", nick: "#Tabs" },
-  { id: "anton", name: "Антон Серганов", handle: "anton", short: "А", color: "#ffc83d", nick: "#Tabs" },
-  { id: "anton-clean", name: "Антон Андреевич Чистяков", handle: "achistyakov", short: "И", color: "#39c785", nick: "#Tabs" },
-  { id: "anna", name: "Анна Алексеевна Ивлева", handle: "anna", short: "И", color: "#4f83ff", nick: "#Tabs" },
-  { id: "artem", name: "Артем Геннадьевич Михеенко", handle: "artem", short: "И", color: "#56c8ff", nick: "#Tabs" },
-  { id: "artem2", name: "Артем Сергеевич Коховец", handle: "artem.ko", short: "И", color: "#ffcb3f", nick: "#Tabs" },
-  { id: "maxim", name: "Максим Алексеевич Карпов", handle: "max", short: "И", color: "#5f79ff", nick: "#Tabs" },
-  { id: "artem3", name: "Артем Эдуардович Горбачев", handle: "gorbachev", short: "И", color: "#7a63f1", nick: "#Tabs" }
+  { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Редактор знаний", team: "Wiki editors" },
+  { id: "sergei", name: "Сергей Иванов", handle: "sergei", short: "С", color: "#7b68ee", nick: "@sergei", role: "Backend", team: "Platform" },
+  { id: "anna", name: "Анна Ивлева", handle: "anna", short: "А", color: "#4f83ff", nick: "@anna", role: "Дизайнер", team: "Design system" },
+  { id: "anton", name: "Антон Серганов", handle: "anton", short: "А", color: "#ffc83d", nick: "@anton", role: "Релиз-менеджер", team: "Release" },
+  { id: "maxim", name: "Максим Карпов", handle: "maxim", short: "М", color: "#5f79ff", nick: "@maxim", role: "Frontend", team: "Editor" },
+  { id: "maria", name: "Мария Волкова", handle: "maria", short: "М", color: "#39c785", nick: "@maria", role: "Аналитик", team: "Data ops" }
 ];
 const commentUserMap = new Map(commentUsers.map((user) => [user.id, user]));
+const commentGroups = [
+  { id: "group-release", name: "Команда релиза", handle: "release", short: "RL", color: "#8b7cff", meta: "Релиз, QA, владельцы запуска" },
+  { id: "group-design", name: "Дизайн-ревью", handle: "design", short: "DS", color: "#ac8dff", meta: "UX, UI и контент" },
+  { id: "group-backend", name: "Backend core", handle: "backend", short: "BE", color: "#6958f2", meta: "API, интеграции, storage" },
+  { id: "group-wiki", name: "Wiki editors", handle: "wiki", short: "WK", color: "#9a7dff", meta: "Редакторы и knowledge owners" }
+];
+const commentGroupMap = new Map(commentGroups.map((group) => [group.id, group]));
 
 const commentsDemoParagraphs = [
   "Порой кажется, что наша жизнь — это бесконечное плавание против течения, в мутной воде повседневных забот. Мы, как упрямые лососи, стремимся к своим целям, преодолевая пороги трудностей и обходя сети сомнений. И в этой вечной суете так легко забыть, что самое главное — не просто плыть по течению, а найти свою собственную, уникальную глубинную струю, которая выведет к чистой воде и простору настоящих достижений.",
@@ -116,9 +123,54 @@ let commentSyncTimer = null;
 let commentSocket = null;
 let commentSocketPageId = "";
 let commentSocketReconnectTimer = null;
+const commentActorStorageKey = "wikilive-comment-actor-id";
+let currentCommentActorId = window.localStorage.getItem(commentActorStorageKey) || "ivan";
 
 function commentIconSvg() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-7l-2.8 2V10.5H2.5z"></path><path d="M5.2 6.2h5.6M5.2 8.2h3.4"></path></svg>';
+}
+
+function getCurrentCommentActor() {
+  return getCommentUser(currentCommentActorId || "ivan");
+}
+
+function getMentionEntity(entityId) {
+  if (commentUserMap.has(entityId)) {
+    return { ...commentUserMap.get(entityId), type: "user" };
+  }
+  if (commentGroupMap.has(entityId)) {
+    return { ...commentGroupMap.get(entityId), type: "group" };
+  }
+
+  const normalized = String(entityId || "").trim().toLowerCase();
+  const foundUser = commentUsers.find((user) => user.handle.toLowerCase() === normalized || user.id === normalized);
+  if (foundUser) {
+    return { ...foundUser, type: "user" };
+  }
+  const foundGroup = commentGroups.find((group) => group.handle.toLowerCase() === normalized || group.id === normalized);
+  if (foundGroup) {
+    return { ...foundGroup, type: "group" };
+  }
+  return null;
+}
+
+function renderActorPicker() {
+  if (!commentsActorSelect) {
+    return;
+  }
+
+  commentsActorSelect.innerHTML = commentUsers.map((user) => {
+    const selected = user.id === currentCommentActorId ? " selected" : "";
+    return `<option value="${user.id}"${selected}>${escapeHtml(user.name)} · ${escapeHtml(user.role)}</option>`;
+  }).join("");
+
+  const actor = getCurrentCommentActor();
+  if (commentsActorNote) {
+    commentsActorNote.textContent = `${actor.team} · ${actor.nick}`;
+  }
+  if (commentsGroupHints) {
+    commentsGroupHints.innerHTML = commentGroups.slice(0, 3).map((group) => `<span class="comments-panel__group-hint">@${escapeHtml(group.handle)}</span>`).join("");
+  }
 }
 
 function thumbsUpSvg() {
@@ -158,25 +210,63 @@ function getCommentUser(userId) {
     handle: normalized || "viewer",
     short: label.charAt(0).toUpperCase(),
     color: "#59c4ff",
-    nick: "#WikiLive"
+    nick: "@viewer",
+    role: "Участник",
+    team: "WikiLive"
   };
 }
 
 function createComment(id, userId, date, text, extra = {}) {
-  return { id, userId, date, text, likes: extra.likes || 0, replyTo: extra.replyTo || null, editable: extra.editable !== false };
+  return {
+    id,
+    userId,
+    date,
+    text,
+    likes: extra.likes || 0,
+    replyTo: extra.replyTo || null,
+    editable: extra.editable !== false,
+    attachmentType: extra.attachmentType || "",
+    attachmentLabel: extra.attachmentLabel || "",
+    targetPreview: extra.targetPreview || "",
+    targetType: extra.targetType || ""
+  };
 }
 
 function createThread(id, targetId, options = {}) {
-  return { id, targetId, badgeCount: options.badgeCount || 0, status: options.status || "open", demoState: options.demoState || "ready", preview: options.preview || "", comments: options.comments || [], iconOnly: Boolean(options.iconOnly) };
+  return {
+    id,
+    targetId,
+    badgeCount: options.badgeCount || 0,
+    status: options.status || "open",
+    demoState: options.demoState || "ready",
+    preview: options.preview || "",
+    comments: options.comments || [],
+    iconOnly: Boolean(options.iconOnly),
+    targetType: options.targetType || "",
+    targetLabel: options.targetLabel || ""
+  };
 }
 
 async function commentApiRequest(path, options = {}) {
-  const response = await fetch(commentApiBase + path, {
-    headers: {
-      "Content-Type": "application/json"
-    },
-    ...options
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), 4200);
+  let response;
+  try {
+    response = await fetch(commentApiBase + path, {
+      headers: {
+        "Content-Type": "application/json"
+      },
+      ...options,
+      signal: controller.signal
+    });
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error && error.name === "AbortError") {
+      throw new Error("Comment request timed out");
+    }
+    throw error;
+  }
+  clearTimeout(timeoutId);
 
   let payload = {};
   try {
@@ -198,6 +288,71 @@ function getCommentSocketUrl() {
     return commentApiBase.replace("https://", "wss://") + "/ws";
   }
   return commentApiBase.replace("http://", "ws://") + "/ws";
+}
+
+function getThreadTargetLabel(targetType) {
+  switch (targetType) {
+    case "image":
+      return "Изображение";
+    case "file":
+      return "Файл";
+    case "table":
+      return "Таблица";
+    case "data":
+      return "Живые данные";
+    case "paragraph":
+    case "p":
+      return "Абзац";
+    default:
+      return "Фрагмент";
+  }
+}
+
+function inferAttachmentForThread(targetType, preview) {
+  if (targetType === "image") {
+    return { attachmentType: "image", attachmentLabel: preview || "Изображение" };
+  }
+  if (targetType === "file") {
+    return { attachmentType: "file", attachmentLabel: preview || "Файл" };
+  }
+  if (targetType === "table" || targetType === "data") {
+    return { attachmentType: "data", attachmentLabel: preview || "Живые данные" };
+  }
+  return { attachmentType: "", attachmentLabel: "" };
+}
+
+function renderAttachmentPreview(type, label) {
+  if (!type) {
+    return "";
+  }
+  if (type === "image") {
+    return `<div class="comment-card__attachment comment-card__attachment--image"><div class="comment-card__attachment-thumb"></div><span>${escapeHtml(label)}</span></div>`;
+  }
+  if (type === "file") {
+    return `<div class="comment-card__attachment comment-card__attachment--file"><span class="comment-card__attachment-icon">↗</span><span>${escapeHtml(label)}</span></div>`;
+  }
+  return `<div class="comment-card__attachment comment-card__attachment--data"><span class="comment-card__attachment-icon">#</span><span>${escapeHtml(label)}</span></div>`;
+}
+
+function getReplyPreview(thread, comment) {
+  if (!comment.replyTo) {
+    return "";
+  }
+  const replied = getComment(thread, comment.replyTo);
+  if (!replied) {
+    return "";
+  }
+  const repliedUser = getCommentUser(replied.userId);
+  return `<div class="comment-card__quote"><div class="comment-card__quote-label">Ответ @${escapeHtml(repliedUser.handle)}</div><div class="comment-card__quote-text">${escapeHtml(replied.text).slice(0, 88)}${replied.text.length > 88 ? "…" : ""}</div></div>`;
+}
+
+function renderTargetChip(thread, comment) {
+  if (thread.comments[0] && thread.comments[0].id !== comment.id) {
+    return "";
+  }
+  const label = thread.targetLabel || getThreadTargetLabel(thread.targetType);
+  const preview = comment.targetPreview || thread.preview || "";
+  return `<div class="comment-card__target"><span class="comment-card__target-type">${escapeHtml(label)}</span><span class="comment-card__target-preview">${escapeHtml(preview)}</span></div>`;
 }
 
 async function refreshCommentsFromServer() {
@@ -323,7 +478,7 @@ async function seedServerDemoThreadsIfNeeded(pageId) {
     method: "POST",
     body: JSON.stringify({
       author: "ivan",
-      body: "Думаю этот абзац стоит переписать, слишком сложно, тут же весь смысл в простоте донесения мысли.",
+      body: "Думаю этот абзац стоит переписать: сейчас мысль правильная, но для onboarding-текста она слишком плотная.",
       selectionLabel: getTargetPreview(firstTarget),
       targetId: ensureTargetId(firstTarget),
       targetType: inferTargetType(firstTarget),
@@ -336,11 +491,11 @@ async function seedServerDemoThreadsIfNeeded(pageId) {
   if (mainThread) {
     await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(mainThread.threadId)}/replies`, {
       method: "POST",
-      body: JSON.stringify({ author: "sergei", body: "Согласен. Нужна более спокойная подача." })
+      body: JSON.stringify({ author: "sergei", body: "Согласен. Я бы упростил формулировки и оставил один главный тезис." })
     });
     await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(mainThread.threadId)}/replies`, {
       method: "POST",
-      body: JSON.stringify({ author: "anton", body: "@sergei да, давай упростим формулировку." })
+      body: JSON.stringify({ author: "anna", body: "@design давайте потом еще проверим визуальный ритм этого блока." })
     });
   }
 
@@ -349,8 +504,8 @@ async function seedServerDemoThreadsIfNeeded(pageId) {
     await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments`, {
       method: "POST",
       body: JSON.stringify({
-        author: "ivan",
-        body: "Этот блок уже обсудили, можно оставить как есть.",
+        author: "maxim",
+        body: "Этот блок уже согласовали. Оставляем как есть и закрываем ветку.",
         selectionLabel: getTargetPreview(thirdTarget),
         targetId: ensureTargetId(thirdTarget),
         targetType: inferTargetType(thirdTarget),
@@ -398,14 +553,19 @@ function scheduleCommentDocumentSave() {
 }
 
 function mapThreadFromApi(item) {
-  const comments = (item.messages || []).map((message) => createComment(
+  const threadAttachment = inferAttachmentForThread(item.targetType || "", item.targetPreview || item.selectionLabel || "");
+  const comments = (item.messages || []).map((message, index) => createComment(
     message.messageId,
     message.author || "viewer",
     formatThreadDate(message.updatedAt || message.createdAt),
     message.body || "",
     {
       likes: 0,
-      replyTo: message.replyToMessageId || null
+      replyTo: message.replyToMessageId || null,
+      attachmentType: index === 0 ? threadAttachment.attachmentType : "",
+      attachmentLabel: index === 0 ? threadAttachment.attachmentLabel : "",
+      targetPreview: item.targetPreview || item.selectionLabel || "",
+      targetType: item.targetType || ""
     }
   ));
   if (comments.length) {
@@ -416,7 +576,9 @@ function mapThreadFromApi(item) {
     status: item.resolved ? "resolved" : "open",
     preview: item.targetPreview || item.selectionLabel || "",
     comments,
-    iconOnly: !(item.messages || []).length
+    iconOnly: !(item.messages || []).length,
+    targetType: item.targetType || "",
+    targetLabel: getThreadTargetLabel(item.targetType || "")
   });
 }
 
@@ -447,6 +609,8 @@ async function syncThreadsFromServer() {
     preview: item.targetPreview || item.selectionLabel || "",
     text: item.messages && item.messages[0] ? item.messages[0].body : "",
     likes: item.likeCount || 0,
+    thumb: item.targetType === "image",
+    targetType: item.targetType || "",
     thread: (item.messages || []).slice(1).map((message) => ({
       userId: message.author,
       date: formatThreadDate(message.updatedAt || message.createdAt),
@@ -499,6 +663,10 @@ async function ensureCommentPage() {
     commentPageId = page.pageId;
     window.localStorage.setItem(commentPageStorageKey, commentPageId);
     await syncThreadsFromServer();
+    if (!commentThreads.size && !commentHistoryItems.length) {
+      await seedServerDemoThreadsIfNeeded(commentPageId);
+      await syncThreadsFromServer();
+    }
     ensureCommentSocket();
     subscribeCommentSocketToPage();
     scheduleCommentAnchors();
@@ -567,26 +735,60 @@ function getTargetPreview(target) {
   return target.textContent.replace(/\s+/g, " ").trim() || "Пустой блок";
 }
 
+function collectHistoryItems(pageItems, page, totalPages) {
+  const footer = [];
+  if (totalPages <= 1) {
+    return "";
+  }
+  const visiblePages = [];
+  const headPages = Math.min(3, totalPages);
+  for (let pageNumber = 1; pageNumber <= headPages; pageNumber += 1) {
+    visiblePages.push(pageNumber);
+  }
+  if (!visiblePages.includes(totalPages)) {
+    visiblePages.push("ellipsis");
+    visiblePages.push(totalPages);
+  }
+  visiblePages.forEach((entry) => {
+    if (entry === "ellipsis") {
+      footer.push('<span class="comments-history-modal__ellipsis">…</span>');
+      return;
+    }
+    footer.push(`<button class="comments-history-modal__page${entry === page ? " is-active" : ""}" data-history-action="page" data-history-page="${entry}" type="button">${entry}</button>`);
+  });
+  if (page < totalPages) {
+    footer.push('<button class="comments-history-modal__next" data-history-action="next" type="button" aria-label="Следующая страница">›</button>');
+  }
+  return footer.join("");
+}
+
 function seedThreads(targets) {
   if (commentInitDone || !targets.length) {
     return;
   }
   if (targets[0]) {
     const id = ensureTargetId(targets[0]);
+    const targetType = inferTargetType(targets[0]);
     commentThreads.set(id, createThread("thread-main", id, {
-      badgeCount: 22,
+      badgeCount: 4,
       preview: getTargetPreview(targets[0]),
+      targetType,
+      targetLabel: getThreadTargetLabel(targetType),
       comments: [
-        createComment("comment-1", "ivan", "27.10.25 в 18:03", "Думаю этот параграф стоит переписать, слишком сложно, тут же весь смысл в простоте донесения мысли. Читатель не поймет, если мы будет говорить как Достоевский, нужно как Фейс"),
-        createComment("comment-2", "sergei", "27.10.25 в 18:03", "Мое предложение вообще ничего не делать. Потому что лень."),
-        createComment("comment-3", "ivan", "27.10.25 в 18:03", "@sergei уволен!", { likes: 4 })
+        createComment("comment-1", "ivan", "27.10.25 в 18:03", "Думаю этот параграф стоит переписать: читатель спотыкается уже в первой строке.", { targetPreview: getTargetPreview(targets[0]), targetType }),
+        createComment("comment-2", "sergei", "27.10.25 в 18:03", "Я бы сократил его почти вдвое и вынес детали ниже отдельным блоком."),
+        createComment("comment-3", "anna", "27.10.25 в 18:03", "@design можно еще проверить визуальный акцент на первом предложении.", { likes: 2 }),
+        createComment("comment-4", "maria", "27.10.25 в 18:03", "@release если этот текст пойдет в демо, лучше сделать его проще для первого показа.", { likes: 4 })
       ]
     }));
   }
   if (targets[1]) {
     const id = ensureTargetId(targets[1]);
+    const targetType = inferTargetType(targets[1]);
     commentThreads.set(id, createThread("thread-empty", id, {
       preview: getTargetPreview(targets[1]),
+      targetType,
+      targetLabel: getThreadTargetLabel(targetType),
       comments: [],
       iconOnly: true,
       demoState: "error"
@@ -594,12 +796,15 @@ function seedThreads(targets) {
   }
   if (targets[2]) {
     const id = ensureTargetId(targets[2]);
+    const targetType = inferTargetType(targets[2]);
     commentThreads.set(id, createThread("thread-resolved", id, {
       badgeCount: 1,
       preview: getTargetPreview(targets[2]),
       status: "resolved",
+      targetType,
+      targetLabel: getThreadTargetLabel(targetType),
       comments: [
-        createComment("comment-4", "ivan", "27.10.25 в 18:03", "Думаю этот параграф стоит переписать, слишком сложно, тут же весь смысл в простоте донесения мысли. Читатель не поймет, если мы будет говорить как Достоевский, нужно как Фейс", { likes: 4 })
+        createComment("comment-5", "maxim", "27.10.25 в 18:03", "Этот блок уже согласован. Оставляем формулировку и помечаем ветку как решенную.", { likes: 3, targetPreview: getTargetPreview(targets[2]), targetType })
       ]
     }));
   }
@@ -625,7 +830,9 @@ function getOrCreateThread(targetId) {
   let thread = getThread(targetId);
   if (!thread) {
     thread = createThread("thread-" + targetId, targetId, {
-      preview: getTargetPreview(document.querySelector(`[data-comment-target-id="${targetId}"]`))
+      preview: getTargetPreview(document.querySelector(`[data-comment-target-id="${targetId}"]`)),
+      targetType: inferTargetType(document.querySelector(`[data-comment-target-id="${targetId}"]`)),
+      targetLabel: getThreadTargetLabel(inferTargetType(document.querySelector(`[data-comment-target-id="${targetId}"]`)))
     });
     commentThreads.set(targetId, thread);
   }
@@ -724,22 +931,49 @@ function renderMentionDropdown() {
     return;
   }
   const query = (match[1] || "").toLowerCase();
-  commentMentionCandidates = commentUsers.filter((user) => !query || `${user.name} ${user.handle}`.toLowerCase().includes(query)).slice(0, 6);
+  const userMatches = commentUsers
+    .filter((user) => !query || `${user.name} ${user.handle} ${user.team} ${user.role}`.toLowerCase().includes(query))
+    .slice(0, 4)
+    .map((user) => ({ ...user, type: "user" }));
+  const groupMatches = commentGroups
+    .filter((group) => !query || `${group.name} ${group.handle} ${group.meta}`.toLowerCase().includes(query))
+    .slice(0, 3)
+    .map((group) => ({ ...group, type: "group" }));
+  commentMentionCandidates = [...userMatches, ...groupMatches];
   if (!commentMentionCandidates.length) {
     commentsMentionDropdown.classList.remove("is-open");
     commentsMentionDropdown.innerHTML = "";
     return;
   }
   commentMentionIndex = Math.min(commentMentionIndex, Math.max(commentMentionCandidates.length - 1, 0));
-  commentsMentionDropdown.innerHTML = commentMentionCandidates.map((user, index) => {
-    return `<button class="comments-mentions__item${index === commentMentionIndex ? " is-active" : ""}" data-mention-user="${user.id}" type="button"><span class="comment-card__avatar" style="background:${user.color};width:30px;height:30px;font-size:16px;">${user.short}</span><span><span class="comments-mentions__name">${escapeHtml(user.name)}</span><span class="comments-mentions__nick">@${escapeHtml(user.handle)}</span></span></button>`;
-  }).join("") + '<div class="comments-mentions__more">Дополнительно</div>';
+  const renderEntity = (entity, index) => {
+    const avatar = entity.type === "group"
+      ? `<span class="comments-mentions__group-badge">${escapeHtml(entity.short)}</span>`
+      : `<span class="comment-card__avatar" style="background:${entity.color};width:30px;height:30px;font-size:16px;">${entity.short}</span>`;
+    const meta = entity.type === "group" ? entity.meta : `${entity.role} · ${entity.team}`;
+    return `<button class="comments-mentions__item${index === commentMentionIndex ? " is-active" : ""}" data-mention-user="${entity.id}" type="button">${avatar}<span><span class="comments-mentions__name">${escapeHtml(entity.name)}</span><span class="comments-mentions__nick">@${escapeHtml(entity.handle)}</span><span class="comments-mentions__meta">${escapeHtml(meta)}</span></span></button>`;
+  };
+
+  const sections = [];
+  if (userMatches.length) {
+    sections.push('<div class="comments-mentions__section">Пользователи</div>');
+    sections.push(userMatches.map((user, index) => renderEntity(user, index)).join(""));
+  }
+  if (groupMatches.length) {
+    sections.push('<div class="comments-mentions__section">Группы</div>');
+    sections.push(groupMatches.map((group, index) => renderEntity(group, userMatches.length + index)).join(""));
+  }
+
+  commentsMentionDropdown.innerHTML = sections.join("") + '<div class="comments-mentions__more">Можно упоминать людей и команды проекта</div>';
   commentsMentionDropdown.classList.add("is-open");
 }
 
 function applyMention(userId) {
-  const user = getCommentUser(userId);
-  commentsComposerInput.value = commentsComposerInput.value.replace(/@([a-zA-Zа-яА-Я0-9._-]*)$/, `@${user.handle} `);
+  const entity = getMentionEntity(userId);
+  if (!entity) {
+    return;
+  }
+  commentsComposerInput.value = commentsComposerInput.value.replace(/@([a-zA-Zа-яА-Я0-9._-]*)$/, `@${entity.handle} `);
   commentsMentionDropdown.classList.remove("is-open");
   commentsMentionDropdown.innerHTML = "";
   commentsComposerInput.focus();
@@ -752,6 +986,9 @@ function renderCommentCard(thread, comment) {
   const menuOpen = commentMenuOpenId === comment.id;
   const isReplyTarget = commentReplyTo === comment.id;
   const textValue = comment.text || "";
+  const replyPreview = getReplyPreview(thread, comment);
+  const targetChip = renderTargetChip(thread, comment);
+  const attachmentPreview = renderAttachmentPreview(comment.attachmentType, comment.attachmentLabel);
   return `
     <article class="comment-card${isReplyTarget ? " is-focused" : ""}${menuOpen ? " is-menu-open" : ""}${isEditing ? " is-editing" : ""}" data-comment-id="${comment.id}">
       <span class="comment-card__avatar" style="background:${user.color}">${user.short}</span>
@@ -759,7 +996,10 @@ function renderCommentCard(thread, comment) {
         <div class="comment-card__top">
           <div>
             <div class="comment-card__name">${escapeHtml(user.name)}</div>
-            <div class="comment-card__date">${escapeHtml(comment.date)}</div>
+            <div class="comment-card__meta-line">
+              <div class="comment-card__date">${escapeHtml(comment.date)}</div>
+              <span class="comment-card__role">${escapeHtml(user.role || user.team || "Участник")}</span>
+            </div>
           </div>
           <div class="comment-card__actions">
             <button class="comment-action" data-comment-action="like" data-comment-id="${comment.id}" type="button" aria-label="Лайк">
@@ -780,6 +1020,9 @@ function renderCommentCard(thread, comment) {
             </div>
           </div>
         </div>
+        ${targetChip}
+        ${replyPreview}
+        ${attachmentPreview}
         ${isEditing ? `
           <div class="comment-card__editor">
             <textarea data-comment-edit-input="${comment.id}">${escapeHtml(textValue)}</textarea>
@@ -846,10 +1089,12 @@ async function openThreadForTarget(targetId, instant = false) {
   scheduleCommentAnchors();
 
   const token = commentLoadToken;
+  let syncFailed = false;
   if (commentPageId) {
     try {
       await syncThreadsFromServer();
     } catch (error) {
+      syncFailed = true;
       console.warn("Failed to sync comment threads", error);
     }
   }
@@ -859,6 +1104,8 @@ async function openThreadForTarget(targetId, instant = false) {
       return;
     }
     if (thread.demoState === "error") {
+      commentPanelMode = "error";
+    } else if (syncFailed && !thread.comments.length) {
       commentPanelMode = "error";
     } else if (!thread.comments.length) {
       commentPanelMode = "empty";
@@ -962,7 +1209,7 @@ async function addCommentToThread() {
       await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`, {
         method: "POST",
         body: JSON.stringify({
-          author: "anton",
+          author: getCurrentCommentActor().id,
           body: text,
           selectionLabel: getTargetPreview(targetElement),
           targetId: commentOpenTargetId,
@@ -974,7 +1221,7 @@ async function addCommentToThread() {
       await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/replies`, {
         method: "POST",
         body: JSON.stringify({
-          author: "anton",
+          author: getCurrentCommentActor().id,
           body: text,
           replyToMessageId: commentReplyTo || ""
         })
@@ -984,7 +1231,7 @@ async function addCommentToThread() {
   } else {
     const now = new Date();
     const dateLabel = now.toLocaleDateString("ru-RU") + " в " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    thread.comments.push(createComment(`comment-${Date.now()}`, "anton", dateLabel, text));
+    thread.comments.push(createComment(`comment-${Date.now()}`, getCurrentCommentActor().id, dateLabel, text));
     thread.badgeCount = Math.max(thread.badgeCount + 1, thread.comments.length);
     thread.demoState = "ready";
     thread.status = "open";
@@ -1021,7 +1268,7 @@ function renderHistoryModal() {
   }
 
   const itemsPerPage = 3;
-  const totalPages = 10;
+  const totalPages = Math.max(1, Math.max(Math.ceil(commentHistoryItems.length / itemsPerPage), 10));
   const page = Math.min(Math.max(commentHistoryPage, 1), totalPages);
   const start = (page - 1) * itemsPerPage;
   const pageItems = commentHistoryItems.slice(start, start + itemsPerPage);
@@ -1029,12 +1276,13 @@ function renderHistoryModal() {
   commentsHistoryBody.innerHTML = pageItems.map((item) => {
     const user = getCommentUser(item.userId);
     const expanded = commentHistoryExpanded.has(item.id);
+    const actions = item.likes ? `<div class="comments-history-item__actions"><span>${item.likes}</span><span>${thumbsUpSvg()}</span></div>` : "";
     const nested = expanded
       ? `<div class="comments-history-item__thread">${(item.thread || []).map((entry) => {
           const nestedUser = getCommentUser(entry.userId);
           return `
             <div class="comments-history-item__nested">
-              <div class="comments-history-item__meta">
+              <div class="comments-history-item__head">
                 <span class="comment-card__avatar" style="background:${nestedUser.color}">${nestedUser.short}</span>
                 <div>
                   <div class="comments-history-item__name">${escapeHtml(nestedUser.name)}</div>
@@ -1048,7 +1296,7 @@ function renderHistoryModal() {
       : "";
     return `
       <article class="comments-history-item" data-history-id="${item.id}">
-        <div class="comments-history-item__meta">
+        <div class="comments-history-item__head">
           <span class="comment-card__avatar" style="background:${user.color}">${user.short}</span>
           <div>
             <div class="comments-history-item__name">${escapeHtml(user.name)}</div>
@@ -1059,20 +1307,14 @@ function renderHistoryModal() {
         ${item.preview ? `<div class="comments-history-item__preview">${escapeHtml(item.preview)}</div>` : ""}
         ${item.thumb ? `<div class="comments-history-item__thumb"><img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=240&auto=format&fit=crop&q=80" alt="История комментария"></div>` : ""}
         <div class="comments-history-item__text">${formatCommentText(item.text || "")}</div>
+        ${actions}
         ${(item.thread || []).length ? `<button class="comments-history-item__toggle" data-history-action="toggle-thread" data-history-id="${item.id}" type="button">${expanded ? "Скрыть ветку" : escapeHtml(item.toggleLabel || "Показать ветку")}</button>` : ""}
         ${nested}
       </article>
     `;
   }).join("");
 
-  const pages = [];
-  for (let pageNumber = 1; pageNumber <= Math.min(totalPages, 3); pageNumber += 1) {
-    pages.push(`<button class="comments-history-modal__page${pageNumber === page ? " is-active" : ""}" data-history-action="page" data-history-page="${pageNumber}" type="button">${pageNumber}</button>`);
-  }
-  pages.push('<span class="comments-history-modal__ellipsis">…</span>');
-  pages.push(`<button class="comments-history-modal__page${page === totalPages ? " is-active" : ""}" data-history-action="page" data-history-page="${totalPages}" type="button">${totalPages}</button>`);
-  pages.push(`<button class="comments-history-modal__next" data-history-action="next" type="button" aria-label="Следующая страница">›</button>`);
-  commentsHistoryFooter.innerHTML = pages.join("");
+  commentsHistoryFooter.innerHTML = collectHistoryItems(pageItems, page, totalPages);
 }
 
 async function openHistoryModal(mode = "list") {
@@ -1101,9 +1343,19 @@ function initializeCommentsSystem() {
 
   seedCommentsDemoDocumentIfNeeded();
   ensureHistorySeed();
+  renderActorPicker();
   renderCommentsPanel();
   scheduleCommentAnchors();
-  ensureCommentPage();
+  ensureCommentPage().catch((error) => console.warn("Failed to ensure comment page", error));
+
+  if (commentsActorSelect) {
+    commentsActorSelect.addEventListener("change", () => {
+      currentCommentActorId = commentsActorSelect.value || "ivan";
+      window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
+      renderActorPicker();
+      renderCommentsPanel();
+    });
+  }
 
   if (commentObserver) {
     commentObserver.disconnect();
@@ -1202,7 +1454,7 @@ function initializeCommentsSystem() {
       if (commentPageId) {
         commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/like`, {
           method: "POST",
-          body: JSON.stringify({ author: "anton" })
+          body: JSON.stringify({ author: getCurrentCommentActor().id })
         }).then(async () => {
           await syncThreadsFromServer();
           renderCommentsPanel();
@@ -1245,11 +1497,11 @@ function initializeCommentsSystem() {
             isRootMessage
               ? commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}`, {
                   method: "DELETE",
-                  body: JSON.stringify({ author: "anton" })
+                  body: JSON.stringify({ author: getCurrentCommentActor().id })
                 })
               : commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/messages/${encodeURIComponent(comment.id)}`, {
                   method: "DELETE",
-                  body: JSON.stringify({ author: "anton" })
+                  body: JSON.stringify({ author: getCurrentCommentActor().id })
                 })
           )
         : Promise.resolve().then(() => {
