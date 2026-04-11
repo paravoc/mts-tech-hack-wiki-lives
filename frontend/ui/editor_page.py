@@ -418,6 +418,13 @@ __CURSOR_ROOT_VARIABLES__
               flex: none;
             }
 
+            .editor-toolbar,
+            .editor-toolbar *,
+            .selection-toolbar,
+            .selection-toolbar * {
+              cursor: var(--cursor-pointer) !important;
+            }
+
             .editor-toolbar::-webkit-scrollbar {
               height: 0;
             }
@@ -1993,6 +2000,12 @@ __CURSOR_ROOT_VARIABLES__
             }
 
             function isEditorEmpty() {
+              const hasEmbeddedContent = bodyEditor.querySelector(
+                ".embedded-image-block, .embedded-file-chip, img, video, table, iframe"
+              );
+              if (hasEmbeddedContent) {
+                return false;
+              }
               const text = bodyEditor.textContent.replace(/\\u200B/g, "").replace(/\\n/g, " ").trim();
               return !text;
             }
