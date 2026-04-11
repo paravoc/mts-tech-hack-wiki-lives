@@ -600,6 +600,15 @@ def comments_styles() -> str:
           color: var(--comment-accent-strong);
         }
 
+        .comment-action.is-active {
+          background: rgba(139, 124, 255, 0.14);
+          color: var(--comment-accent-strong);
+        }
+
+        .comment-card__menu-wrap[hidden] {
+          display: none !important;
+        }
+
         .comment-action__count {
           font-size: 11px;
           font-weight: 700;
@@ -1036,20 +1045,29 @@ def comments_styles() -> str:
         }
 
         .comments-history-item__thumb {
-          width: 74px;
-          height: 40px;
           margin: 12px 0 10px 56px;
-          border-radius: 10px;
-          background: linear-gradient(135deg, #d78f65 0%, #eac49d 45%, #6a7bdc 100%);
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 12px;
+          border-radius: 12px;
+          background: #f6f7fc;
+          color: #4a5468;
           box-shadow: inset 0 0 0 1px rgba(255,255,255,0.5);
-          overflow: hidden;
         }
 
-        .comments-history-item__thumb img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-          display: block;
+        .comments-history-item__thumb-image {
+          width: 74px;
+          height: 40px;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #d78f65 0%, #eac49d 45%, #6a7bdc 100%);
+          flex: none;
+        }
+
+        .comments-history-item__thumb-label {
+          font-size: 13px;
+          font-weight: 600;
+          color: #4a5468;
         }
 
         .comments-history-item__actions {
@@ -1083,6 +1101,10 @@ def comments_styles() -> str:
         .comments-history-item__nested {
           padding: 16px 0;
           border-top: 1px solid #eceff5;
+        }
+
+        .comments-history-item__nested.is-deleted {
+          opacity: 0.72;
         }
 
         .comments-history-modal__error {

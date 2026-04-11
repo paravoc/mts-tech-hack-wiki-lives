@@ -198,7 +198,7 @@ void handlesVersionsAndCommentsFlow() {
 
     const auto commentResponse = router.createComment(
         "page-1",
-        R"({"body":"Needs review","selectionLabel":"Paragraph 1","targetId":"block-1","targetType":"paragraph","targetPreview":"Paragraph 1"})");
+        R"({"author":"sergei","body":"Needs review","selectionLabel":"Paragraph 1","targetId":"block-1","targetType":"paragraph","targetPreview":"Paragraph 1"})");
     wikilive::tests::expectEqual(commentResponse.statusCode, 201, "comment should return 201");
     wikilive::tests::expect(commentResponse.body.find("\"selectionLabel\":\"Paragraph 1\"") != std::string::npos, "selection label should be persisted");
     wikilive::tests::expect(commentResponse.body.find("\"targetId\":\"block-1\"") != std::string::npos, "target id should be persisted");
@@ -213,7 +213,7 @@ void handlesVersionsAndCommentsFlow() {
     const auto threadValueEnd = commentsResponse.body.find('"', threadValueStart);
     const auto threadId = commentsResponse.body.substr(threadValueStart, threadValueEnd - threadValueStart);
 
-    const auto replyResponse = router.replyToComment("page-1", threadId, R"({"body":"Working on it"})");
+    const auto replyResponse = router.replyToComment("page-1", threadId, R"({"author":"ivan","body":"Working on it"})");
     wikilive::tests::expectEqual(replyResponse.statusCode, 200, "reply should return 200");
     wikilive::tests::expect(replyResponse.body.find("\"Working on it\"") != std::string::npos, "reply body should be stored");
 
@@ -223,26 +223,39 @@ void handlesVersionsAndCommentsFlow() {
     const auto messageValueEnd = replyResponse.body.find('"', messageValueStart);
     const auto messageId = replyResponse.body.substr(messageValueStart, messageValueEnd - messageValueStart);
 
-    const auto editResponse = router.updateCommentMessage("page-1", threadId, messageId, R"({"body":"Updated reply"})");
+    const auto editResponse = router.updateCommentMessage("page-1", threadId, messageId, R"({"author":"ivan","body":"Updated reply"})");
     wikilive::tests::expectEqual(editResponse.statusCode, 200, "edit should return 200");
     wikilive::tests::expect(editResponse.body.find("\"Updated reply\"") != std::string::npos, "edited reply should be stored");
+
+    const auto forbiddenEditResponse =
+        router.updateCommentMessage("page-1", threadId, messageId, R"({"author":"anna","body":"Nope"})");
+    wikilive::tests::expectEqual(forbiddenEditResponse.statusCode, 403, "foreign author edit should be rejected");
 
     const auto likeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
     wikilive::tests::expectEqual(likeResponse.statusCode, 200, "like should return 200");
     wikilive::tests::expect(likeResponse.body.find("\"likeCount\":1") != std::string::npos, "like count should increase");
 
-    const auto resolveResponse = router.resolveComment("page-1", threadId, R"({"resolved":true})");
+    const auto unlikeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
+    wikilive::tests::expectEqual(unlikeResponse.statusCode, 200, "second like should toggle off");
+    wikilive::tests::expect(unlikeResponse.body.find("\"likeCount\":0") != std::string::npos, "like count should drop back to zero");
+
+    const auto resolveResponse = router.resolveComment("page-1", threadId, R"({"author":"ivan","resolved":true})");
     wikilive::tests::expectEqual(resolveResponse.statusCode, 200, "resolve should return 200");
     wikilive::tests::expect(resolveResponse.body.find("\"resolved\":true") != std::string::npos, "thread should be resolved");
+    wikilive::tests::expect(resolveResponse.body.find("\"resolvedBy\":\"ivan\"") != std::string::npos, "resolved author should be stored");
 
     const auto historyResponse = router.listCommentHistory("page-1");
     wikilive::tests::expectEqual(historyResponse.statusCode, 200, "history should return 200");
     wikilive::tests::expect(historyResponse.body.find("\"threadId\":\"") != std::string::npos, "history should contain resolved thread");
 
-    const auto deleteMessageResponse = router.deleteCommentMessage("page-1", threadId, messageId, R"({"author":"tester"})");
+    const auto forbiddenDeleteMessageResponse =
+        router.deleteCommentMessage("page-1", threadId, messageId, R"({"author":"anna"})");
+    wikilive::tests::expectEqual(forbiddenDeleteMessageResponse.statusCode, 403, "foreign author delete should be rejected");
+
+    const auto deleteMessageResponse = router.deleteCommentMessage("page-1", threadId, messageId, R"({"author":"ivan"})");
     wikilive::tests::expectEqual(deleteMessageResponse.statusCode, 200, "delete message should return 200");
 
-    const auto deleteThreadResponse = router.deleteCommentThread("page-1", threadId, R"({"author":"tester"})");
+    const auto deleteThreadResponse = router.deleteCommentThread("page-1", threadId, R"({"author":"anton"})");
     wikilive::tests::expectEqual(deleteThreadResponse.statusCode, 200, "delete thread should return 200");
 
     const auto commentsAfterDelete = router.listComments("page-1");

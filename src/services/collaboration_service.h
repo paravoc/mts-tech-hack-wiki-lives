@@ -57,7 +57,8 @@ public:
     [[nodiscard]] utils::Expected<models::CommentThread> setResolved(
         const std::string& pageId,
         const std::string& threadId,
-        bool resolved);
+        bool resolved,
+        const std::string& actor = {});
     [[nodiscard]] utils::Expected<models::CommentThread> toggleLike(
         const std::string& pageId,
         const std::string& threadId,
@@ -66,7 +67,8 @@ public:
         const std::string& pageId,
         const std::string& threadId,
         const std::string& messageId,
-        const std::string& body);
+        const std::string& body,
+        const std::string& actor);
     [[nodiscard]] utils::Expected<models::CommentThread> deleteMessage(
         const std::string& pageId,
         const std::string& threadId,

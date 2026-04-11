@@ -2,10 +2,35 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cctype>
+#include <unordered_set>
 
 #include "src/utils/time_utils.h"
 
 namespace wikilive::services {
+namespace {
+
+std::string normalizeActor(std::string actor) {
+    std::transform(actor.begin(), actor.end(), actor.begin(), [](unsigned char value) {
+        return static_cast<char>(std::tolower(value));
+    });
+    return actor;
+}
+
+bool isAdminActor(const std::string& actor) {
+    static const std::unordered_set<std::string> kAdminActors = {"admin", "anton", "ivan"};
+    return kAdminActors.contains(normalizeActor(actor));
+}
+
+utils::Error forbiddenError(const std::string& message) {
+    return utils::makeError(
+        utils::ErrorCode::InvalidRequest,
+        message,
+        403,
+        false);
+}
+
+}  // namespace
 
 CollaborationService::CollaborationService(PageService& pageService, storage::LocalCollaborationStorage& storage)
     : pageService_(pageService),
@@ -145,14 +170,7 @@ utils::Expected<std::vector<models::CommentThread>> CollaborationService::listHi
     std::vector<models::CommentThread> historyThreads;
     for (const auto& thread : threads.value()) {
         if (thread.deleted || thread.resolved) {
-            auto filteredThread = thread;
-            filteredThread.messages.erase(
-                std::remove_if(
-                    filteredThread.messages.begin(),
-                    filteredThread.messages.end(),
-                    [](const models::CommentMessage& message) { return message.deleted; }),
-                filteredThread.messages.end());
-            historyThreads.push_back(std::move(filteredThread));
+            historyThreads.push_back(thread);
         }
     }
     return historyThreads;
@@ -241,17 +259,19 @@ utils::Expected<models::CommentThread> CollaborationService::addReply(
 utils::Expected<models::CommentThread> CollaborationService::setResolved(
     const std::string& pageId,
     const std::string& threadId,
-    const bool resolved) {
+    const bool resolved,
+    const std::string& actor) {
     auto thread = storage_.getThread(pageId, threadId);
     if (!thread) {
         return std::unexpected(thread.error());
     }
 
+    const auto normalizedActor = actor.empty() ? std::string("viewer") : actor;
     thread->resolved = resolved;
     thread->updatedAt = utils::formatIso(utils::now());
     if (resolved) {
         thread->resolvedAt = thread->updatedAt;
-        thread->resolvedBy = "viewer";
+        thread->resolvedBy = normalizedActor;
     } else {
         thread->resolvedAt.clear();
         thread->resolvedBy.clear();
@@ -274,8 +294,11 @@ utils::Expected<models::CommentThread> CollaborationService::toggleLike(
         return std::unexpected(thread.error());
     }
 
-    const auto user = actor.empty() ? std::string("viewer") : actor;
-    const auto likeIt = std::find(thread->likedBy.begin(), thread->likedBy.end(), user);
+    const auto user = normalizeActor(actor.empty() ? std::string("viewer") : actor);
+    const auto likeIt = std::find_if(
+        thread->likedBy.begin(),
+        thread->likedBy.end(),
+        [&](const std::string& existingActor) { return normalizeActor(existingActor) == user; });
     if (likeIt == thread->likedBy.end()) {
         thread->likedBy.push_back(user);
     } else {
@@ -295,7 +318,8 @@ utils::Expected<models::CommentThread> CollaborationService::updateMessage(
     const std::string& pageId,
     const std::string& threadId,
     const std::string& messageId,
-    const std::string& body) {
+    const std::string& body,
+    const std::string& actor) {
     if (body.empty()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
@@ -321,6 +345,10 @@ utils::Expected<models::CommentThread> CollaborationService::updateMessage(
             false));
     }
 
+    const auto normalizedActor = actor.empty() ? std::string("viewer") : actor;
+    if (!isAdminActor(normalizedActor) && normalizeActor(messageIt->author) != normalizeActor(normalizedActor)) {
+        return std::unexpected(forbiddenError("Only the comment author or admin may edit this comment"));
+    }
     messageIt->body = body;
     messageIt->updatedAt = utils::formatIso(utils::now());
     thread->updatedAt = messageIt->updatedAt;
@@ -355,6 +383,11 @@ utils::Expected<models::CommentThread> CollaborationService::deleteMessage(
             false));
     }
 
+    const auto normalizedActor = actor.empty() ? std::string("viewer") : actor;
+    if (!isAdminActor(normalizedActor) && normalizeActor(messageIt->author) != normalizeActor(normalizedActor)) {
+        return std::unexpected(forbiddenError("Only the comment author or admin may delete this comment"));
+    }
+
     messageIt->deleted = true;
     messageIt->updatedAt = utils::formatIso(utils::now());
     thread->updatedAt = messageIt->updatedAt;
@@ -366,7 +399,7 @@ utils::Expected<models::CommentThread> CollaborationService::deleteMessage(
     if (allDeleted) {
         thread->deleted = true;
         thread->deletedAt = thread->updatedAt;
-        thread->deletedBy = actor.empty() ? "viewer" : actor;
+        thread->deletedBy = normalizedActor;
     }
 
     const auto saveResult = storage_.saveThread(thread.value());
@@ -386,9 +419,15 @@ utils::Expected<models::CommentThread> CollaborationService::deleteThread(
         return std::unexpected(thread.error());
     }
 
+    const auto normalizedActor = actor.empty() ? std::string("viewer") : actor;
+    const auto rootAuthor = thread->messages.empty() ? std::string("viewer") : thread->messages.front().author;
+    if (!isAdminActor(normalizedActor) && normalizeActor(rootAuthor) != normalizeActor(normalizedActor)) {
+        return std::unexpected(forbiddenError("Only the thread author or admin may delete this thread"));
+    }
+
     thread->deleted = true;
     thread->deletedAt = utils::formatIso(utils::now());
-    thread->deletedBy = actor.empty() ? "viewer" : actor;
+    thread->deletedBy = normalizedActor;
     thread->updatedAt = thread->deletedAt;
 
     const auto saveResult = storage_.saveThread(thread.value());

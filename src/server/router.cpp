@@ -653,11 +653,13 @@ RouteResponse Router::updateCommentMessage(
         }
 
         const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto author = parsedPayload.value("author", std::string("viewer"));
         const auto thread = collaborationService_->updateMessage(
             pageId,
             threadId,
             messageId,
-            parsedPayload.value("body", std::string{}));
+            parsedPayload.value("body", std::string{}),
+            author);
         if (!thread) {
             return fail(thread.error());
         }
@@ -779,12 +781,14 @@ RouteResponse Router::resolveComment(
         }
 
         bool resolved = true;
+        std::string author = "viewer";
         if (!payload.empty()) {
             const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
             resolved = parsedPayload.value("resolved", true);
+            author = parsedPayload.value("author", author);
         }
 
-        const auto thread = collaborationService_->setResolved(pageId, threadId, resolved);
+        const auto thread = collaborationService_->setResolved(pageId, threadId, resolved, author);
         if (!thread) {
             return fail(thread.error());
         }

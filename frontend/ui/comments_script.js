@@ -241,6 +241,7 @@ function createThread(id, targetId, options = {}) {
     demoState: options.demoState || "ready",
     preview: options.preview || "",
     comments: options.comments || [],
+    likedBy: options.likedBy || [],
     iconOnly: Boolean(options.iconOnly),
     targetType: options.targetType || "",
     targetLabel: options.targetLabel || ""
@@ -577,6 +578,7 @@ function mapThreadFromApi(item) {
     status: item.resolved ? "resolved" : "open",
     preview: item.targetPreview || item.selectionLabel || "",
     comments,
+    likedBy: Array.isArray(item.likedBy) ? item.likedBy : [],
     iconOnly: !(item.messages || []).length,
     targetType: item.targetType || "",
     targetLabel: getThreadTargetLabel(item.targetType || "")
@@ -628,25 +630,35 @@ async function syncThreadsFromServer() {
   commentThreads = nextThreads;
 
   if (historyData) {
-    commentHistoryItems = (historyData.items || []).map((item) => ({
-      id: item.threadId,
-      userId: item.messages && item.messages[0] ? item.messages[0].author : "ivan",
-      date: formatThreadDate(item.createdAt),
-      statusText: item.deleted
-        ? `Удалена ${formatThreadDate(item.deletedAt)}`
-        : `Решена ${formatThreadDate(item.resolvedAt)}`,
-      preview: item.targetPreview || item.selectionLabel || "",
-      text: item.messages && item.messages[0] ? item.messages[0].body : "",
-      likes: item.likeCount || 0,
-      thumb: item.targetType === "image",
-      targetType: item.targetType || "",
-      thread: (item.messages || []).slice(1).map((message) => ({
-        userId: message.author,
-        date: formatThreadDate(message.updatedAt || message.createdAt),
-        text: message.body
-      })),
-      toggleLabel: `Показать ${Math.max((item.messages || []).length - 1, 1)} комментария ветки`
-    }));
+    commentHistoryItems = (historyData.items || []).map((item) => {
+      const messages = item.messages || [];
+      const rootMessage = messages.find((message) => !message.replyToMessageId) || messages[0] || null;
+      const replies = rootMessage
+        ? messages.filter((message) => message.messageId !== rootMessage.messageId)
+        : messages;
+      const preview = item.targetPreview || item.selectionLabel || "";
+      const attachment = inferAttachmentForThread(item.targetType || "", preview);
+      return {
+        id: item.threadId,
+        userId: rootMessage ? rootMessage.author : "ivan",
+        date: formatThreadDate((rootMessage && (rootMessage.updatedAt || rootMessage.createdAt)) || item.createdAt),
+        statusText: formatHistoryStatus(item),
+        preview,
+        text: rootMessage ? rootMessage.body : preview,
+        likes: item.likeCount || 0,
+        thumb: attachment.attachmentType === "image",
+        attachmentType: attachment.attachmentType || "",
+        attachmentLabel: attachment.attachmentLabel || "",
+        targetType: item.targetType || "",
+        thread: replies.map((message) => ({
+          userId: message.author,
+          date: formatThreadDate(message.updatedAt || message.createdAt),
+          text: message.body,
+          deleted: Boolean(message.deleted)
+        })),
+        toggleLabel: formatThreadCommentsLabel(replies.length)
+      };
+    });
   }
 
   if (accessData) {
@@ -847,6 +859,17 @@ function collectHistoryItems(pageItems, page, totalPages) {
   return footer.join("");
 }
 
+function ensureHistorySeed() {
+  if (commentHistoryItems.length) {
+    return;
+  }
+  const items = [];
+  for (let page = 0; page < 10; page += 1) {
+    historySeed.forEach((item, index) => items.push({ ...item, id: item.id + "-" + page + "-" + index }));
+  }
+  commentHistoryItems = items;
+}
+
 function seedThreads(targets) {
   if (commentInitDone || !targets.length) {
     return;
@@ -859,11 +882,12 @@ function seedThreads(targets) {
       preview: getTargetPreview(targets[0]),
       targetType,
       targetLabel: getThreadTargetLabel(targetType),
+      likedBy: ["ivan", "sergei"],
       comments: [
         createComment("comment-1", "ivan", "27.10.25 в 18:03", "Думаю этот параграф стоит переписать: читатель спотыкается уже в первой строке.", { targetPreview: getTargetPreview(targets[0]), targetType }),
         createComment("comment-2", "sergei", "27.10.25 в 18:03", "Я бы сократил его почти вдвое и вынес детали ниже отдельным блоком."),
-        createComment("comment-3", "anna", "27.10.25 в 18:03", "@design можно еще проверить визуальный акцент на первом предложении.", { likes: 2 }),
-        createComment("comment-4", "maria", "27.10.25 в 18:03", "@release если этот текст пойдет в демо, лучше сделать его проще для первого показа.", { likes: 4 })
+        createComment("comment-3", "anna", "27.10.25 в 18:03", "@design можно еще проверить визуальный акцент на первом предложении."),
+        createComment("comment-4", "maria", "27.10.25 в 18:03", "@release если этот текст пойдет в демо, лучше сделать его проще для первого показа.")
       ]
     }));
   }
@@ -888,23 +912,13 @@ function seedThreads(targets) {
       status: "resolved",
       targetType,
       targetLabel: getThreadTargetLabel(targetType),
+      likedBy: ["ivan", "maria", "anton"],
       comments: [
-        createComment("comment-5", "maxim", "27.10.25 в 18:03", "Этот блок уже согласован. Оставляем формулировку и помечаем ветку как решенную.", { likes: 3, targetPreview: getTargetPreview(targets[2]), targetType })
+        createComment("comment-5", "maxim", "27.10.25 в 18:03", "Этот блок уже согласован. Оставляем формулировку и помечаем ветку как решенную.", { targetPreview: getTargetPreview(targets[2]), targetType })
       ]
     }));
   }
   commentInitDone = true;
-}
-
-function ensureHistorySeed() {
-  if (commentHistoryItems.length) {
-    return;
-  }
-  const items = [];
-  for (let page = 0; page < 10; page += 1) {
-    historySeed.forEach((item, index) => items.push({ ...item, id: item.id + "-" + page + "-" + index }));
-  }
-  commentHistoryItems = items;
 }
 
 function getThread(targetId) {
@@ -916,6 +930,7 @@ function getOrCreateThread(targetId) {
   if (!thread) {
     thread = createThread("thread-" + targetId, targetId, {
       preview: getTargetPreview(document.querySelector(`[data-comment-target-id="${targetId}"]`)),
+      likedBy: [],
       targetType: inferTargetType(document.querySelector(`[data-comment-target-id="${targetId}"]`)),
       targetLabel: getThreadTargetLabel(inferTargetType(document.querySelector(`[data-comment-target-id="${targetId}"]`)))
     });
@@ -926,6 +941,59 @@ function getOrCreateThread(targetId) {
 
 function getComment(thread, commentId) {
   return (thread.comments || []).find((item) => item.id === commentId) || null;
+}
+
+function normalizeActorId(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isCommentAdmin(actorId = getCurrentCommentActor().id) {
+  return ["admin", "anton", "ivan"].includes(normalizeActorId(actorId));
+}
+
+function hasThreadLikeFromCurrentActor(thread) {
+  const currentActorId = normalizeActorId(getCurrentCommentActor().id);
+  return Array.isArray(thread.likedBy) && thread.likedBy.some((actorId) => normalizeActorId(actorId) === currentActorId);
+}
+
+function canManageComment(thread, comment) {
+  const currentActorId = normalizeActorId(getCurrentCommentActor().id);
+  if (isCommentAdmin(currentActorId)) {
+    return true;
+  }
+  return normalizeActorId(comment.userId) === currentActorId;
+}
+
+function canDeleteThread(thread) {
+  const currentActorId = normalizeActorId(getCurrentCommentActor().id);
+  if (isCommentAdmin(currentActorId)) {
+    return true;
+  }
+  const rootComment = thread.comments && thread.comments.length ? thread.comments[0] : null;
+  return rootComment ? normalizeActorId(rootComment.userId) === currentActorId : false;
+}
+
+function formatThreadCommentsLabel(count) {
+  const value = Math.max(Number(count) || 0, 0);
+  const mod10 = value % 10;
+  const mod100 = value % 100;
+  if (mod10 === 1 && mod100 !== 11) {
+    return "Показать " + value + " комментарий ветки";
+  }
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) {
+    return "Показать " + value + " комментария ветки";
+  }
+  return "Показать " + value + " комментариев ветки";
+}
+
+function formatHistoryStatus(item) {
+  if (item.deleted) {
+    return "Удалена " + formatThreadDate(item.deletedAt);
+  }
+  if (item.resolved) {
+    return "Решена " + formatThreadDate(item.resolvedAt);
+  }
+  return "";
 }
 
 function highlightActiveTarget() {
@@ -1071,6 +1139,12 @@ function renderCommentCard(thread, comment) {
   const menuOpen = commentMenuOpenId === comment.id;
   const isReplyTarget = commentReplyTo === comment.id;
   const textValue = comment.text || "";
+  const isRootComment = thread.comments[0] && thread.comments[0].id === comment.id;
+  const canEdit = canManageComment(thread, comment);
+  const canDelete = isRootComment ? canDeleteThread(thread) : canManageComment(thread, comment);
+  const canOpenMenu = canEdit || canDelete;
+  const isLiked = hasThreadLikeFromCurrentActor(thread);
+  const likeCount = Array.isArray(thread.likedBy) ? thread.likedBy.length : (comment.likes || 0);
   const replyPreview = getReplyPreview(thread, comment);
   const targetChip = renderTargetChip(thread, comment);
   const attachmentPreview = renderAttachmentPreview(comment.attachmentType, comment.attachmentLabel);
@@ -1087,20 +1161,20 @@ function renderCommentCard(thread, comment) {
             </div>
           </div>
           <div class="comment-card__actions">
-            <button class="comment-action" data-comment-action="like" data-comment-id="${comment.id}" type="button" aria-label="Лайк">
+            <button class="comment-action${isLiked ? " is-active" : ""}" data-comment-action="like" data-comment-id="${comment.id}" type="button" aria-label="Нравится" data-comment-tooltip="${isLiked ? "Убрать лайк" : "Нравится"}">
               ${thumbsUpSvg()}
-              ${comment.likes ? `<span class="comment-action__count">${comment.likes}</span>` : ""}
+              ${likeCount ? `<span class="comment-action__count">${likeCount}</span>` : ""}
             </button>
             <button class="comment-action" data-comment-action="reply" data-comment-id="${comment.id}" type="button" aria-label="Ответить" data-comment-tooltip="Ответить">
               ${replySvg()}
             </button>
-            <div class="comment-card__menu-wrap">
-              <button class="comment-action" data-comment-action="menu" data-comment-id="${comment.id}" type="button" aria-label="Меню">
+            <div class="comment-card__menu-wrap"${canOpenMenu ? "" : " hidden"}>
+              <button class="comment-action" data-comment-action="menu" data-comment-id="${comment.id}" type="button" aria-label="Действия" data-comment-tooltip="Действия">
                 ${menuSvg()}
               </button>
               <div class="comment-card__menu${menuOpen ? " is-open" : ""}">
-                <button class="comment-card__menu-item" data-comment-action="edit" data-comment-id="${comment.id}" type="button">Редактировать</button>
-                <button class="comment-card__menu-item is-danger" data-comment-action="delete" data-comment-id="${comment.id}" type="button">Удалить</button>
+                ${canEdit ? `<button class="comment-card__menu-item" data-comment-action="edit" data-comment-id="${comment.id}" type="button">Редактировать</button>` : ""}
+                ${canDelete ? `<button class="comment-card__menu-item is-danger" data-comment-action="delete" data-comment-id="${comment.id}" type="button">Удалить</button>` : ""}
               </div>
             </div>
           </div>
@@ -1232,11 +1306,12 @@ function closeCommentsPanel() {
 }
 
 function addHistorySnapshot(thread, statusText, focusComment = null) {
-  const baseComment = focusComment || thread.comments[thread.comments.length - 1];
+  const baseComment = focusComment || thread.comments[0] || thread.comments[thread.comments.length - 1];
   if (!baseComment) {
     return;
   }
   const target = document.querySelector(`[data-comment-target-id="${thread.targetId}"]`);
+  const replies = (thread.comments || []).filter((item) => item.id !== baseComment.id);
   commentHistoryItems.unshift({
     id: `hist-runtime-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`,
     userId: baseComment.userId,
@@ -1244,11 +1319,12 @@ function addHistorySnapshot(thread, statusText, focusComment = null) {
     statusText,
     preview: getTargetPreview(target).slice(0, 120),
     text: baseComment.text,
-    likes: baseComment.likes || 0,
-    thread: thread.comments.map((item) => ({ userId: item.userId, date: item.date, text: item.text })),
-    toggleLabel: `Показать ${Math.max(thread.comments.length - 1, 1)} комментария ветки`
+    likes: Array.isArray(thread.likedBy) ? thread.likedBy.length : (baseComment.likes || 0),
+    thread: replies.map((item) => ({ userId: item.userId, date: item.date, text: item.text })),
+    toggleLabel: formatThreadCommentsLabel(replies.length)
   });
 }
+
 
 async function toggleResolvedThread() {
   if (!commentOpenTargetId) {
@@ -1259,7 +1335,7 @@ async function toggleResolvedThread() {
   if (commentPageId) {
     await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/resolve`, {
       method: "POST",
-      body: JSON.stringify({ resolved: nextResolved })
+      body: JSON.stringify({ resolved: nextResolved, author: getCurrentCommentActor().id })
     });
     await syncThreadsFromServer();
   } else {
@@ -1357,6 +1433,12 @@ function renderHistoryModal() {
     return;
   }
 
+  if (!commentHistoryItems.length) {
+    commentsHistoryBody.innerHTML = '<div class="comments-history-modal__error"><div class="comments-history-modal__error-inner"><div>История комментариев пока пуста</div></div></div>';
+    commentsHistoryFooter.innerHTML = "";
+    return;
+  }
+
   const itemsPerPage = 3;
   const totalPages = Math.max(1, Math.max(Math.ceil(commentHistoryItems.length / itemsPerPage), 10));
   const page = Math.min(Math.max(commentHistoryPage, 1), totalPages);
@@ -1366,12 +1448,14 @@ function renderHistoryModal() {
   commentsHistoryBody.innerHTML = pageItems.map((item) => {
     const user = getCommentUser(item.userId);
     const expanded = commentHistoryExpanded.has(item.id);
+    const replies = item.thread || [];
+    const hasReplies = replies.length > 0;
     const actions = item.likes ? `<div class="comments-history-item__actions"><span>${item.likes}</span><span>${thumbsUpSvg()}</span></div>` : "";
     const nested = expanded
-      ? `<div class="comments-history-item__thread">${(item.thread || []).map((entry) => {
+      ? `<div class="comments-history-item__thread">${replies.map((entry) => {
           const nestedUser = getCommentUser(entry.userId);
           return `
-            <div class="comments-history-item__nested">
+            <div class="comments-history-item__nested${entry.deleted ? " is-deleted" : ""}">
               <div class="comments-history-item__head">
                 <span class="comment-card__avatar" style="background:${nestedUser.color}">${nestedUser.short}</span>
                 <div>
@@ -1384,6 +1468,10 @@ function renderHistoryModal() {
           `;
         }).join("")}</div>`
       : "";
+    const attachment = item.thumb
+      ? `<div class="comments-history-item__thumb"><div class="comments-history-item__thumb-image"></div><div class="comments-history-item__thumb-label">${escapeHtml(item.attachmentLabel || "Изображение")}</div></div>`
+      : "";
+
     return `
       <article class="comments-history-item" data-history-id="${item.id}">
         <div class="comments-history-item__head">
@@ -1395,10 +1483,10 @@ function renderHistoryModal() {
           <span class="comments-history-item__status">${escapeHtml(item.statusText || "")}</span>
         </div>
         ${item.preview ? `<div class="comments-history-item__preview">${escapeHtml(item.preview)}</div>` : ""}
-        ${item.thumb ? `<div class="comments-history-item__thumb"><img src="https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?w=240&auto=format&fit=crop&q=80" alt="История комментария"></div>` : ""}
+        ${attachment}
         <div class="comments-history-item__text">${formatCommentText(item.text || "")}</div>
         ${actions}
-        ${(item.thread || []).length ? `<button class="comments-history-item__toggle" data-history-action="toggle-thread" data-history-id="${item.id}" type="button">${expanded ? "Скрыть ветку" : escapeHtml(item.toggleLabel || "Показать ветку")}</button>` : ""}
+        ${hasReplies ? `<button class="comments-history-item__toggle" data-history-action="toggle-thread" data-history-id="${item.id}" type="button">${expanded ? "Скрыть ветку" : escapeHtml(item.toggleLabel || formatThreadCommentsLabel(replies.length))}</button>` : ""}
         ${nested}
       </article>
     `;
@@ -1551,7 +1639,14 @@ function initializeCommentsSystem() {
           scheduleCommentAnchors();
         }).catch((error) => console.warn("Failed to toggle like", error));
       } else {
-        comment.likes = (comment.likes || 0) + 1;
+        const actorId = normalizeActorId(getCurrentCommentActor().id);
+        thread.likedBy = Array.isArray(thread.likedBy) ? thread.likedBy : [];
+        const existingIndex = thread.likedBy.findIndex((item) => normalizeActorId(item) === actorId);
+        if (existingIndex === -1) {
+          thread.likedBy.push(actorId);
+        } else {
+          thread.likedBy.splice(existingIndex, 1);
+        }
         renderCommentsPanel();
       }
       return;
@@ -1622,7 +1717,7 @@ function initializeCommentsSystem() {
       const request = commentPageId
         ? commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/messages/${encodeURIComponent(comment.id)}`, {
             method: "PUT",
-            body: JSON.stringify({ body: nextValue })
+            body: JSON.stringify({ body: nextValue, author: getCurrentCommentActor().id })
           })
         : Promise.resolve().then(() => {
             comment.text = nextValue;
