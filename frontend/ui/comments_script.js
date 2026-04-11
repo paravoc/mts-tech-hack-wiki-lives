@@ -588,11 +588,19 @@ async function syncThreadsFromServer() {
     return;
   }
 
-  const [threadsData, historyData, accessData] = await Promise.all([
+  const [threadsResult, historyResult, accessResult] = await Promise.allSettled([
     commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`),
     commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/history`),
     commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comment-access`)
   ]);
+
+  if (threadsResult.status !== "fulfilled") {
+    throw threadsResult.reason || new Error("Failed to load comment threads");
+  }
+
+  const threadsData = threadsResult.value || {};
+  const historyData = historyResult.status === "fulfilled" ? historyResult.value : null;
+  const accessData = accessResult.status === "fulfilled" ? accessResult.value : null;
 
   const nextThreads = new Map();
   (threadsData.items || []).forEach((item) => {
@@ -619,27 +627,31 @@ async function syncThreadsFromServer() {
   });
   commentThreads = nextThreads;
 
-  commentHistoryItems = (historyData.items || []).map((item) => ({
-    id: item.threadId,
-    userId: item.messages && item.messages[0] ? item.messages[0].author : "ivan",
-    date: formatThreadDate(item.createdAt),
-    statusText: item.deleted
-      ? `Удалена ${formatThreadDate(item.deletedAt)}`
-      : `Решена ${formatThreadDate(item.resolvedAt)}`,
-    preview: item.targetPreview || item.selectionLabel || "",
-    text: item.messages && item.messages[0] ? item.messages[0].body : "",
-    likes: item.likeCount || 0,
-    thumb: item.targetType === "image",
-    targetType: item.targetType || "",
-    thread: (item.messages || []).slice(1).map((message) => ({
-      userId: message.author,
-      date: formatThreadDate(message.updatedAt || message.createdAt),
-      text: message.body
-    })),
-    toggleLabel: `Показать ${Math.max((item.messages || []).length - 1, 1)} комментария ветки`
-  }));
+  if (historyData) {
+    commentHistoryItems = (historyData.items || []).map((item) => ({
+      id: item.threadId,
+      userId: item.messages && item.messages[0] ? item.messages[0].author : "ivan",
+      date: formatThreadDate(item.createdAt),
+      statusText: item.deleted
+        ? `Удалена ${formatThreadDate(item.deletedAt)}`
+        : `Решена ${formatThreadDate(item.resolvedAt)}`,
+      preview: item.targetPreview || item.selectionLabel || "",
+      text: item.messages && item.messages[0] ? item.messages[0].body : "",
+      likes: item.likeCount || 0,
+      thumb: item.targetType === "image",
+      targetType: item.targetType || "",
+      thread: (item.messages || []).slice(1).map((message) => ({
+        userId: message.author,
+        date: formatThreadDate(message.updatedAt || message.createdAt),
+        text: message.body
+      })),
+      toggleLabel: `Показать ${Math.max((item.messages || []).length - 1, 1)} комментария ветки`
+    }));
+  }
 
-  commentAccessMode = accessData.mode || "all_users";
+  if (accessData) {
+    commentAccessMode = accessData.mode || "all_users";
+  }
   commentInitDone = true;
   document.querySelectorAll('input[name="commentAccess"]').forEach((input) => {
     input.checked = input.value === (commentAccessMode === "owner_only" ? "author" : "all");
@@ -1156,29 +1168,19 @@ async function openThreadForTarget(targetId, instant = false) {
   commentReplyTo = null;
   commentEditingId = null;
   commentMenuOpenId = null;
-  commentPanelMode = "loading";
   commentLoadToken += 1;
-  renderCommentsPanel();
-  scheduleCommentAnchors();
 
   const token = commentLoadToken;
   let syncFailed = false;
-  if (commentPageId) {
-    try {
-      await syncThreadsFromServer();
-    } catch (error) {
-      syncFailed = true;
-      console.warn("Failed to sync comment threads", error);
-    }
-  }
-  const thread = getOrCreateThread(targetId);
-  const applyMode = () => {
+
+  const applyThreadMode = (preferError = false) => {
     if (token !== commentLoadToken) {
       return;
     }
+    const thread = getOrCreateThread(targetId);
     if (thread.demoState === "error") {
       commentPanelMode = "error";
-    } else if (syncFailed && !thread.comments.length) {
+    } else if (preferError && !thread.comments.length) {
       commentPanelMode = "error";
     } else if (!thread.comments.length) {
       commentPanelMode = "empty";
@@ -1194,10 +1196,25 @@ async function openThreadForTarget(targetId, instant = false) {
     }
   };
 
+  applyThreadMode(false);
+
+  if (!commentPageId) {
+    return;
+  }
+
+  try {
+    await syncThreadsFromServer();
+  } catch (error) {
+    syncFailed = true;
+    console.warn("Failed to sync comment threads", error);
+  }
+
   if (instant) {
-    applyMode();
+    applyThreadMode(syncFailed);
   } else {
-    window.setTimeout(applyMode, 260);
+    window.setTimeout(() => {
+      applyThreadMode(syncFailed);
+    }, 180);
   }
 }
 
