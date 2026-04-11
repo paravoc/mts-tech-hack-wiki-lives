@@ -162,6 +162,10 @@ utils::VoidExpected HttpServer::start(const int port) {
             writeResponse(response, router_.listComments(std::string(request->getParameter(0))));
         });
 
+        app.get("/api/pages/:pageId/comments/history", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listCommentHistory(std::string(request->getParameter(0))));
+        });
+
         app.post("/api/pages/:pageId/comments", [this](HttpResponse* response, HttpRequest* request) {
             const std::string pageId(request->getParameter(0));
             handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
@@ -190,6 +194,32 @@ utils::VoidExpected HttpServer::start(const int port) {
             const std::string threadId(request->getParameter(1));
             handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
                 writeResponse(innerResponse, router_.toggleCommentLike(pageId, threadId, body));
+            });
+        });
+
+        app.put("/api/pages/:pageId/comments/:threadId/messages/:messageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            const std::string messageId(request->getParameter(2));
+            handleRequestBody(response, request, [this, pageId, threadId, messageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.updateCommentMessage(pageId, threadId, messageId, body));
+            });
+        });
+
+        app.del("/api/pages/:pageId/comments/:threadId/messages/:messageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            const std::string messageId(request->getParameter(2));
+            handleRequestBody(response, request, [this, pageId, threadId, messageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.deleteCommentMessage(pageId, threadId, messageId, body));
+            });
+        });
+
+        app.del("/api/pages/:pageId/comments/:threadId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.deleteCommentThread(pageId, threadId, body));
             });
         });
 

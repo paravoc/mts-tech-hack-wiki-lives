@@ -102,16 +102,27 @@ std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
             {"author", message.author},
             {"body", message.body},
             {"createdAt", message.createdAt},
+            {"updatedAt", message.updatedAt},
+            {"replyToMessageId", message.replyToMessageId},
+            {"deleted", message.deleted},
         });
     }
 
     return nlohmann::json{
         {"threadId", thread.threadId},
         {"pageId", thread.pageId},
+        {"targetId", thread.targetId},
+        {"targetType", thread.targetType},
         {"selectionLabel", thread.selectionLabel},
+        {"targetPreview", thread.targetPreview},
         {"createdAt", thread.createdAt},
         {"updatedAt", thread.updatedAt},
         {"resolved", thread.resolved},
+        {"resolvedAt", thread.resolvedAt},
+        {"resolvedBy", thread.resolvedBy},
+        {"deleted", thread.deleted},
+        {"deletedAt", thread.deletedAt},
+        {"deletedBy", thread.deletedBy},
         {"likedBy", thread.likedBy},
         {"likeCount", thread.likedBy.size()},
         {"messages", messages},
@@ -506,6 +517,40 @@ RouteResponse Router::listComments(const std::string& pageId) {
     }
 }
 
+RouteResponse Router::listCommentHistory(const std::string& pageId) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        const auto threads = collaborationService_->listHistory(pageId);
+        if (!threads) {
+            return fail(threads.error());
+        }
+
+        std::string items = "[";
+        bool first = true;
+        for (const auto& thread : threads.value()) {
+            if (!first) {
+                items += ",";
+            }
+            first = false;
+            items += commentThreadToJson(thread);
+        }
+        items += "]";
+
+        return ok("{\"items\":" + items + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
 RouteResponse Router::createComment(const std::string& pageId, const std::string& payload) {
     try {
         if (collaborationService_ == nullptr) {
@@ -523,6 +568,9 @@ RouteResponse Router::createComment(const std::string& pageId, const std::string
                 .author = parsedPayload.value("author", std::string("viewer")),
                 .body = parsedPayload.value("body", std::string{}),
                 .selectionLabel = parsedPayload.value("selectionLabel", std::string{}),
+                .targetId = parsedPayload.value("targetId", std::string{}),
+                .targetType = parsedPayload.value("targetType", std::string("paragraph")),
+                .targetPreview = parsedPayload.value("targetPreview", std::string{}),
             });
         if (!thread) {
             return fail(thread.error());
@@ -562,6 +610,7 @@ RouteResponse Router::replyToComment(
             services::CommentReplyDraft{
                 .author = parsedPayload.value("author", std::string("viewer")),
                 .body = parsedPayload.value("body", std::string{}),
+                .replyToMessageId = parsedPayload.value("replyToMessageId", std::string{}),
             });
         if (!thread) {
             return fail(thread.error());
@@ -572,6 +621,121 @@ RouteResponse Router::replyToComment(
         return fail(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             std::string("Malformed reply JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::updateCommentMessage(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& messageId,
+    const std::string& payload) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto thread = collaborationService_->updateMessage(
+            pageId,
+            threadId,
+            messageId,
+            parsedPayload.value("body", std::string{}));
+        if (!thread) {
+            return fail(thread.error());
+        }
+
+        return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed comment edit JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::deleteCommentMessage(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& messageId,
+    const std::string& payload) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        std::string author = "viewer";
+        if (!payload.empty()) {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            author = parsedPayload.value("author", author);
+        }
+
+        const auto thread = collaborationService_->deleteMessage(pageId, threadId, messageId, author);
+        if (!thread) {
+            return fail(thread.error());
+        }
+
+        return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed comment delete JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::deleteCommentThread(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& payload) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        std::string author = "viewer";
+        if (!payload.empty()) {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            author = parsedPayload.value("author", author);
+        }
+
+        const auto thread = collaborationService_->deleteThread(pageId, threadId, author);
+        if (!thread) {
+            return fail(thread.error());
+        }
+
+        return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed thread delete JSON payload: ") + exception.what(),
             400,
             false));
     } catch (const std::exception& exception) {

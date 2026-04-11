@@ -30,6 +30,9 @@ json toJson(const wikilive::models::CommentMessage& message) {
         {"author", message.author},
         {"body", message.body},
         {"createdAt", message.createdAt},
+        {"updatedAt", message.updatedAt},
+        {"replyToMessageId", message.replyToMessageId},
+        {"deleted", message.deleted},
     };
 }
 
@@ -42,10 +45,18 @@ json toJson(const wikilive::models::CommentThread& thread) {
     return {
         {"threadId", thread.threadId},
         {"pageId", thread.pageId},
+        {"targetId", thread.targetId},
+        {"targetType", thread.targetType},
         {"selectionLabel", thread.selectionLabel},
+        {"targetPreview", thread.targetPreview},
         {"createdAt", thread.createdAt},
         {"updatedAt", thread.updatedAt},
         {"resolved", thread.resolved},
+        {"resolvedAt", thread.resolvedAt},
+        {"resolvedBy", thread.resolvedBy},
+        {"deleted", thread.deleted},
+        {"deletedAt", thread.deletedAt},
+        {"deletedBy", thread.deletedBy},
         {"likedBy", thread.likedBy},
         {"messages", messages},
     };
@@ -69,6 +80,9 @@ wikilive::models::CommentMessage commentMessageFromJson(const json& item) {
         .author = item.value("author", std::string{}),
         .body = item.value("body", std::string{}),
         .createdAt = item.value("createdAt", std::string{}),
+        .updatedAt = item.value("updatedAt", std::string{}),
+        .replyToMessageId = item.value("replyToMessageId", std::string{}),
+        .deleted = item.value("deleted", false),
     };
 }
 
@@ -76,10 +90,18 @@ wikilive::models::CommentThread commentThreadFromJson(const json& item) {
     wikilive::models::CommentThread thread{
         .threadId = item.value("threadId", std::string{}),
         .pageId = item.value("pageId", std::string{}),
+        .targetId = item.value("targetId", std::string{}),
+        .targetType = item.value("targetType", std::string{}),
         .selectionLabel = item.value("selectionLabel", std::string{}),
+        .targetPreview = item.value("targetPreview", std::string{}),
         .createdAt = item.value("createdAt", std::string{}),
         .updatedAt = item.value("updatedAt", std::string{}),
         .resolved = item.value("resolved", false),
+        .resolvedAt = item.value("resolvedAt", std::string{}),
+        .resolvedBy = item.value("resolvedBy", std::string{}),
+        .deleted = item.value("deleted", false),
+        .deletedAt = item.value("deletedAt", std::string{}),
+        .deletedBy = item.value("deletedBy", std::string{}),
         .likedBy = item.value("likedBy", std::vector<std::string>{}),
     };
 

@@ -33,6 +33,7 @@ std::vector<std::string> configCandidates(const char* envPath) {
     }
 
     for (const auto& candidate : {
+             std::string(".env"),
              std::string("out/build/x64-Debug/.env"),
              std::string("build/.env"),
              std::string("build-safe/.env"),

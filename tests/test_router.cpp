@@ -1,8 +1,8 @@
-#include <filesystem>
+﻿#include <filesystem>
 
+#include "src/ai/ai_context_builder.h"
 #include "src/ai/ai_provider.h"
 #include "src/ai/ai_service.h"
-#include "src/ai/ai_context_builder.h"
 #include "src/server/router.h"
 #include "src/services/collaboration_service.h"
 #include "src/services/page_service.h"
@@ -196,9 +196,12 @@ void handlesVersionsAndCommentsFlow() {
     const auto updateResponse = router.updatePage("page-1", R"({"title":"Wiki page","content":"Draft v2"})");
     wikilive::tests::expectEqual(updateResponse.statusCode, 200, "update should return 200");
 
-    const auto commentResponse = router.createComment("page-1", R"({"body":"Needs review","selectionLabel":"Абзац 1"})");
+    const auto commentResponse = router.createComment(
+        "page-1",
+        R"({"body":"Needs review","selectionLabel":"Paragraph 1","targetId":"block-1","targetType":"paragraph","targetPreview":"Paragraph 1"})");
     wikilive::tests::expectEqual(commentResponse.statusCode, 201, "comment should return 201");
-    wikilive::tests::expect(commentResponse.body.find("\"selectionLabel\":\"Абзац 1\"") != std::string::npos, "selection label should be persisted");
+    wikilive::tests::expect(commentResponse.body.find("\"selectionLabel\":\"Paragraph 1\"") != std::string::npos, "selection label should be persisted");
+    wikilive::tests::expect(commentResponse.body.find("\"targetId\":\"block-1\"") != std::string::npos, "target id should be persisted");
 
     const auto commentsResponse = router.listComments("page-1");
     wikilive::tests::expectEqual(commentsResponse.statusCode, 200, "comments should return 200");
@@ -214,6 +217,16 @@ void handlesVersionsAndCommentsFlow() {
     wikilive::tests::expectEqual(replyResponse.statusCode, 200, "reply should return 200");
     wikilive::tests::expect(replyResponse.body.find("\"Working on it\"") != std::string::npos, "reply body should be stored");
 
+    const auto messageIdStart = replyResponse.body.rfind("\"messageId\":\"");
+    wikilive::tests::expect(messageIdStart != std::string::npos, "messageId should be present");
+    const auto messageValueStart = messageIdStart + std::string("\"messageId\":\"").size();
+    const auto messageValueEnd = replyResponse.body.find('"', messageValueStart);
+    const auto messageId = replyResponse.body.substr(messageValueStart, messageValueEnd - messageValueStart);
+
+    const auto editResponse = router.updateCommentMessage("page-1", threadId, messageId, R"({"body":"Updated reply"})");
+    wikilive::tests::expectEqual(editResponse.statusCode, 200, "edit should return 200");
+    wikilive::tests::expect(editResponse.body.find("\"Updated reply\"") != std::string::npos, "edited reply should be stored");
+
     const auto likeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
     wikilive::tests::expectEqual(likeResponse.statusCode, 200, "like should return 200");
     wikilive::tests::expect(likeResponse.body.find("\"likeCount\":1") != std::string::npos, "like count should increase");
@@ -221,6 +234,20 @@ void handlesVersionsAndCommentsFlow() {
     const auto resolveResponse = router.resolveComment("page-1", threadId, R"({"resolved":true})");
     wikilive::tests::expectEqual(resolveResponse.statusCode, 200, "resolve should return 200");
     wikilive::tests::expect(resolveResponse.body.find("\"resolved\":true") != std::string::npos, "thread should be resolved");
+
+    const auto historyResponse = router.listCommentHistory("page-1");
+    wikilive::tests::expectEqual(historyResponse.statusCode, 200, "history should return 200");
+    wikilive::tests::expect(historyResponse.body.find("\"threadId\":\"") != std::string::npos, "history should contain resolved thread");
+
+    const auto deleteMessageResponse = router.deleteCommentMessage("page-1", threadId, messageId, R"({"author":"tester"})");
+    wikilive::tests::expectEqual(deleteMessageResponse.statusCode, 200, "delete message should return 200");
+
+    const auto deleteThreadResponse = router.deleteCommentThread("page-1", threadId, R"({"author":"tester"})");
+    wikilive::tests::expectEqual(deleteThreadResponse.statusCode, 200, "delete thread should return 200");
+
+    const auto commentsAfterDelete = router.listComments("page-1");
+    wikilive::tests::expectEqual(commentsAfterDelete.statusCode, 200, "comments after delete should return 200");
+    wikilive::tests::expect(commentsAfterDelete.body.find("\"threadId\":\"") == std::string::npos, "deleted thread should disappear from active list");
 
     const auto versionsAfterUpdate = router.listVersions("page-1");
     wikilive::tests::expect(versionsAfterUpdate.body.find("\"Saved changes\"") != std::string::npos, "update snapshot should exist");

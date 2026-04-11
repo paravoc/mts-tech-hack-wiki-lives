@@ -16,11 +16,15 @@ struct CommentThreadDraft {
     std::string author;
     std::string body;
     std::string selectionLabel;
+    std::string targetId;
+    std::string targetType;
+    std::string targetPreview;
 };
 
 struct CommentReplyDraft {
     std::string author;
     std::string body;
+    std::string replyToMessageId;
 };
 
 class CollaborationService {
@@ -42,6 +46,7 @@ public:
         const std::string& author = "restore");
 
     [[nodiscard]] utils::Expected<std::vector<models::CommentThread>> listThreads(const std::string& pageId) const;
+    [[nodiscard]] utils::Expected<std::vector<models::CommentThread>> listHistory(const std::string& pageId) const;
     [[nodiscard]] utils::Expected<models::CommentThread> createThread(
         const std::string& pageId,
         const CommentThreadDraft& draft);
@@ -54,6 +59,20 @@ public:
         const std::string& threadId,
         bool resolved);
     [[nodiscard]] utils::Expected<models::CommentThread> toggleLike(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& actor);
+    [[nodiscard]] utils::Expected<models::CommentThread> updateMessage(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& messageId,
+        const std::string& body);
+    [[nodiscard]] utils::Expected<models::CommentThread> deleteMessage(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& messageId,
+        const std::string& actor);
+    [[nodiscard]] utils::Expected<models::CommentThread> deleteThread(
         const std::string& pageId,
         const std::string& threadId,
         const std::string& actor);

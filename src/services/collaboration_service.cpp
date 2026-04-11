@@ -110,7 +110,52 @@ utils::Expected<std::vector<models::CommentThread>> CollaborationService::listTh
         return std::unexpected(pageExists.error());
     }
 
-    return storage_.listThreads(pageId);
+    auto threads = storage_.listThreads(pageId);
+    if (!threads) {
+        return std::unexpected(threads.error());
+    }
+
+    std::vector<models::CommentThread> activeThreads;
+    for (const auto& thread : threads.value()) {
+        if (!thread.deleted) {
+            auto filteredThread = thread;
+            filteredThread.messages.erase(
+                std::remove_if(
+                    filteredThread.messages.begin(),
+                    filteredThread.messages.end(),
+                    [](const models::CommentMessage& message) { return message.deleted; }),
+                filteredThread.messages.end());
+            activeThreads.push_back(std::move(filteredThread));
+        }
+    }
+    return activeThreads;
+}
+
+utils::Expected<std::vector<models::CommentThread>> CollaborationService::listHistory(const std::string& pageId) const {
+    const auto pageExists = ensurePageExists(pageId);
+    if (!pageExists) {
+        return std::unexpected(pageExists.error());
+    }
+
+    auto threads = storage_.listThreads(pageId);
+    if (!threads) {
+        return std::unexpected(threads.error());
+    }
+
+    std::vector<models::CommentThread> historyThreads;
+    for (const auto& thread : threads.value()) {
+        if (thread.deleted || thread.resolved) {
+            auto filteredThread = thread;
+            filteredThread.messages.erase(
+                std::remove_if(
+                    filteredThread.messages.begin(),
+                    filteredThread.messages.end(),
+                    [](const models::CommentMessage& message) { return message.deleted; }),
+                filteredThread.messages.end());
+            historyThreads.push_back(std::move(filteredThread));
+        }
+    }
+    return historyThreads;
 }
 
 utils::Expected<models::CommentThread> CollaborationService::createThread(
@@ -130,7 +175,10 @@ utils::Expected<models::CommentThread> CollaborationService::createThread(
     models::CommentThread thread{
         .threadId = nextId("thread"),
         .pageId = pageId,
+        .targetId = validDraft->targetId,
+        .targetType = validDraft->targetType,
         .selectionLabel = validDraft->selectionLabel,
+        .targetPreview = validDraft->targetPreview,
         .createdAt = timestamp,
         .updatedAt = timestamp,
         .resolved = false,
@@ -141,6 +189,7 @@ utils::Expected<models::CommentThread> CollaborationService::createThread(
                 .author = validDraft->author,
                 .body = validDraft->body,
                 .createdAt = timestamp,
+                .updatedAt = timestamp,
             },
         },
     };
@@ -173,8 +222,13 @@ utils::Expected<models::CommentThread> CollaborationService::addReply(
         .author = validDraft->author,
         .body = validDraft->body,
         .createdAt = timestamp,
+        .updatedAt = timestamp,
+        .replyToMessageId = validDraft->replyToMessageId,
     });
     thread->updatedAt = timestamp;
+    thread->deleted = false;
+    thread->deletedAt.clear();
+    thread->deletedBy.clear();
 
     const auto saveResult = storage_.saveThread(thread.value());
     if (!saveResult) {
@@ -195,6 +249,13 @@ utils::Expected<models::CommentThread> CollaborationService::setResolved(
 
     thread->resolved = resolved;
     thread->updatedAt = utils::formatIso(utils::now());
+    if (resolved) {
+        thread->resolvedAt = thread->updatedAt;
+        thread->resolvedBy = "viewer";
+    } else {
+        thread->resolvedAt.clear();
+        thread->resolvedBy.clear();
+    }
 
     const auto saveResult = storage_.saveThread(thread.value());
     if (!saveResult) {
@@ -221,6 +282,114 @@ utils::Expected<models::CommentThread> CollaborationService::toggleLike(
         thread->likedBy.erase(likeIt);
     }
     thread->updatedAt = utils::formatIso(utils::now());
+
+    const auto saveResult = storage_.saveThread(thread.value());
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return thread.value();
+}
+
+utils::Expected<models::CommentThread> CollaborationService::updateMessage(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& messageId,
+    const std::string& body) {
+    if (body.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "comment body must not be empty",
+            400,
+            false));
+    }
+
+    auto thread = storage_.getThread(pageId, threadId);
+    if (!thread) {
+        return std::unexpected(thread.error());
+    }
+
+    const auto messageIt = std::find_if(
+        thread->messages.begin(),
+        thread->messages.end(),
+        [&](const models::CommentMessage& message) { return message.messageId == messageId; });
+    if (messageIt == thread->messages.end()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "Comment message not found: " + messageId,
+            404,
+            false));
+    }
+
+    messageIt->body = body;
+    messageIt->updatedAt = utils::formatIso(utils::now());
+    thread->updatedAt = messageIt->updatedAt;
+
+    const auto saveResult = storage_.saveThread(thread.value());
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return thread.value();
+}
+
+utils::Expected<models::CommentThread> CollaborationService::deleteMessage(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& messageId,
+    const std::string& actor) {
+    auto thread = storage_.getThread(pageId, threadId);
+    if (!thread) {
+        return std::unexpected(thread.error());
+    }
+
+    const auto messageIt = std::find_if(
+        thread->messages.begin(),
+        thread->messages.end(),
+        [&](const models::CommentMessage& message) { return message.messageId == messageId; });
+    if (messageIt == thread->messages.end()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "Comment message not found: " + messageId,
+            404,
+            false));
+    }
+
+    messageIt->deleted = true;
+    messageIt->updatedAt = utils::formatIso(utils::now());
+    thread->updatedAt = messageIt->updatedAt;
+
+    const bool allDeleted = std::all_of(
+        thread->messages.begin(),
+        thread->messages.end(),
+        [](const models::CommentMessage& message) { return message.deleted; });
+    if (allDeleted) {
+        thread->deleted = true;
+        thread->deletedAt = thread->updatedAt;
+        thread->deletedBy = actor.empty() ? "viewer" : actor;
+    }
+
+    const auto saveResult = storage_.saveThread(thread.value());
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return thread.value();
+}
+
+utils::Expected<models::CommentThread> CollaborationService::deleteThread(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& actor) {
+    auto thread = storage_.getThread(pageId, threadId);
+    if (!thread) {
+        return std::unexpected(thread.error());
+    }
+
+    thread->deleted = true;
+    thread->deletedAt = utils::formatIso(utils::now());
+    thread->deletedBy = actor.empty() ? "viewer" : actor;
+    thread->updatedAt = thread->deletedAt;
 
     const auto saveResult = storage_.saveThread(thread.value());
     if (!saveResult) {
@@ -277,10 +446,20 @@ utils::Expected<CommentThreadDraft> CollaborationService::validateThreadDraft(co
             400,
             false));
     }
+    if (draft.targetId.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "comment targetId must not be empty",
+            400,
+            false));
+    }
 
     CommentThreadDraft validDraft = draft;
     if (validDraft.author.empty()) {
         validDraft.author = "viewer";
+    }
+    if (validDraft.targetType.empty()) {
+        validDraft.targetType = "paragraph";
     }
     return validDraft;
 }

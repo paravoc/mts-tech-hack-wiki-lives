@@ -55,6 +55,7 @@ public:
     [[nodiscard]] RouteResponse createVersion(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse restoreVersion(const std::string& pageId, const std::string& versionId);
     [[nodiscard]] RouteResponse listComments(const std::string& pageId);
+    [[nodiscard]] RouteResponse listCommentHistory(const std::string& pageId);
     [[nodiscard]] RouteResponse createComment(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse replyToComment(
         const std::string& pageId,
@@ -65,6 +66,20 @@ public:
         const std::string& threadId,
         const std::string& payload);
     [[nodiscard]] RouteResponse toggleCommentLike(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& payload);
+    [[nodiscard]] RouteResponse updateCommentMessage(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& messageId,
+        const std::string& payload);
+    [[nodiscard]] RouteResponse deleteCommentMessage(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& messageId,
+        const std::string& payload);
+    [[nodiscard]] RouteResponse deleteCommentThread(
         const std::string& pageId,
         const std::string& threadId,
         const std::string& payload);
