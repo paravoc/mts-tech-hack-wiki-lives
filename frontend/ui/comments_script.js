@@ -42,6 +42,8 @@ const pagesCount = document.getElementById("pagesCount");
 const pagePresence = document.getElementById("pagePresence");
 const pagePresenceAvatars = document.getElementById("pagePresenceAvatars");
 const pagePresenceCount = document.getElementById("pagePresenceCount");
+const docHeaderTitle = document.getElementById("docHeaderTitle");
+const docHeaderSubtitle = document.getElementById("docHeaderSubtitle");
 
 const commentUsers = [
   { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Редактор знаний", team: "Wiki editors" },
@@ -567,9 +569,36 @@ async function loadPagesCatalog(force = false) {
 }
 
 function updateDocumentHeader(page) {
-  const docHeaderTitle = document.getElementById("docHeaderTitle");
   if (docHeaderTitle) {
     docHeaderTitle.textContent = (page && page.title) || "Новая страница";
+  }
+  if (docHeaderSubtitle) {
+    const nextDescription = String(page && page.description ? page.description : "").trim();
+    docHeaderSubtitle.textContent = nextDescription || "Добавить описание";
+    docHeaderSubtitle.classList.toggle("is-placeholder", !nextDescription);
+  }
+}
+
+function getDocumentDescriptionText() {
+  if (!docHeaderSubtitle) {
+    return "";
+  }
+  const text = docHeaderSubtitle.textContent.replace(/\u200B/g, "").trim();
+  if (!text || text === "Добавить описание") {
+    return "";
+  }
+  return text;
+}
+
+function syncDocumentSubtitlePlaceholder(forcePlaceholder = false) {
+  if (!docHeaderSubtitle) {
+    return;
+  }
+  const text = docHeaderSubtitle.textContent.replace(/\u200B/g, "").trim();
+  const shouldPlaceholder = forcePlaceholder || !text;
+  docHeaderSubtitle.classList.toggle("is-placeholder", shouldPlaceholder);
+  if (shouldPlaceholder) {
+    docHeaderSubtitle.textContent = "Добавить описание";
   }
 }
 
@@ -803,6 +832,7 @@ function formatThreadDate(isoValue) {
 function serializeEditorDocument() {
   return {
     title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Страница для комментирования",
+    description: getDocumentDescriptionText(),
     content: bodyEditor.innerHTML
   };
 }
@@ -1381,17 +1411,19 @@ async function dissolveDiscussionTarget(targetId, reason = "Изменение �
     return;
   }
   const target = document.querySelector(`[data-comment-target-id="${targetId}"]`);
-  const thread = getThread(targetId);
-  if (commentPageId && thread && thread.id) {
+  const persistedThreadId = await resolvePersistedThreadId(targetId);
+  if (commentPageId && persistedThreadId) {
     try {
-      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}`, {
+      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(persistedThreadId)}`, {
         method: "DELETE",
         body: JSON.stringify({ author: getCurrentCommentActor().id }),
         timeoutMs: 14000
       });
       await createCommentVersion(reason, getCurrentCommentActor().id);
     } catch (error) {
-      console.warn("Failed to dissolve discussion target", error);
+      if (!/not found/i.test(String((error && error.message) || ""))) {
+        console.warn("Failed to dissolve discussion target", error);
+      }
     }
   }
   commentThreads.delete(targetId);
@@ -1586,6 +1618,30 @@ function getOrCreateThread(targetId) {
     commentThreads.set(targetId, thread);
   }
   return thread;
+}
+
+function isSyntheticThreadId(threadId, targetId) {
+  return !threadId || threadId === `thread-${targetId}`;
+}
+
+async function resolvePersistedThreadId(targetId) {
+  const currentThread = getThread(targetId);
+  if (currentThread && !isSyntheticThreadId(currentThread.id, targetId)) {
+    return currentThread.id;
+  }
+  if (!commentPageId) {
+    return "";
+  }
+  try {
+    await syncThreadsFromServer(true);
+  } catch (error) {
+    console.warn("Failed to refresh thread before destructive action", error);
+  }
+  const syncedThread = getThread(targetId);
+  if (syncedThread && !isSyntheticThreadId(syncedThread.id, targetId)) {
+    return syncedThread.id;
+  }
+  return "";
 }
 
 function getComment(thread, commentId) {
@@ -2316,6 +2372,31 @@ function initializeCommentsSystem() {
         window.localStorage.removeItem(commentActorStorageKey);
         setCurrentCommentActor("viewer", false);
         accountSwitcher.classList.remove("is-open");
+      }
+    });
+  }
+
+  if (docHeaderSubtitle) {
+    docHeaderSubtitle.addEventListener("focus", () => {
+      if (docHeaderSubtitle.classList.contains("is-placeholder")) {
+        docHeaderSubtitle.textContent = "";
+        docHeaderSubtitle.classList.remove("is-placeholder");
+      }
+    });
+    docHeaderSubtitle.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+      }
+    });
+    docHeaderSubtitle.addEventListener("input", () => {
+      const text = docHeaderSubtitle.textContent.replace(/\u200B/g, "").trim();
+      docHeaderSubtitle.classList.toggle("is-placeholder", !text);
+      scheduleCommentDocumentSave("Изменено описание", getCurrentCommentActor().id);
+    });
+    docHeaderSubtitle.addEventListener("blur", () => {
+      const text = docHeaderSubtitle.textContent.replace(/\u200B/g, "").trim();
+      if (!text) {
+        syncDocumentSubtitlePlaceholder(true);
       }
     });
   }

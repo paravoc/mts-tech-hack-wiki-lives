@@ -139,6 +139,7 @@ utils::Expected<models::Page> MwsPageStorage::toPage(const api::MwsRecord& recor
     return models::Page{
         .pageId = pageId,
         .title = title,
+        .description = getFieldOrEmpty(record, "description"),
         .content = getFieldOrEmpty(record, "content"),
         .createdAt = createdAt,
         .updatedAt = updatedAt.empty() ? createdAt : updatedAt,
@@ -153,12 +154,13 @@ std::string MwsPageStorage::buildCreatePayload(const models::Page& page) const {
          json::array({
              {
                  {"fields",
-                  {
-                      {"pageId", page.pageId},
-                      {"title", page.title},
-                      {"content", page.content},
-                      {"createdAt", page.createdAt},
-                      {"updatedAt", page.updatedAt},
+                   {
+                       {"pageId", page.pageId},
+                       {"title", page.title},
+                       {"description", page.description},
+                       {"content", page.content},
+                       {"createdAt", page.createdAt},
+                       {"updatedAt", page.updatedAt},
                       {"ownerId", page.ownerId},
                       {"ownerName", page.ownerName},
                   }},
@@ -177,12 +179,13 @@ std::string MwsPageStorage::buildUpdatePayload(const std::string& recordId, cons
              {
                  {"recordId", recordId},
                  {"fields",
-                  {
-                      {"pageId", page.pageId},
-                      {"title", page.title},
-                      {"content", page.content},
-                      {"createdAt", page.createdAt},
-                      {"updatedAt", page.updatedAt},
+                   {
+                       {"pageId", page.pageId},
+                       {"title", page.title},
+                       {"description", page.description},
+                       {"content", page.content},
+                       {"createdAt", page.createdAt},
+                       {"updatedAt", page.updatedAt},
                       {"ownerId", page.ownerId},
                       {"ownerName", page.ownerName},
                   }},

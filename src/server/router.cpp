@@ -69,6 +69,7 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
     std::string json =
         "{\"pageId\":\"" + wikilive::utils::escapeJson(page.pageId) +
         "\",\"title\":\"" + wikilive::utils::escapeJson(page.title) +
+        "\",\"description\":\"" + wikilive::utils::escapeJson(page.description) +
         "\",\"content\":\"" + wikilive::utils::escapeJson(page.content) +
         "\",\"createdAt\":\"" + wikilive::utils::escapeJson(page.createdAt) +
         "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(page.updatedAt) +
@@ -93,6 +94,7 @@ std::string pageVersionToJson(const wikilive::models::PageVersion& version) {
         {"versionId", version.versionId},
         {"pageId", version.pageId},
         {"title", version.title},
+        {"description", version.description},
         {"content", version.content},
         {"createdAt", version.createdAt},
         {"label", version.label},
@@ -1171,6 +1173,11 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         return std::unexpected(content.error());
     }
 
+    auto description = extractJsonString(payload, "description", false);
+    if (!description) {
+        return std::unexpected(description.error());
+    }
+
     auto ownerId = extractJsonString(payload, "ownerId", false);
     if (!ownerId) {
         return std::unexpected(ownerId.error());
@@ -1183,6 +1190,7 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
 
     return services::PageDraft{
         .title = title.value(),
+        .description = description.value(),
         .content = content.value(),
         .ownerId = ownerId.value(),
         .ownerName = ownerName.value(),

@@ -14,6 +14,7 @@ nlohmann::json pageToJson(const models::Page& page) {
     return {
         {"pageId", page.pageId},
         {"title", page.title},
+        {"description", page.description},
         {"content", page.content},
         {"createdAt", page.createdAt},
         {"updatedAt", page.updatedAt},
@@ -26,6 +27,7 @@ models::Page pageFromJson(const nlohmann::json& value) {
     return {
         .pageId = value.value("pageId", std::string{}),
         .title = value.value("title", std::string{}),
+        .description = value.value("description", std::string{}),
         .content = value.value("content", std::string{}),
         .createdAt = value.value("createdAt", std::string{}),
         .updatedAt = value.value("updatedAt", std::string{}),

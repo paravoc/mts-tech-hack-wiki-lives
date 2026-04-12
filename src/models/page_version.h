@@ -11,6 +11,7 @@ struct PageVersion {
     std::string versionId;
     std::string pageId;
     std::string title;
+    std::string description;
     std::string content;
     std::string createdAt;
     std::string label;

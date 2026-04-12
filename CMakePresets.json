@@ -9,14 +9,15 @@
     {
       "name": "windows-debug",
       "displayName": "Windows Debug",
-      "generator": "Visual Studio 18 2026",
-      "binaryDir": "$env{LOCALAPPDATA}/WikiLive/build/windows-vs-debug",
-      "architecture": {
-        "value": "x64",
-        "strategy": "external"
-      },
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/out/build/x64-Debug",
+      "installDir": "${sourceDir}/out/install/x64-Debug",
       "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "C:/Users/smidr/OneDrive/Desktop/github utils/vcpkg-2026.03.18/vcpkg-2026.03.18/scripts/buildsystems/vcpkg.cmake"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_TOOLCHAIN_FILE": "C:/Users/smidr/OneDrive/Desktop/github utils/vcpkg-2026.03.18/vcpkg-2026.03.18/scripts/buildsystems/vcpkg.cmake",
+        "CMAKE_C_COMPILER": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
+        "CMAKE_CXX_COMPILER": "C:/Program Files/Microsoft Visual Studio/18/Community/VC/Tools/MSVC/14.50.35717/bin/Hostx64/x64/cl.exe",
+        "CMAKE_MAKE_PROGRAM": "C:/Program Files/Microsoft Visual Studio/18/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
       }
     }
   ],

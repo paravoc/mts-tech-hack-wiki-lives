@@ -374,6 +374,16 @@ __CURSOR_ROOT_VARIABLES__
               line-height: 1.2;
               color: var(--muted);
               font-weight: 500;
+              min-height: 18px;
+              outline: none;
+            }
+
+            .doc-subtitle.is-placeholder {
+              color: #a9b1bf;
+            }
+
+            .doc-subtitle:focus {
+              color: var(--muted);
             }
 
             .account-switcher {

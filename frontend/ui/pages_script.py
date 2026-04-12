@@ -258,6 +258,8 @@ def pages_script() -> str:
           document.head.appendChild(style);
         }
 
+        let commentWorkspaceToken = 0;
+
         function getActorPageStorageKey(actorId = currentCommentActorId) {
           return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
         }
@@ -266,6 +268,7 @@ def pages_script() -> str:
           return {
             pageId: commentPageId,
             title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Новая страница",
+            description: typeof getDocumentDescriptionText === "function" ? getDocumentDescriptionText() : "",
             content: bodyEditor.innerHTML || "",
             ownerId: normalizeActorId(currentCommentActorId || "viewer"),
             ownerName: getCurrentCommentActor().name || "Гость",
@@ -463,7 +466,12 @@ def pages_script() -> str:
             forceLoad = false,
             anchorId = "",
             discussionTargetId = "",
+            workspaceToken = commentWorkspaceToken,
           } = options;
+
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
 
           if (commentPageId && commentPageId !== pageId && !skipSave) {
             await saveCurrentPageNow("Сохранение перед переключением", getCurrentCommentActor().id);
@@ -482,6 +490,9 @@ def pages_script() -> str:
           const loaded = await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}`, {
             timeoutMs: 15000
           });
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
           const page = loaded.item || loaded;
           if (!page || !page.pageId) {
             return null;
@@ -528,7 +539,7 @@ def pages_script() -> str:
           openThreadForTarget(targetId, true);
         };
 
-        async function createPageForCurrentActor() {
+        async function createPageForCurrentActor(workspaceToken = commentWorkspaceToken) {
           const actor = getCurrentCommentActor();
           const created = await commentApiRequest("/api/pages", {
             method: "POST",
@@ -542,26 +553,32 @@ def pages_script() -> str:
             }),
             timeoutMs: 20000
           });
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
           const page = created.item || created;
           upsertCommentPage(page);
           renderPagesSwitcher();
-          await switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true });
+          await switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true, workspaceToken });
           return page;
         }
 
-        async function ensureActorPage(forceCatalog = false) {
+        async function ensureActorPage(forceCatalog = false, workspaceToken = commentWorkspaceToken) {
           await loadPagesCatalog(forceCatalog);
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
           const ownedPages = getOwnedPagesForActor();
           const savedPageId = window.localStorage.getItem(getActorPageStorageKey()) || "";
           const candidatePageId = savedPageId || (ownedPages[0] && ownedPages[0].pageId) || "";
           if (!candidatePageId) {
-            return createPageForCurrentActor();
+            return createPageForCurrentActor(workspaceToken);
           }
           const page = commentPages.find((item) => item.pageId === candidatePageId) || ownedPages[0];
           if (!page) {
-            return createPageForCurrentActor();
+            return createPageForCurrentActor(workspaceToken);
           }
-          return switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true });
+          return switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true, workspaceToken });
         }
 
         ensureCommentPage = async function() {
@@ -578,8 +595,15 @@ def pages_script() -> str:
         };
 
         setCurrentCommentActor = function(actorId, persist = true) {
+          commentWorkspaceToken += 1;
           currentCommentActorId = actorId || "viewer";
           commentBootstrapPromise = null;
+          commentOpenTargetId = null;
+          commentReplyTo = null;
+          commentMenuOpenId = null;
+          commentEditingId = null;
+          commentPresencePeople = [];
+          commentThreads = new Map();
           if (persist) {
             window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
           }
@@ -587,7 +611,11 @@ def pages_script() -> str:
           renderAccountSwitcher();
           renderPagesSwitcher();
           renderCommentsPanel();
-          ensureActorPage(true).catch((error) => console.warn("Failed to switch actor page", error));
+          closePagesSwitcher();
+          if (accountSwitcher) {
+            accountSwitcher.classList.remove("is-open");
+          }
+          ensureActorPage(true, commentWorkspaceToken).catch((error) => console.warn("Failed to switch actor page", error));
           ensureCommentSocket();
         };
 

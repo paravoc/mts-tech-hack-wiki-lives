@@ -105,7 +105,7 @@ def document_header_markup(
                     {_presence_markup()}
                   </div>
                 </div>
-                <div class="doc-subtitle" id="docHeaderSubtitle">{subtitle}</div>
+                <div class="doc-subtitle is-placeholder" id="docHeaderSubtitle" contenteditable="true" spellcheck="false" data-placeholder="Добавить описание">{subtitle}</div>
               </div>
             </div>
           </div>
@@ -118,7 +118,19 @@ def loading_screen_markup() -> str:
     return dedent(
         f"""
         <section class="screen" id="loadingScreen">
-          {document_header_markup()}
+          <header class="doc-head" aria-hidden="true">
+            <div class="doc-head__meta">
+              <div class="doc-head__title-wrap">
+                {file_icon_svg()}
+                <div class="doc-head__title-block">
+                  <div class="doc-head__title-row">
+                    <div class="doc-title">Новая страница</div>
+                  </div>
+                  <div class="doc-subtitle is-placeholder">Добавить описание</div>
+                </div>
+              </div>
+            </div>
+          </header>
           <div class="loading-body">
             <div class="loading-skeleton" aria-hidden="true">
               <div class="loading-skeleton__bar loading-skeleton__bar--short"></div>

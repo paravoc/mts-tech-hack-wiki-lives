@@ -74,10 +74,11 @@ void handlesPageCrudFlow() {
     wikilive::services::RenderService renderService;
     wikilive::server::Router router(pageService, renderService);
 
-    const auto createResponse = router.createPage(R"({"title":"Wiki page","content":"Status: {{projects:rec123:status}}","ownerId":"ivan","ownerName":"Иван Иванов"})");
+    const auto createResponse = router.createPage(R"({"title":"Wiki page","description":"Short summary","content":"Status: {{projects:rec123:status}}","ownerId":"ivan","ownerName":"Иван Иванов"})");
     wikilive::tests::expectEqual(createResponse.statusCode, 201, "create should return 201");
     wikilive::tests::expect(createResponse.body.find("\"pageId\":\"page-1\"") != std::string::npos, "created page should be returned");
     wikilive::tests::expect(createResponse.body.find("\"ownerId\":\"ivan\"") != std::string::npos, "created page owner should be returned");
+    wikilive::tests::expect(createResponse.body.find("\"description\":\"Short summary\"") != std::string::npos, "created page description should be returned");
 
     const auto listResponse = router.listPages();
     wikilive::tests::expectEqual(listResponse.statusCode, 200, "list should return 200");
@@ -87,10 +88,11 @@ void handlesPageCrudFlow() {
     wikilive::tests::expectEqual(getResponse.statusCode, 200, "get should return 200");
     wikilive::tests::expect(getResponse.body.find("wikilive-insert") != std::string::npos, "get should include rendered html");
 
-    const auto updateResponse = router.updatePage("page-1", R"({"title":"Updated","content":"Updated body","ownerId":"sergei","ownerName":"Сергей Иванов"})");
+    const auto updateResponse = router.updatePage("page-1", R"({"title":"Updated","description":"Updated summary","content":"Updated body","ownerId":"sergei","ownerName":"Сергей Иванов"})");
     wikilive::tests::expectEqual(updateResponse.statusCode, 200, "update should return 200");
     wikilive::tests::expect(updateResponse.body.find("\"title\":\"Updated\"") != std::string::npos, "updated title should be returned");
     wikilive::tests::expect(updateResponse.body.find("\"ownerId\":\"sergei\"") != std::string::npos, "updated page owner should be returned");
+    wikilive::tests::expect(updateResponse.body.find("\"description\":\"Updated summary\"") != std::string::npos, "updated page description should be returned");
 
     const auto deleteResponse = router.deletePage("page-1");
     wikilive::tests::expectEqual(deleteResponse.statusCode, 200, "delete should return 200");

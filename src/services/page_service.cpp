@@ -66,6 +66,7 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
     models::Page page{
         .pageId = nextPageId(),
         .title = validDraft->title,
+        .description = validDraft->description,
         .content = validDraft->content,
         .createdAt = timestamp,
         .updatedAt = timestamp,
@@ -94,6 +95,7 @@ utils::Expected<models::Page> PageService::updatePage(const std::string& pageId,
 
     auto page = existingPage.value();
     page.title = validDraft->title;
+    page.description = validDraft->description;
     page.content = validDraft->content;
     page.updatedAt = utils::formatIso(utils::now());
     if (!validDraft->ownerId.empty()) {

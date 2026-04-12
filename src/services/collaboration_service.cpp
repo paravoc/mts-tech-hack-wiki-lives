@@ -89,6 +89,7 @@ bool isSameVersionSnapshot(
     const std::vector<models::CommentThread>& threads,
     const std::string& commentAccessMode) {
     return version.title == page.title &&
+           version.description == page.description &&
            version.content == page.content &&
            version.commentAccessMode == commentAccessMode &&
            commentThreadSnapshotToJson(version.threadSnapshot) == commentThreadSnapshotToJson(threads);
@@ -140,6 +141,7 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
         .versionId = nextId("ver"),
         .pageId = page.pageId,
         .title = page.title,
+        .description = page.description,
         .content = page.content,
         .createdAt = utils::formatIso(utils::now()),
         .label = label,
@@ -191,6 +193,7 @@ utils::Expected<models::Page> CollaborationService::restoreVersion(
         pageId,
         PageDraft{
             .title = version->title,
+            .description = version->description,
             .content = version->content,
         });
     if (!restored) {
