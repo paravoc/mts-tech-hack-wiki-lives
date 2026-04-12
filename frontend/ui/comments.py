@@ -193,6 +193,11 @@ def comments_styles() -> str:
           border: 1px solid rgba(139, 124, 255, 0.18);
         }
 
+        .comment-anchor__button.is-create {
+          color: var(--comment-accent-strong);
+          background: rgba(255, 255, 255, 0.98);
+        }
+
         .comment-anchor__badge {
           font-size: 11px;
           font-weight: 700;
@@ -230,6 +235,21 @@ def comments_styles() -> str:
           border-radius: 12px;
           background: rgba(139, 124, 255, 0.06);
           pointer-events: none;
+        }
+
+        .comment-selection-target {
+          border-radius: 6px;
+          box-decoration-break: clone;
+          -webkit-box-decoration-break: clone;
+          background: rgba(139, 124, 255, 0.12);
+          transition: background .16s ease, box-shadow .16s ease;
+          padding: 1px 2px;
+        }
+
+        .comment-selection-target:hover,
+        .comment-selection-target.comment-target--active {
+          background: rgba(139, 124, 255, 0.18);
+          box-shadow: inset 0 0 0 1px rgba(139, 124, 255, 0.26);
         }
 
         .comments-panel {

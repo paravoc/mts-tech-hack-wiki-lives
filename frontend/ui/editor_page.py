@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 from ui.comments import comments_markup, comments_script, comments_styles
 from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
+from ui.time_machine import time_machine_markup, time_machine_script, time_machine_styles
 
 
 _EMPTY_HINT = "Начните вводить содержимое или нажмите / чтобы использовать команды"
@@ -315,12 +316,39 @@ __CURSOR_ROOT_VARIABLES__
               border-bottom: 1px solid var(--line);
               background: #ffffff;
               flex: none;
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 18px;
             }
 
             .doc-head__meta {
               display: flex;
+              align-items: flex-start;
+              justify-content: flex-start;
+              gap: 16px;
+              width: 100%;
+            }
+
+            .doc-head__title-wrap {
+              display: flex;
               gap: 8px;
               align-items: flex-start;
+              min-width: 0;
+            }
+
+            .doc-head__title-block {
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+            }
+
+            .doc-head__title-row {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              min-width: 0;
             }
 
             .doc-icon {
@@ -345,6 +373,131 @@ __CURSOR_ROOT_VARIABLES__
               line-height: 1.2;
               color: var(--muted);
               font-weight: 500;
+            }
+
+            .account-switcher {
+              position: relative;
+              flex: none;
+            }
+
+            .account-switcher__trigger {
+              width: 34px;
+              height: 34px;
+              border-radius: 999px;
+              border: 1px solid #dde2ea;
+              background: #ffffff;
+              color: #ff0032;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              box-shadow: 0 8px 18px rgba(17, 24, 39, 0.08);
+              transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+            }
+
+            .account-switcher__trigger:hover,
+            .account-switcher.is-open .account-switcher__trigger {
+              border-color: #cfd6e1;
+              box-shadow: 0 12px 22px rgba(17, 24, 39, 0.10);
+              transform: translateY(-1px);
+            }
+
+            .account-switcher__avatar,
+            .account-switcher__item-avatar {
+              width: 100%;
+              height: 100%;
+              border-radius: 999px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 14px;
+              font-weight: 700;
+              color: #ffffff;
+            }
+
+            .account-switcher__avatar {
+              width: 24px;
+              height: 24px;
+              background: #59c4ff;
+            }
+
+            .account-switcher__menu {
+              position: absolute;
+              top: calc(100% + 10px);
+              left: 0;
+              min-width: 238px;
+              padding: 8px;
+              border-radius: 16px;
+              border: 1px solid #e3e7ef;
+              background: rgba(255, 255, 255, 0.98);
+              box-shadow: 0 18px 36px rgba(17, 24, 39, 0.14);
+              opacity: 0;
+              visibility: hidden;
+              transform: translateY(-6px);
+              transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+              z-index: 38;
+            }
+
+            .account-switcher.is-open .account-switcher__menu {
+              opacity: 1;
+              visibility: visible;
+              transform: translateY(0);
+            }
+
+            .account-switcher__item {
+              width: 100%;
+              padding: 10px 10px;
+              border: 0;
+              border-radius: 12px;
+              background: transparent;
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              text-align: left;
+              color: #2a3140;
+            }
+
+            .account-switcher__item:hover {
+              background: #f6f8fc;
+            }
+
+            .account-switcher__item.is-active {
+              background: #fff4f6;
+            }
+
+            .account-switcher__item.is-muted strong,
+            .account-switcher__item.is-muted span {
+              color: #8d95a4;
+            }
+
+            .account-switcher__item-avatar {
+              width: 28px;
+              height: 28px;
+              flex: none;
+            }
+
+            .account-switcher__item-text {
+              min-width: 0;
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+            }
+
+            .account-switcher__item-text strong {
+              font-size: 13px;
+              line-height: 1.15;
+              font-weight: 700;
+            }
+
+            .account-switcher__item-text span {
+              font-size: 12px;
+              line-height: 1.15;
+              color: #8d95a4;
+            }
+
+            .account-switcher__sep {
+              height: 1px;
+              margin: 6px 2px;
+              background: #edf0f5;
             }
 
             .loading-body {
@@ -1765,6 +1918,7 @@ __COMMENTS_STYLES__
                 </div>
 
                 __COMMENTS_MARKUP__
+                __TIME_MACHINE_MARKUP__
                 __SELECTION_TOOLBAR__
                 <button class="block-handle" id="blockHandle" aria-hidden="true">
                   <svg viewBox="0 0 12 16" fill="currentColor" aria-hidden="true">
@@ -4032,6 +4186,50 @@ __COMMENTS_STYLES__
               }
             });
             bodyEditor.addEventListener("beforeinput", (event) => {
+              let touchesProtectedComment = false;
+              if (window.handleProtectedCommentInput) {
+                const selection = window.getSelection ? window.getSelection() : null;
+                if (selection && selection.rangeCount) {
+                  const range = selection.getRangeAt(0);
+                  let anchorNode = selection.anchorNode;
+                  if (anchorNode && anchorNode.nodeType === Node.TEXT_NODE) {
+                    anchorNode = anchorNode.parentElement;
+                  }
+                  const directTarget = anchorNode && anchorNode.closest
+                    ? anchorNode.closest(".comment-selection-target[data-comment-target-id]")
+                    : null;
+                  if (directTarget) {
+                    touchesProtectedComment = true;
+                  } else if (!range.collapsed) {
+                    touchesProtectedComment = Array.from(
+                      bodyEditor.querySelectorAll(".comment-selection-target[data-comment-target-id]")
+                    ).some((target) => {
+                      try {
+                        return range.intersectsNode(target);
+                      } catch (error) {
+                        return false;
+                      }
+                    });
+                  }
+                }
+              }
+              if (touchesProtectedComment && window.handleProtectedCommentInput) {
+                const handled = window.handleProtectedCommentInput(event.inputType || "", event.data || "");
+                if (handled && typeof handled.then === "function") {
+                  event.preventDefault();
+                  handled.then((resolved) => {
+                    if (resolved) {
+                      updateActiveToolbarButtons();
+                      updateSelectionToolbar();
+                    }
+                  });
+                  return;
+                }
+                if (handled) {
+                  event.preventDefault();
+                  return;
+                }
+              }
               if (
                 event.inputType === "insertText" &&
                 event.data &&
@@ -4300,6 +4498,7 @@ __COMMENTS_STYLES__
               }, 120);
             }, 900);
 __COMMENTS_SCRIPT__
+__TIME_MACHINE_SCRIPT__
           </script>
         </body>
         </html>
@@ -4312,8 +4511,10 @@ __COMMENTS_SCRIPT__
     html = html.replace("__SELECTION_TOOLBAR__", _selection_toolbar_markup())
     html = html.replace("__EMPTY_HINT__", _EMPTY_HINT)
     html = html.replace("__CURSOR_ROOT_VARIABLES__", cursor_root_variables("              "))
-    html = html.replace("__COMMENTS_STYLES__", comments_styles())
+    html = html.replace("__COMMENTS_STYLES__", comments_styles() + "\n" + time_machine_styles())
     html = html.replace("__COMMENTS_MARKUP__", comments_markup())
+    html = html.replace("__TIME_MACHINE_MARKUP__", time_machine_markup())
     html = html.replace("__COMMENTS_SCRIPT__", comments_script() + "\n            window.initializeCommentsSystem && window.initializeCommentsSystem();")
+    html = html.replace("__TIME_MACHINE_SCRIPT__", time_machine_script() + "\n            window.initializeTimeMachine && window.initializeTimeMachine();")
 
     components.html(html, height=780, scrolling=False)

@@ -12,7 +12,15 @@ namespace {
 
 using json = nlohmann::json;
 
+json toJson(const wikilive::models::CommentThread& thread);
+wikilive::models::CommentThread commentThreadFromJson(const json& item);
+
 json toJson(const wikilive::models::PageVersion& version) {
+    json threads = json::array();
+    for (const auto& thread : version.threadSnapshot) {
+        threads.push_back(toJson(thread));
+    }
+
     return {
         {"versionId", version.versionId},
         {"pageId", version.pageId},
@@ -21,6 +29,8 @@ json toJson(const wikilive::models::PageVersion& version) {
         {"createdAt", version.createdAt},
         {"label", version.label},
         {"author", version.author},
+        {"threadSnapshot", threads},
+        {"commentAccessMode", version.commentAccessMode},
     };
 }
 
@@ -33,6 +43,7 @@ json toJson(const wikilive::models::CommentMessage& message) {
         {"updatedAt", message.updatedAt},
         {"replyToMessageId", message.replyToMessageId},
         {"deleted", message.deleted},
+        {"likedBy", message.likedBy},
     };
 }
 
@@ -63,7 +74,7 @@ json toJson(const wikilive::models::CommentThread& thread) {
 }
 
 wikilive::models::PageVersion versionFromJson(const json& item) {
-    return wikilive::models::PageVersion{
+    wikilive::models::PageVersion version{
         .versionId = item.value("versionId", std::string{}),
         .pageId = item.value("pageId", std::string{}),
         .title = item.value("title", std::string{}),
@@ -71,7 +82,16 @@ wikilive::models::PageVersion versionFromJson(const json& item) {
         .createdAt = item.value("createdAt", std::string{}),
         .label = item.value("label", std::string{}),
         .author = item.value("author", std::string{}),
+        .commentAccessMode = item.value("commentAccessMode", std::string{"all_users"}),
     };
+
+    if (item.contains("threadSnapshot") && item["threadSnapshot"].is_array()) {
+        for (const auto& threadItem : item["threadSnapshot"]) {
+            version.threadSnapshot.push_back(commentThreadFromJson(threadItem));
+        }
+    }
+
+    return version;
 }
 
 wikilive::models::CommentMessage commentMessageFromJson(const json& item) {
@@ -83,6 +103,7 @@ wikilive::models::CommentMessage commentMessageFromJson(const json& item) {
         .updatedAt = item.value("updatedAt", std::string{}),
         .replyToMessageId = item.value("replyToMessageId", std::string{}),
         .deleted = item.value("deleted", false),
+        .likedBy = item.value("likedBy", std::vector<std::string>{}),
     };
 }
 
@@ -109,6 +130,10 @@ wikilive::models::CommentThread commentThreadFromJson(const json& item) {
         for (const auto& message : item["messages"]) {
             thread.messages.push_back(commentMessageFromJson(message));
         }
+    }
+
+    if (!thread.messages.empty() && thread.messages.front().likedBy.empty() && !thread.likedBy.empty()) {
+        thread.messages.front().likedBy = thread.likedBy;
     }
 
     return thread;
@@ -276,6 +301,34 @@ utils::VoidExpected LocalCollaborationStorage::saveCommentAccess(const std::stri
     }
 
     state->commentAccessByPage[pageId] = accessMode;
+    return persistStateUnlocked(*state);
+}
+
+utils::VoidExpected LocalCollaborationStorage::restoreCommentSnapshot(
+    const std::string& pageId,
+    const std::vector<models::CommentThread>& threads,
+    const std::string& accessMode) {
+    std::scoped_lock lock(mutex_);
+    auto state = loadStateUnlocked();
+    if (!state) {
+        return std::unexpected(state.error());
+    }
+
+    state->threads.erase(
+        std::remove_if(state->threads.begin(), state->threads.end(), [&](const models::CommentThread& item) {
+            return item.pageId == pageId;
+        }),
+        state->threads.end());
+
+    for (const auto& thread : threads) {
+        state->threads.push_back(thread);
+    }
+
+    std::stable_sort(state->threads.begin(), state->threads.end(), [](const models::CommentThread& left, const models::CommentThread& right) {
+        return left.updatedAt > right.updatedAt;
+    });
+
+    state->commentAccessByPage[pageId] = accessMode.empty() ? "all_users" : accessMode;
     return persistStateUnlocked(*state);
 }
 

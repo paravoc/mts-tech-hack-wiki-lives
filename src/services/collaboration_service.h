@@ -62,6 +62,7 @@ public:
     [[nodiscard]] utils::Expected<models::CommentThread> toggleLike(
         const std::string& pageId,
         const std::string& threadId,
+        const std::string& messageId,
         const std::string& actor);
     [[nodiscard]] utils::Expected<models::CommentThread> updateMessage(
         const std::string& pageId,

@@ -5,10 +5,14 @@
 #include <cctype>
 #include <unordered_set>
 
+#include <nlohmann/json.hpp>
+
 #include "src/utils/time_utils.h"
 
 namespace wikilive::services {
 namespace {
+
+using json = nlohmann::json;
 
 std::string normalizeActor(std::string actor) {
     std::transform(actor.begin(), actor.end(), actor.begin(), [](unsigned char value) {
@@ -28,6 +32,66 @@ utils::Error forbiddenError(const std::string& message) {
         message,
         403,
         false);
+}
+
+json commentMessageToJson(const models::CommentMessage& message) {
+    return {
+        {"messageId", message.messageId},
+        {"author", message.author},
+        {"body", message.body},
+        {"createdAt", message.createdAt},
+        {"updatedAt", message.updatedAt},
+        {"replyToMessageId", message.replyToMessageId},
+        {"deleted", message.deleted},
+        {"likedBy", message.likedBy},
+        {"likeCount", message.likedBy.size()},
+    };
+}
+
+json commentThreadToJson(const models::CommentThread& thread) {
+    json messages = json::array();
+    for (const auto& message : thread.messages) {
+        messages.push_back(commentMessageToJson(message));
+    }
+
+    return {
+        {"threadId", thread.threadId},
+        {"pageId", thread.pageId},
+        {"targetId", thread.targetId},
+        {"targetType", thread.targetType},
+        {"selectionLabel", thread.selectionLabel},
+        {"targetPreview", thread.targetPreview},
+        {"createdAt", thread.createdAt},
+        {"updatedAt", thread.updatedAt},
+        {"resolved", thread.resolved},
+        {"resolvedAt", thread.resolvedAt},
+        {"resolvedBy", thread.resolvedBy},
+        {"deleted", thread.deleted},
+        {"deletedAt", thread.deletedAt},
+        {"deletedBy", thread.deletedBy},
+        {"likedBy", thread.likedBy},
+        {"likeCount", thread.messages.empty() ? thread.likedBy.size() : thread.messages.front().likedBy.size()},
+        {"messages", messages},
+    };
+}
+
+json commentThreadSnapshotToJson(const std::vector<models::CommentThread>& threads) {
+    json items = json::array();
+    for (const auto& thread : threads) {
+        items.push_back(commentThreadToJson(thread));
+    }
+    return items;
+}
+
+bool isSameVersionSnapshot(
+    const models::PageVersion& version,
+    const models::Page& page,
+    const std::vector<models::CommentThread>& threads,
+    const std::string& commentAccessMode) {
+    return version.title == page.title &&
+           version.content == page.content &&
+           version.commentAccessMode == commentAccessMode &&
+           commentThreadSnapshotToJson(version.threadSnapshot) == commentThreadSnapshotToJson(threads);
 }
 
 }  // namespace
@@ -55,9 +119,19 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
         return std::unexpected(versions.error());
     }
 
+    const auto threads = storage_.listThreads(page.pageId);
+    if (!threads) {
+        return std::unexpected(threads.error());
+    }
+
+    const auto accessMode = storage_.getCommentAccess(page.pageId);
+    if (!accessMode) {
+        return std::unexpected(accessMode.error());
+    }
+
     if (!versions->empty()) {
         const auto& latest = versions->front();
-        if (latest.title == page.title && latest.content == page.content) {
+        if (isSameVersionSnapshot(latest, page, threads.value(), accessMode.value())) {
             return latest;
         }
     }
@@ -70,6 +144,8 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
         .createdAt = utils::formatIso(utils::now()),
         .label = label,
         .author = author.empty() ? "system" : author,
+        .threadSnapshot = threads.value(),
+        .commentAccessMode = accessMode.value(),
     };
 
     const auto appendResult = storage_.appendVersion(version);
@@ -119,6 +195,14 @@ utils::Expected<models::Page> CollaborationService::restoreVersion(
         });
     if (!restored) {
         return std::unexpected(restored.error());
+    }
+
+    const auto restoreSnapshot = storage_.restoreCommentSnapshot(
+        pageId,
+        version->threadSnapshot,
+        version->commentAccessMode.empty() ? "all_users" : version->commentAccessMode);
+    if (!restoreSnapshot) {
+        return std::unexpected(restoreSnapshot.error());
     }
 
     const auto postRestoreSnapshot = captureVersion(restored.value(), "Restored from version", author);
@@ -189,6 +273,41 @@ utils::Expected<models::CommentThread> CollaborationService::createThread(
         return std::unexpected(validDraft.error());
     }
 
+    const auto existingThreads = storage_.listThreads(pageId);
+    if (!existingThreads) {
+        return std::unexpected(existingThreads.error());
+    }
+
+    auto duplicateThread = std::find_if(
+        existingThreads->begin(),
+        existingThreads->end(),
+        [&](const models::CommentThread& thread) {
+            return !thread.deleted && thread.targetId == validDraft->targetId;
+        });
+    if (duplicateThread != existingThreads->end()) {
+        auto preservedThread = *duplicateThread;
+        bool changed = false;
+        if (preservedThread.targetType.empty() && !validDraft->targetType.empty()) {
+            preservedThread.targetType = validDraft->targetType;
+            changed = true;
+        }
+        if (preservedThread.selectionLabel.empty() && !validDraft->selectionLabel.empty()) {
+            preservedThread.selectionLabel = validDraft->selectionLabel;
+            changed = true;
+        }
+        if (preservedThread.targetPreview.empty() && !validDraft->targetPreview.empty()) {
+            preservedThread.targetPreview = validDraft->targetPreview;
+            changed = true;
+        }
+        if (changed) {
+            const auto saveResult = storage_.saveThread(preservedThread);
+            if (!saveResult) {
+                return std::unexpected(saveResult.error());
+            }
+        }
+        return preservedThread;
+    }
+
     const auto timestamp = utils::formatIso(utils::now());
     models::CommentThread thread{
         .threadId = nextId("thread"),
@@ -208,6 +327,7 @@ utils::Expected<models::CommentThread> CollaborationService::createThread(
                 .body = validDraft->body,
                 .createdAt = timestamp,
                 .updatedAt = timestamp,
+                .likedBy = {},
             },
         },
     };
@@ -242,6 +362,7 @@ utils::Expected<models::CommentThread> CollaborationService::addReply(
         .createdAt = timestamp,
         .updatedAt = timestamp,
         .replyToMessageId = validDraft->replyToMessageId,
+        .likedBy = {},
     });
     thread->updatedAt = timestamp;
     thread->deleted = false;
@@ -288,21 +409,45 @@ utils::Expected<models::CommentThread> CollaborationService::setResolved(
 utils::Expected<models::CommentThread> CollaborationService::toggleLike(
     const std::string& pageId,
     const std::string& threadId,
+    const std::string& messageId,
     const std::string& actor) {
     auto thread = storage_.getThread(pageId, threadId);
     if (!thread) {
         return std::unexpected(thread.error());
     }
 
+    auto messageIt = thread->messages.end();
+    if (!messageId.empty()) {
+        messageIt = std::find_if(
+            thread->messages.begin(),
+            thread->messages.end(),
+            [&](const models::CommentMessage& message) { return message.messageId == messageId && !message.deleted; });
+    } else {
+        messageIt = std::find_if(
+            thread->messages.begin(),
+            thread->messages.end(),
+            [](const models::CommentMessage& message) { return !message.deleted; });
+    }
+    if (messageIt == thread->messages.end()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::PageNotFound,
+            "Comment message was not found",
+            404,
+            false));
+    }
+
     const auto user = normalizeActor(actor.empty() ? std::string("viewer") : actor);
     const auto likeIt = std::find_if(
-        thread->likedBy.begin(),
-        thread->likedBy.end(),
+        messageIt->likedBy.begin(),
+        messageIt->likedBy.end(),
         [&](const std::string& existingActor) { return normalizeActor(existingActor) == user; });
-    if (likeIt == thread->likedBy.end()) {
-        thread->likedBy.push_back(user);
+    if (likeIt == messageIt->likedBy.end()) {
+        messageIt->likedBy.push_back(user);
     } else {
-        thread->likedBy.erase(likeIt);
+        messageIt->likedBy.erase(likeIt);
+    }
+    if (messageIt == thread->messages.begin()) {
+        thread->likedBy = messageIt->likedBy;
     }
     thread->updatedAt = utils::formatIso(utils::now());
 

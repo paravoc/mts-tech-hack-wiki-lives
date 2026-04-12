@@ -82,6 +82,11 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
 }
 
 std::string pageVersionToJson(const wikilive::models::PageVersion& version) {
+    std::size_t messageCount = 0;
+    for (const auto& thread : version.threadSnapshot) {
+        messageCount += thread.messages.size();
+    }
+
     return nlohmann::json{
         {"versionId", version.versionId},
         {"pageId", version.pageId},
@@ -90,6 +95,8 @@ std::string pageVersionToJson(const wikilive::models::PageVersion& version) {
         {"createdAt", version.createdAt},
         {"label", version.label},
         {"author", version.author},
+        {"threadCount", version.threadSnapshot.size()},
+        {"commentCount", messageCount},
     }
         .dump();
 }
@@ -105,6 +112,8 @@ std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
             {"updatedAt", message.updatedAt},
             {"replyToMessageId", message.replyToMessageId},
             {"deleted", message.deleted},
+            {"likedBy", message.likedBy},
+            {"likeCount", message.likedBy.size()},
         });
     }
 
@@ -124,7 +133,7 @@ std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
         {"deletedAt", thread.deletedAt},
         {"deletedBy", thread.deletedBy},
         {"likedBy", thread.likedBy},
-        {"likeCount", thread.likedBy.size()},
+        {"likeCount", thread.messages.empty() ? thread.likedBy.size() : thread.messages.front().likedBy.size()},
         {"messages", messages},
     }
         .dump();
@@ -273,6 +282,15 @@ RouteResponse Router::createPage(const std::string& payload) {
             return fail(draft.error());
         }
 
+        const auto versionLabel = extractJsonString(payload, "versionLabel", false);
+        if (!versionLabel) {
+            return fail(versionLabel.error());
+        }
+        const auto versionAuthor = extractJsonString(payload, "versionAuthor", false);
+        if (!versionAuthor) {
+            return fail(versionAuthor.error());
+        }
+
         const auto createdPage = pageService_.createPage(draft.value());
         if (!createdPage) {
             return fail(createdPage.error());
@@ -284,7 +302,10 @@ RouteResponse Router::createPage(const std::string& payload) {
         }
 
         if (collaborationService_ != nullptr) {
-            const auto versionResult = collaborationService_->captureVersion(createdPage.value(), "Created page");
+            const auto versionResult = collaborationService_->captureVersion(
+                createdPage.value(),
+                versionLabel.value().empty() ? "Created page" : versionLabel.value(),
+                versionAuthor.value().empty() ? "system" : versionAuthor.value());
             if (!versionResult) {
                 return fail(versionResult.error());
             }
@@ -317,6 +338,15 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
             return fail(draft.error());
         }
 
+        const auto versionLabel = extractJsonString(payload, "versionLabel", false);
+        if (!versionLabel) {
+            return fail(versionLabel.error());
+        }
+        const auto versionAuthor = extractJsonString(payload, "versionAuthor", false);
+        if (!versionAuthor) {
+            return fail(versionAuthor.error());
+        }
+
         const auto updatedPage = pageService_.updatePage(pageId, draft.value());
         if (!updatedPage) {
             return fail(updatedPage.error());
@@ -328,7 +358,10 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
         }
 
         if (collaborationService_ != nullptr) {
-            const auto versionResult = collaborationService_->captureVersion(updatedPage.value(), "Saved changes");
+            const auto versionResult = collaborationService_->captureVersion(
+                updatedPage.value(),
+                versionLabel.value().empty() ? "Saved changes" : versionLabel.value(),
+                versionAuthor.value().empty() ? "system" : versionAuthor.value());
             if (!versionResult) {
                 return fail(versionResult.error());
             }
@@ -825,12 +858,14 @@ RouteResponse Router::toggleCommentLike(
         }
 
         std::string author = "viewer";
+        std::string messageId;
         if (!payload.empty()) {
             const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
             author = parsedPayload.value("author", author);
+            messageId = parsedPayload.value("messageId", std::string{});
         }
 
-        const auto thread = collaborationService_->toggleLike(pageId, threadId, author);
+        const auto thread = collaborationService_->toggleLike(pageId, threadId, messageId, author);
         if (!thread) {
             return fail(thread.error());
         }

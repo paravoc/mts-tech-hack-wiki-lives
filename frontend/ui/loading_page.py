@@ -13,6 +13,48 @@ def file_icon_svg(css_class: str = "doc-icon") -> str:
     )
 
 
+def _account_switcher_markup() -> str:
+    return dedent(
+        """
+        <div class="account-switcher" id="accountSwitcher">
+          <button class="account-switcher__trigger" id="accountTrigger" type="button" aria-label="Сменить аккаунт">
+            <span class="account-switcher__avatar" id="accountAvatar">И</span>
+          </button>
+          <div class="account-switcher__menu" id="accountMenu">
+            <button class="account-switcher__item" data-account-user="ivan" type="button">
+              <span class="account-switcher__item-avatar" style="background:#59c4ff">И</span>
+              <span class="account-switcher__item-text">
+                <strong>Иван Иванов</strong>
+                <span>@ivan</span>
+              </span>
+            </button>
+            <button class="account-switcher__item" data-account-user="sergei" type="button">
+              <span class="account-switcher__item-avatar" style="background:#7b68ee">С</span>
+              <span class="account-switcher__item-text">
+                <strong>Сергей Иванов</strong>
+                <span>@sergei</span>
+              </span>
+            </button>
+            <button class="account-switcher__item" data-account-user="anna" type="button">
+              <span class="account-switcher__item-avatar" style="background:#4f83ff">А</span>
+              <span class="account-switcher__item-text">
+                <strong>Анна Ивлева</strong>
+                <span>@anna</span>
+              </span>
+            </button>
+            <div class="account-switcher__sep"></div>
+            <button class="account-switcher__item is-muted" data-account-action="logout" type="button">
+              <span class="account-switcher__item-text">
+                <strong>Выйти</strong>
+                <span>Перейти в гостя</span>
+              </span>
+            </button>
+          </div>
+        </div>
+        """
+    ).strip()
+
+
 def document_header_markup(
     title: str = "Новая страница",
     subtitle: str = "Добавить описание",
@@ -21,10 +63,15 @@ def document_header_markup(
         f"""
         <header class="doc-head">
           <div class="doc-head__meta">
-            {file_icon_svg()}
-            <div>
-              <div class="doc-title">{title}</div>
-              <div class="doc-subtitle">{subtitle}</div>
+            <div class="doc-head__title-wrap">
+              {file_icon_svg()}
+              <div class="doc-head__title-block">
+                <div class="doc-head__title-row">
+                  <div class="doc-title">{title}</div>
+                  {_account_switcher_markup()}
+                </div>
+                <div class="doc-subtitle">{subtitle}</div>
+              </div>
             </div>
           </div>
         </header>

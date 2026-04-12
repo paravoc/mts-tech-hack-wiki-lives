@@ -13,6 +13,7 @@ struct CommentMessage {
     std::string updatedAt;
     std::string replyToMessageId;
     bool deleted = false;
+    std::vector<std::string> likedBy;
 };
 
 struct CommentThread {

@@ -29,6 +29,10 @@ const commentsHistoryModal = document.getElementById("commentsHistoryModal");
 const commentsHistoryBody = document.getElementById("commentsHistoryBody");
 const commentsHistoryFooter = document.getElementById("commentsHistoryFooter");
 const commentsHistoryClose = document.getElementById("commentsHistoryClose");
+const accountSwitcher = document.getElementById("accountSwitcher");
+const accountTrigger = document.getElementById("accountTrigger");
+const accountMenu = document.getElementById("accountMenu");
+const accountAvatar = document.getElementById("accountAvatar");
 
 const commentUsers = [
   { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Редактор знаний", team: "Wiki editors" },
@@ -114,7 +118,7 @@ let commentLoadToken = 0;
 let commentObserver = null;
 let commentFrame = null;
 const commentApiBase = "http://127.0.0.1:3000";
-const commentPageStorageKey = "wikilive-comment-page-id";
+const commentPageStorageKey = "wikilive-comment-page-id-v2";
 let commentPageId = "";
 let commentAccessMode = "all_users";
 let commentBootstrapPromise = null;
@@ -122,16 +126,54 @@ let commentSaveTimer = null;
 let commentSyncTimer = null;
 let commentSocket = null;
 let commentSocketPageId = "";
+let commentHoverClearTimer = null;
 let commentSocketReconnectTimer = null;
-const commentActorStorageKey = "wikilive-comment-actor-id";
+const commentActorStorageKey = "wikilive-comment-actor-id-v2";
 let currentCommentActorId = window.localStorage.getItem(commentActorStorageKey) || "ivan";
+let commentSelectionDraft = null;
+let commentPendingVersionLabel = "";
+let commentPendingVersionAuthor = "";
+let commentSyncPromise = null;
+let commentHistoryPromise = null;
+let commentAccessPromise = null;
+let commentCleanupTimer = null;
+let commentSaveInFlight = false;
+let commentSaveQueued = false;
+let commentHoveredTargetId = "";
 
 function commentIconSvg() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-7l-2.8 2V10.5H2.5z"></path><path d="M5.2 6.2h5.6M5.2 8.2h3.4"></path></svg>';
 }
 
+function commentPlusSvg() {
+  return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 3.2v9.6M3.2 8h9.6"></path></svg>';
+}
+
 function getCurrentCommentActor() {
   return getCommentUser(currentCommentActorId || "ivan");
+}
+
+function renderAccountSwitcher() {
+  if (!accountSwitcher || !accountAvatar) {
+    return;
+  }
+  const actor = getCurrentCommentActor();
+  accountAvatar.textContent = actor.short || "Г";
+  accountAvatar.style.background = actor.color || "#a6afbf";
+  accountAvatar.style.color = "#ffffff";
+  accountMenu.querySelectorAll("[data-account-user]").forEach((item) => {
+    item.classList.toggle("is-active", item.dataset.accountUser === currentCommentActorId);
+  });
+}
+
+function setCurrentCommentActor(actorId, persist = true) {
+  currentCommentActorId = actorId || "viewer";
+  if (persist) {
+    window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
+  }
+  renderActorPicker();
+  renderAccountSwitcher();
+  renderCommentsPanel();
 }
 
 function getMentionEntity(entityId) {
@@ -156,13 +198,18 @@ function getMentionEntity(entityId) {
 
 function renderActorPicker() {
   if (!commentsActorSelect) {
+    renderAccountSwitcher();
     return;
   }
 
-  commentsActorSelect.innerHTML = commentUsers.map((user) => {
+  const actorOptions = commentUsers.map((user) => {
     const selected = user.id === currentCommentActorId ? " selected" : "";
     return `<option value="${user.id}"${selected}>${escapeHtml(user.name)} · ${escapeHtml(user.role)}</option>`;
-  }).join("");
+  });
+  if (!commentUsers.some((user) => user.id === currentCommentActorId)) {
+    actorOptions.unshift('<option value="viewer" selected>Гость · Наблюдатель</option>');
+  }
+  commentsActorSelect.innerHTML = actorOptions.join("");
 
   const actor = getCurrentCommentActor();
   if (commentsActorNote) {
@@ -171,6 +218,7 @@ function renderActorPicker() {
   if (commentsGroupHints) {
     commentsGroupHints.innerHTML = commentGroups.slice(0, 3).map((group) => `<span class="comments-panel__group-hint">@${escapeHtml(group.handle)}</span>`).join("");
   }
+  renderAccountSwitcher();
 }
 
 function thumbsUpSvg() {
@@ -223,6 +271,7 @@ function createComment(id, userId, date, text, extra = {}) {
     date,
     text,
     likes: extra.likes || 0,
+    likedBy: Array.isArray(extra.likedBy) ? [...extra.likedBy] : [],
     replyTo: extra.replyTo || null,
     editable: extra.editable !== false,
     attachmentType: extra.attachmentType || "",
@@ -248,16 +297,49 @@ function createThread(id, targetId, options = {}) {
   };
 }
 
+function cloneCommentState(comment) {
+  return createComment(comment.id, comment.userId, comment.date, comment.text, {
+    likes: comment.likes || 0,
+    likedBy: Array.isArray(comment.likedBy) ? [...comment.likedBy] : [],
+    replyTo: comment.replyTo || null,
+    editable: comment.editable !== false,
+    attachmentType: comment.attachmentType || "",
+    attachmentLabel: comment.attachmentLabel || "",
+    targetPreview: comment.targetPreview || "",
+    targetType: comment.targetType || ""
+  });
+}
+
+function cloneThreadState(thread) {
+  return createThread(thread.id, thread.targetId, {
+    badgeCount: thread.badgeCount || 0,
+    status: thread.status || "open",
+    demoState: thread.demoState || "ready",
+    preview: thread.preview || "",
+    comments: (thread.comments || []).map((comment) => cloneCommentState(comment)),
+    likedBy: Array.isArray(thread.likedBy) ? [...thread.likedBy] : [],
+    iconOnly: Boolean(thread.iconOnly),
+    targetType: thread.targetType || "",
+    targetLabel: thread.targetLabel || ""
+  });
+}
+
 async function commentApiRequest(path, options = {}) {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 4200);
+  const timeoutMs =
+    typeof options.timeoutMs === "number" && Number.isFinite(options.timeoutMs)
+      ? options.timeoutMs
+      : 12000;
+  const requestOptions = { ...options };
+  delete requestOptions.timeoutMs;
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
   let response;
   try {
     response = await fetch(commentApiBase + path, {
       headers: {
         "Content-Type": "application/json"
       },
-      ...options,
+      ...requestOptions,
       signal: controller.signal
     });
   } catch (error) {
@@ -468,60 +550,7 @@ function serializeEditorDocument() {
 }
 
 async function seedServerDemoThreadsIfNeeded(pageId) {
-  const targets = getCommentableTargets();
-  targets.forEach((target) => ensureTargetId(target));
-  if (!targets.length) {
-    return;
-  }
-
-  const firstTarget = targets[0];
-  await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments`, {
-    method: "POST",
-    body: JSON.stringify({
-      author: "ivan",
-      body: "Думаю этот абзац стоит переписать: сейчас мысль правильная, но для onboarding-текста она слишком плотная.",
-      selectionLabel: getTargetPreview(firstTarget),
-      targetId: ensureTargetId(firstTarget),
-      targetType: inferTargetType(firstTarget),
-      targetPreview: getTargetPreview(firstTarget)
-    })
-  });
-
-  const mainThreads = await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments`);
-  const mainThread = (mainThreads.items || []).find((item) => item.targetId === ensureTargetId(firstTarget));
-  if (mainThread) {
-    await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(mainThread.threadId)}/replies`, {
-      method: "POST",
-      body: JSON.stringify({ author: "sergei", body: "Согласен. Я бы упростил формулировки и оставил один главный тезис." })
-    });
-    await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(mainThread.threadId)}/replies`, {
-      method: "POST",
-      body: JSON.stringify({ author: "anna", body: "@design давайте потом еще проверим визуальный ритм этого блока." })
-    });
-  }
-
-  if (targets[2]) {
-    const thirdTarget = targets[2];
-    await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments`, {
-      method: "POST",
-      body: JSON.stringify({
-        author: "maxim",
-        body: "Этот блок уже согласовали. Оставляем как есть и закрываем ветку.",
-        selectionLabel: getTargetPreview(thirdTarget),
-        targetId: ensureTargetId(thirdTarget),
-        targetType: inferTargetType(thirdTarget),
-        targetPreview: getTargetPreview(thirdTarget)
-      })
-    });
-    const resolvedThreads = await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments`);
-    const resolvedThread = (resolvedThreads.items || []).find((item) => item.targetId === ensureTargetId(thirdTarget));
-    if (resolvedThread) {
-      await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}/comments/${encodeURIComponent(resolvedThread.threadId)}/resolve`, {
-        method: "POST",
-        body: JSON.stringify({ resolved: true })
-      });
-    }
-  }
+  return;
 }
 
 function applyEditorDocument(page) {
@@ -529,28 +558,117 @@ function applyEditorDocument(page) {
     return;
   }
   titleEditor.textContent = page.title || "Страница для комментирования";
-  bodyEditor.innerHTML = page.content && page.content.trim() ? page.content : commentsDemoParagraphs.map((paragraph) => `<p>${paragraph}</p>`).join("");
+  bodyEditor.innerHTML = page.content && page.content.trim() ? page.content : `<p class="body-placeholder">${emptyHint}</p>`;
   renderOutline();
 }
 
-function scheduleCommentDocumentSave() {
+function queueCommentVersionLabel(label, author = "editor") {
+  if (!label) {
+    return;
+  }
+  commentPendingVersionLabel = label;
+  commentPendingVersionAuthor = author || "editor";
+}
+
+async function createCommentVersion(label, author = getCurrentCommentActor().id) {
+  if (!commentPageId || !label) {
+    return;
+  }
+  await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/versions`, {
+    method: "POST",
+    body: JSON.stringify({ label, author })
+  });
+  if (window.refreshTimeMachinePanel) {
+    window.refreshTimeMachinePanel();
+  }
+}
+
+function classifyMutationLabel(mutations) {
+  let sawImageChange = false;
+  let sawFileChange = false;
+  let sawDataChange = false;
+  let sawDeletion = false;
+
+  mutations.forEach((mutation) => {
+    if (mutation.type !== "childList") {
+      return;
+    }
+    sawDeletion = sawDeletion || Boolean(mutation.removedNodes && mutation.removedNodes.length);
+    Array.from(mutation.addedNodes || []).forEach((node) => {
+      if (!(node instanceof HTMLElement)) {
+        return;
+      }
+      if (node.classList.contains("comment-selection-target")) {
+        return;
+      }
+      if (node.matches(".embedded-image-block") || node.querySelector(".embedded-image-block")) {
+        sawImageChange = true;
+      }
+      if (node.matches(".embedded-file-chip") || node.querySelector(".embedded-file-chip")) {
+        sawFileChange = true;
+      }
+      if (
+        node.matches("[data-live-token], [data-live-value], .live-data-chip, .formula-chip, .table-value-chip, table") ||
+        node.querySelector("[data-live-token], [data-live-value], .live-data-chip, .formula-chip, .table-value-chip, table")
+      ) {
+        sawDataChange = true;
+      }
+    });
+  });
+
+  if (sawImageChange) {
+    return "Вставка медиа";
+  }
+  if (sawFileChange) {
+    return "Вставка объекта";
+  }
+  if (sawDataChange) {
+    return "Вставка данных из таблицы";
+  }
+  if (sawDeletion) {
+    return "Удаление содержимого";
+  }
+  return "";
+}
+
+function scheduleCommentDocumentSave(label = "", author = "editor") {
   if (!commentPageId) {
     return;
   }
+  queueCommentVersionLabel(label || "Изменение текста", author);
   if (commentSaveTimer) {
     clearTimeout(commentSaveTimer);
   }
   commentSaveTimer = window.setTimeout(async () => {
+    if (commentSaveInFlight) {
+      commentSaveQueued = true;
+      return;
+    }
+    commentSaveInFlight = true;
     try {
       const documentPayload = serializeEditorDocument();
+      documentPayload.versionLabel = commentPendingVersionLabel || label || "Изменение текста";
+      documentPayload.versionAuthor = commentPendingVersionAuthor || author || "editor";
       await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
         method: "PUT",
-        body: JSON.stringify(documentPayload)
+        body: JSON.stringify(documentPayload),
+        timeoutMs: 20000
       });
+      commentPendingVersionLabel = "";
+      commentPendingVersionAuthor = "";
+      if (window.refreshTimeMachinePanel) {
+        window.refreshTimeMachinePanel();
+      }
     } catch (error) {
       console.warn("Failed to save comment page", error);
+    } finally {
+      commentSaveInFlight = false;
+      if (commentSaveQueued) {
+        commentSaveQueued = false;
+        scheduleCommentDocumentSave(commentPendingVersionLabel || label, commentPendingVersionAuthor || author);
+      }
     }
-  }, 650);
+  }, 1100);
 }
 
 function mapThreadFromApi(item) {
@@ -562,7 +680,8 @@ function mapThreadFromApi(item) {
     formatThreadDate(message.updatedAt || message.createdAt),
     message.body || "",
     {
-      likes: 0,
+      likes: message.likeCount || 0,
+      likedBy: Array.isArray(message.likedBy) ? message.likedBy : [],
       replyTo: message.replyToMessageId || null,
       attachmentType: index === 0 ? threadAttachment.attachmentType : "",
       attachmentLabel: index === 0 ? threadAttachment.attachmentLabel : "",
@@ -570,9 +689,6 @@ function mapThreadFromApi(item) {
       targetType: item.targetType || ""
     }
   ));
-  if (comments.length) {
-    comments[comments.length - 1].likes = item.likeCount || 0;
-  }
   return createThread(item.threadId, resolvedTargetId, {
     badgeCount: item.messages ? item.messages.length : 0,
     status: item.resolved ? "resolved" : "open",
@@ -585,89 +701,121 @@ function mapThreadFromApi(item) {
   });
 }
 
-async function syncThreadsFromServer() {
+async function loadCommentHistoryFromServer(force = false) {
+  if (!commentPageId) {
+    return [];
+  }
+  if (commentHistoryPromise && !force) {
+    return commentHistoryPromise;
+  }
+  commentHistoryPromise = commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/history`, {
+    timeoutMs: 14000
+  })
+    .then((historyData) => {
+      commentHistoryItems = (historyData.items || []).map((item) => {
+        const messages = item.messages || [];
+        const rootMessage = messages.find((message) => !message.replyToMessageId) || messages[0] || null;
+        const replies = rootMessage
+          ? messages.filter((message) => message.messageId !== rootMessage.messageId)
+          : messages;
+        const preview = item.targetPreview || item.selectionLabel || "";
+        const attachment = inferAttachmentForThread(item.targetType || "", preview);
+        return {
+          id: item.threadId,
+          userId: rootMessage ? rootMessage.author : "ivan",
+          date: formatThreadDate((rootMessage && (rootMessage.updatedAt || rootMessage.createdAt)) || item.createdAt),
+          statusText: formatHistoryStatus(item),
+          preview,
+          text: rootMessage ? rootMessage.body : preview,
+          likes: rootMessage ? (rootMessage.likeCount || 0) : (item.likeCount || 0),
+          thumb: attachment.attachmentType === "image",
+          attachmentType: attachment.attachmentType || "",
+          attachmentLabel: attachment.attachmentLabel || "",
+          targetType: item.targetType || "",
+          thread: replies.map((message) => ({
+            userId: message.author,
+            date: formatThreadDate(message.updatedAt || message.createdAt),
+            text: message.body,
+            deleted: Boolean(message.deleted)
+          })),
+          toggleLabel: formatThreadCommentsLabel(replies.length)
+        };
+      });
+      return commentHistoryItems;
+    })
+    .finally(() => {
+      commentHistoryPromise = null;
+    });
+  return commentHistoryPromise;
+}
+
+async function loadCommentAccessFromServer(force = false) {
+  if (!commentPageId) {
+    return "all_users";
+  }
+  if (commentAccessPromise && !force) {
+    return commentAccessPromise;
+  }
+  commentAccessPromise = commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comment-access`, {
+    timeoutMs: 10000
+  })
+    .then((accessData) => {
+      commentAccessMode = accessData.mode || "all_users";
+      document.querySelectorAll('input[name="commentAccess"]').forEach((input) => {
+        input.checked = input.value === (commentAccessMode === "owner_only" ? "author" : "all");
+      });
+      return commentAccessMode;
+    })
+    .finally(() => {
+      commentAccessPromise = null;
+    });
+  return commentAccessPromise;
+}
+
+async function syncThreadsFromServer(force = false) {
   if (!commentPageId) {
     return;
   }
-
-  const [threadsResult, historyResult, accessResult] = await Promise.allSettled([
-    commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`),
-    commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/history`),
-    commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comment-access`)
-  ]);
-
-  if (threadsResult.status !== "fulfilled") {
-    throw threadsResult.reason || new Error("Failed to load comment threads");
+  if (commentSyncPromise && !force) {
+    return commentSyncPromise;
   }
 
-  const threadsData = threadsResult.value || {};
-  const historyData = historyResult.status === "fulfilled" ? historyResult.value : null;
-  const accessData = accessResult.status === "fulfilled" ? accessResult.value : null;
+  commentSyncPromise = commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`, {
+    timeoutMs: 14000
+  })
+    .then((threadsData) => {
+      const nextThreads = new Map();
+      (threadsData.items || []).forEach((item) => {
+        const mappedThread = mapThreadFromApi(item);
+        const existingThread = nextThreads.get(mappedThread.targetId);
+        if (!existingThread) {
+          nextThreads.set(mappedThread.targetId, mappedThread);
+          return;
+        }
 
-  const nextThreads = new Map();
-  (threadsData.items || []).forEach((item) => {
-    const mappedThread = mapThreadFromApi(item);
-    const existingThread = nextThreads.get(mappedThread.targetId);
-    if (!existingThread) {
-      nextThreads.set(mappedThread.targetId, mappedThread);
-      return;
-    }
+        const existingScore =
+          (existingThread.status === "resolved" ? 0 : 1000) +
+          ((existingThread.comments || []).length * 100) +
+          normalizePreviewText(existingThread.preview || "").length;
+        const incomingScore =
+          (mappedThread.status === "resolved" ? 0 : 1000) +
+          ((mappedThread.comments || []).length * 100) +
+          normalizePreviewText(mappedThread.preview || "").length;
 
-    const existingScore =
-      (existingThread.status === "resolved" ? 0 : 1000) +
-      ((existingThread.comments || []).length * 100) +
-      normalizePreviewText(existingThread.preview || "").length;
-    const incomingScore =
-      (mappedThread.status === "resolved" ? 0 : 1000) +
-      ((mappedThread.comments || []).length * 100) +
-      normalizePreviewText(mappedThread.preview || "").length;
-
-    nextThreads.set(
-      mappedThread.targetId,
-      incomingScore >= existingScore ? mappedThread : existingThread
-    );
-  });
-  commentThreads = nextThreads;
-
-  if (historyData) {
-    commentHistoryItems = (historyData.items || []).map((item) => {
-      const messages = item.messages || [];
-      const rootMessage = messages.find((message) => !message.replyToMessageId) || messages[0] || null;
-      const replies = rootMessage
-        ? messages.filter((message) => message.messageId !== rootMessage.messageId)
-        : messages;
-      const preview = item.targetPreview || item.selectionLabel || "";
-      const attachment = inferAttachmentForThread(item.targetType || "", preview);
-      return {
-        id: item.threadId,
-        userId: rootMessage ? rootMessage.author : "ivan",
-        date: formatThreadDate((rootMessage && (rootMessage.updatedAt || rootMessage.createdAt)) || item.createdAt),
-        statusText: formatHistoryStatus(item),
-        preview,
-        text: rootMessage ? rootMessage.body : preview,
-        likes: item.likeCount || 0,
-        thumb: attachment.attachmentType === "image",
-        attachmentType: attachment.attachmentType || "",
-        attachmentLabel: attachment.attachmentLabel || "",
-        targetType: item.targetType || "",
-        thread: replies.map((message) => ({
-          userId: message.author,
-          date: formatThreadDate(message.updatedAt || message.createdAt),
-          text: message.body,
-          deleted: Boolean(message.deleted)
-        })),
-        toggleLabel: formatThreadCommentsLabel(replies.length)
-      };
+        nextThreads.set(
+          mappedThread.targetId,
+          incomingScore >= existingScore ? mappedThread : existingThread
+        );
+      });
+      commentThreads = nextThreads;
+      commentInitDone = true;
+      return nextThreads;
+    })
+    .finally(() => {
+      commentSyncPromise = null;
     });
-  }
-
-  if (accessData) {
-    commentAccessMode = accessData.mode || "all_users";
-  }
-  commentInitDone = true;
-  document.querySelectorAll('input[name="commentAccess"]').forEach((input) => {
-    input.checked = input.value === (commentAccessMode === "owner_only" ? "author" : "all");
-  });
+  await commentSyncPromise;
+  await loadCommentAccessFromServer(force);
 }
 
 async function ensureCommentPage() {
@@ -676,7 +824,6 @@ async function ensureCommentPage() {
   }
 
   commentBootstrapPromise = (async () => {
-    seedCommentsDemoDocumentIfNeeded();
     const savedPageId = window.localStorage.getItem(commentPageStorageKey) || "";
     const pagesData = await commentApiRequest("/api/pages");
     const items = pagesData.items || [];
@@ -691,13 +838,15 @@ async function ensureCommentPage() {
     }
 
     if (!page) {
-      getCommentableTargets().forEach((target) => ensureTargetId(target));
       const created = await commentApiRequest("/api/pages", {
         method: "POST",
-        body: JSON.stringify(serializeEditorDocument())
+        body: JSON.stringify({
+          ...serializeEditorDocument(),
+          versionLabel: "Создана страница",
+          versionAuthor: "system"
+        })
       });
       page = created.item;
-      await seedServerDemoThreadsIfNeeded(page.pageId);
     } else {
       const loaded = await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`);
       page = loaded.item;
@@ -708,14 +857,11 @@ async function ensureCommentPage() {
     window.localStorage.setItem(commentPageStorageKey, commentPageId);
     await ensurePersistedCommentTargets();
     await syncThreadsFromServer();
-    if (!commentThreads.size && !commentHistoryItems.length) {
-      await seedServerDemoThreadsIfNeeded(commentPageId);
-      await syncThreadsFromServer();
-    }
     ensureCommentSocket();
     subscribeCommentSocketToPage();
     scheduleCommentAnchors();
     renderCommentsPanel();
+    document.dispatchEvent(new CustomEvent("wikilive:page-ready", { detail: { pageId: commentPageId } }));
     return page;
   })().catch((error) => {
     console.warn("Failed to bootstrap comment page", error);
@@ -727,6 +873,7 @@ async function ensureCommentPage() {
 }
 
 function seedCommentsDemoDocumentIfNeeded() {
+  return;
   if (!hasPlaceholder()) {
     return;
   }
@@ -736,15 +883,12 @@ function seedCommentsDemoDocumentIfNeeded() {
 }
 
 function getCommentableTargets() {
-  const directBlocks = Array.from(bodyEditor.children).filter((node) => {
-    return node instanceof HTMLElement && !node.classList.contains("body-placeholder") && ["P", "H1", "H2", "H3", "UL", "OL", "BLOCKQUOTE", "PRE"].includes(node.tagName);
+  const directTargets = Array.from(document.querySelectorAll("[data-comment-target-id]")).filter((node) => {
+    return node instanceof HTMLElement && (bodyEditor.contains(node) || titleEditor.contains(node));
   });
-  const objectBlocks = Array.from(bodyEditor.querySelectorAll(
-    ".embedded-image-block, .embedded-file-chip, table, [data-comment-object='1'], [data-live-token], [data-live-value], .live-data-chip, .formula-chip, .table-value-chip"
-  ));
   const result = [];
   const seen = new Set();
-  [...directBlocks, ...objectBlocks].forEach((node) => {
+  directTargets.forEach((node) => {
     if (!seen.has(node)) {
       seen.add(node);
       result.push(node);
@@ -753,17 +897,57 @@ function getCommentableTargets() {
   return result;
 }
 
+function getCommentTargetPrefix(target) {
+  if (!(target instanceof HTMLElement)) {
+    return "comment-target";
+  }
+  if (target.classList.contains("comment-selection-target")) {
+    return "comment-selection";
+  }
+  if (target.classList.contains("embedded-image-block")) {
+    return "comment-image";
+  }
+  return "comment-object";
+}
+
+function generateCommentTargetId(prefix = "comment-target") {
+  const sanitizedPrefix = String(prefix || "comment-target")
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "comment-target";
+
+  let candidate = "";
+  do {
+    commentTargetCounter += 1;
+    const randomPart =
+      typeof crypto !== "undefined" && crypto && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}-${commentTargetCounter.toString(36)}`;
+    candidate = `${sanitizedPrefix}-${randomPart}`;
+  } while (document.querySelector(`[data-comment-target-id="${candidate}"]`));
+
+  return candidate;
+}
+
 function ensureTargetId(target) {
-  if (target.dataset.blockId) {
-    target.dataset.commentTargetId = target.dataset.blockId;
-    return target.dataset.commentTargetId;
+  if (!(target instanceof HTMLElement)) {
+    return "";
   }
   if (!target.dataset.commentTargetId) {
-    commentTargetCounter += 1;
-    target.dataset.commentTargetId = "block-" + commentTargetCounter;
-    target.dataset.blockId = target.dataset.commentTargetId;
+    target.dataset.commentTargetId = generateCommentTargetId(getCommentTargetPrefix(target));
   }
   return target.dataset.commentTargetId;
+}
+
+function normalizeCommentTargetIds() {
+  const seenIds = new Set();
+  getCommentableTargets().forEach((target) => {
+    const currentId = String(target.dataset.commentTargetId || "").trim();
+    if (!currentId || seenIds.has(currentId)) {
+      target.dataset.commentTargetId = generateCommentTargetId(getCommentTargetPrefix(target));
+    }
+    seenIds.add(target.dataset.commentTargetId);
+  });
 }
 
 function getTargetPreview(target) {
@@ -795,42 +979,246 @@ function findResolvedTargetId(item) {
 
   const expectedPreview = normalizePreviewText(item.targetPreview || item.selectionLabel || "");
   const expectedType = item.targetType || "";
+  if (!expectedPreview) {
+    return item.targetId;
+  }
   const targets = getCommentableTargets();
-  let bestMatch = null;
+  const matches = [];
 
   targets.forEach((target) => {
     const targetId = ensureTargetId(target);
     const targetPreview = normalizePreviewText(getTargetPreview(target));
     const targetType = inferTargetType(target);
     if (expectedPreview && targetPreview === expectedPreview && (!expectedType || targetType === expectedType)) {
-      bestMatch = targetId;
+      matches.push(targetId);
     }
   });
 
-  return bestMatch || item.targetId;
+  return matches.length === 1 ? matches[0] : item.targetId;
 }
 
 async function ensurePersistedCommentTargets() {
+  normalizeCommentTargetIds();
   const targets = getCommentableTargets();
-  let changed = false;
-  targets.forEach((target) => {
-    if (!target.dataset.blockId) {
-      changed = true;
-    }
-    ensureTargetId(target);
-  });
+  targets.forEach((target) => ensureTargetId(target));
+}
 
-  if (changed && commentPageId) {
-    try {
-      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
-        method: "PUT",
-        body: JSON.stringify(serializeEditorDocument())
-      });
-    } catch (error) {
-      console.warn("Failed to persist comment target ids", error);
+function getCurrentSelectionRange() {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount || selection.isCollapsed) {
+    return null;
+  }
+  const range = selection.getRangeAt(0);
+  const text = selection.toString().replace(/\s+/g, " ").trim();
+  if (!text) {
+    return null;
+  }
+  if (!bodyEditor.contains(range.commonAncestorContainer) && !titleEditor.contains(range.commonAncestorContainer)) {
+    return null;
+  }
+  const startBlock = typeof findEditableBlock === "function" ? findEditableBlock(range.startContainer) : null;
+  const endBlock = typeof findEditableBlock === "function" ? findEditableBlock(range.endContainer) : null;
+  if (startBlock && endBlock && startBlock !== endBlock) {
+    return null;
+  }
+  return range.cloneRange();
+}
+
+function buildSelectionCommentDraft() {
+  if (selectedImageBlock instanceof HTMLElement) {
+    const rect = selectedImageBlock.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      return {
+        kind: "object",
+        target: selectedImageBlock,
+        rect,
+        text: getTargetPreview(selectedImageBlock)
+      };
     }
   }
+
+  const range = getCurrentSelectionRange();
+  if (!range) {
+    return null;
+  }
+
+  const startContainer = range.startContainer instanceof HTMLElement ? range.startContainer : range.startContainer.parentElement;
+  const existingTarget = startContainer ? startContainer.closest("[data-comment-target-id]") : null;
+  if (existingTarget) {
+    return null;
+  }
+
+  const rect = range.getBoundingClientRect();
+  if (!rect.width && !rect.height) {
+    return null;
+  }
+
+  return {
+    kind: "text",
+    range,
+    rect,
+    text: range.toString().replace(/\s+/g, " ").trim()
+  };
 }
+
+function createTargetFromSelectionDraft() {
+  if (!commentSelectionDraft) {
+    return null;
+  }
+
+  if (commentSelectionDraft.kind === "object" && commentSelectionDraft.target instanceof HTMLElement) {
+    commentSelectionDraft.target.dataset.commentObject = "1";
+    return ensureTargetId(commentSelectionDraft.target);
+  }
+
+  if (commentSelectionDraft.kind !== "text" || !commentSelectionDraft.range) {
+    return null;
+  }
+
+  const range = commentSelectionDraft.range.cloneRange();
+  const wrapper = document.createElement("span");
+  wrapper.className = "comment-selection-target";
+  wrapper.contentEditable = "false";
+  wrapper.dataset.commentLocked = "1";
+  const targetId = ensureTargetId(wrapper);
+
+  try {
+    const content = range.extractContents();
+    wrapper.appendChild(content);
+    range.insertNode(wrapper);
+  } catch (error) {
+    console.warn("Failed to wrap selected text into a discussion target", error);
+    return null;
+  }
+
+  const selection = window.getSelection();
+  if (selection) {
+    const nextRange = document.createRange();
+    nextRange.selectNodeContents(wrapper);
+    selection.removeAllRanges();
+    selection.addRange(nextRange);
+  }
+
+  return targetId;
+}
+
+function unwrapCommentTarget(target) {
+  if (!(target instanceof HTMLElement)) {
+    return null;
+  }
+  const parent = target.parentNode;
+  if (!parent) {
+    return null;
+  }
+  while (target.firstChild) {
+    parent.insertBefore(target.firstChild, target);
+  }
+  const nextFocus = parent;
+  parent.removeChild(target);
+  return nextFocus;
+}
+
+async function dissolveDiscussionTarget(targetId, reason = "Изменение обсуждаемого фрагмента") {
+  if (!targetId) {
+    return;
+  }
+  const target = document.querySelector(`[data-comment-target-id="${targetId}"]`);
+  const thread = getThread(targetId);
+  if (commentPageId && thread && thread.id) {
+    try {
+      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}`, {
+        method: "DELETE",
+        body: JSON.stringify({ author: getCurrentCommentActor().id }),
+        timeoutMs: 14000
+      });
+      await createCommentVersion(reason, getCurrentCommentActor().id);
+    } catch (error) {
+      console.warn("Failed to dissolve discussion target", error);
+    }
+  }
+  commentThreads.delete(targetId);
+  if (target && target.classList.contains("comment-selection-target")) {
+    unwrapCommentTarget(target);
+  }
+  if (commentOpenTargetId === targetId) {
+    closeCommentsPanel();
+  }
+  scheduleCommentAnchors();
+}
+
+function scheduleOrphanThreadCleanup() {
+  if (commentCleanupTimer) {
+    clearTimeout(commentCleanupTimer);
+  }
+  commentCleanupTimer = window.setTimeout(async () => {
+    const existingIds = new Set(
+      getCommentableTargets().map((target) => ensureTargetId(target))
+    );
+    const orphanIds = [];
+    commentThreads.forEach((thread, targetId) => {
+      if (!existingIds.has(targetId)) {
+        orphanIds.push(targetId);
+      }
+    });
+    for (const targetId of orphanIds) {
+      await dissolveDiscussionTarget(targetId, "Удалено обсуждаемое содержимое");
+    }
+  }, 260);
+}
+
+async function handleProtectedCommentInput(inputType, data) {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) {
+    return false;
+  }
+  const selectionRange = selection.getRangeAt(0);
+  let node = selection.anchorNode;
+  if (node && node.nodeType === Node.TEXT_NODE) {
+    node = node.parentElement;
+  }
+  let lockedTarget = node && node.closest
+    ? node.closest(".comment-selection-target[data-comment-target-id]")
+    : null;
+  if (!lockedTarget && selectionRange) {
+    const lockedTargets = Array.from(document.querySelectorAll(".comment-selection-target[data-comment-target-id]"));
+    lockedTarget = lockedTargets.find((target) => {
+      try {
+        return selectionRange.intersectsNode(target);
+      } catch (error) {
+        return false;
+      }
+    }) || null;
+  }
+  if (!lockedTarget) {
+    return false;
+  }
+
+  const approved = window.confirm("Это обсуждаемый фрагмент. Разорвать обсуждение и отредактировать текст?");
+  if (!approved) {
+    return true;
+  }
+
+  const targetId = lockedTarget.dataset.commentTargetId || "";
+  const parent = lockedTarget.parentNode;
+  const nextSibling = lockedTarget.nextSibling;
+  await dissolveDiscussionTarget(targetId, "Разорвано обсуждение для редактирования");
+
+  if (parent instanceof HTMLElement || parent instanceof HTMLDivElement || parent instanceof HTMLParagraphElement) {
+    const range = document.createRange();
+    const focusNode = nextSibling && nextSibling.parentNode === parent ? nextSibling : parent;
+    range.setStart(focusNode, 0);
+    range.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(range);
+  }
+
+  if (inputType === "insertText" && data) {
+    document.execCommand("insertText", false, data);
+  }
+  return true;
+}
+
+window.handleProtectedCommentInput = handleProtectedCommentInput;
 
 function collectHistoryItems(pageItems, page, totalPages) {
   const footer = [];
@@ -860,6 +1248,7 @@ function collectHistoryItems(pageItems, page, totalPages) {
 }
 
 function ensureHistorySeed() {
+  return;
   if (commentHistoryItems.length) {
     return;
   }
@@ -871,6 +1260,8 @@ function ensureHistorySeed() {
 }
 
 function seedThreads(targets) {
+  commentInitDone = true;
+  return;
   if (commentInitDone || !targets.length) {
     return;
   }
@@ -956,6 +1347,18 @@ function hasThreadLikeFromCurrentActor(thread) {
   return Array.isArray(thread.likedBy) && thread.likedBy.some((actorId) => normalizeActorId(actorId) === currentActorId);
 }
 
+function hasCommentLikeFromCurrentActor(comment) {
+  const currentActorId = normalizeActorId(getCurrentCommentActor().id);
+  return Array.isArray(comment.likedBy) && comment.likedBy.some((actorId) => normalizeActorId(actorId) === currentActorId);
+}
+
+function getCommentLikeCount(comment) {
+  if (Array.isArray(comment.likedBy) && comment.likedBy.length) {
+    return comment.likedBy.length;
+  }
+  return Number(comment.likes) || 0;
+}
+
 function canManageComment(thread, comment) {
   const currentActorId = normalizeActorId(getCurrentCommentActor().id);
   if (isCommentAdmin(currentActorId)) {
@@ -998,13 +1401,37 @@ function formatHistoryStatus(item) {
 
 function highlightActiveTarget() {
   document.querySelectorAll(".comment-target--active").forEach((node) => node.classList.remove("comment-target--active"));
-  if (!commentOpenTargetId) {
+  [commentOpenTargetId, commentHoveredTargetId].filter(Boolean).forEach((targetId) => {
+    const target = document.querySelector(`[data-comment-target-id="${targetId}"]`);
+    if (target) {
+      target.classList.add("comment-target--active");
+    }
+  });
+}
+
+function setHoveredCommentTarget(targetId) {
+  if (commentHoverClearTimer) {
+    clearTimeout(commentHoverClearTimer);
+    commentHoverClearTimer = null;
+  }
+  const nextValue = targetId || "";
+  if (commentHoveredTargetId === nextValue) {
     return;
   }
-  const target = document.querySelector(`[data-comment-target-id="${commentOpenTargetId}"]`);
-  if (target) {
-    target.classList.add("comment-target--active");
+  commentHoveredTargetId = nextValue;
+  scheduleCommentAnchors();
+}
+
+function clearHoveredCommentTargetSoon(delayMs = 900) {
+  if (commentHoverClearTimer) {
+    clearTimeout(commentHoverClearTimer);
   }
+  commentHoverClearTimer = window.setTimeout(() => {
+    commentHoverClearTimer = null;
+    if (!commentOpenTargetId) {
+      setHoveredCommentTarget("");
+    }
+  }, delayMs);
 }
 
 function scheduleCommentAnchors() {
@@ -1019,10 +1446,11 @@ function renderCommentAnchors() {
   if (!commentAnchorLayer) {
     return;
   }
+  normalizeCommentTargetIds();
   const targets = getCommentableTargets();
   targets.forEach((target) => ensureTargetId(target));
-  seedThreads(targets);
   highlightActiveTarget();
+  commentSelectionDraft = buildSelectionCommentDraft();
   const canvasRect = editorCanvas.getBoundingClientRect();
   const panelVisible = commentsPanel.classList.contains("is-open");
   const reserve = panelVisible ? 392 : 84;
@@ -1030,16 +1458,26 @@ function renderCommentAnchors() {
 
   targets.forEach((target) => {
     const targetId = target.dataset.commentTargetId;
+    if (!targetId) {
+      return;
+    }
+    const thread = getThread(targetId);
+    if (!thread) {
+      return;
+    }
     const rect = target.getBoundingClientRect();
     if (!rect.width || !rect.height) {
       return;
     }
-    const thread = getThread(targetId);
     const count = thread ? (thread.badgeCount || thread.comments.length || 0) : 0;
     const tooltip = count > 0 ? `Показать ${count} комментария` : "Начать обсуждение";
     const top = rect.top - canvasRect.top + editorCanvas.scrollTop;
     const left = Math.max(18, Math.min(rect.right - canvasRect.left + 12, editorCanvas.clientWidth - reserve));
     const isActive = commentOpenTargetId === targetId;
+    const isHovered = commentHoveredTargetId === targetId;
+    if (!panelVisible && !isActive && !isHovered) {
+      return;
+    }
     html.push(
       `<div class="comment-anchor" style="top:${top}px;left:${left}px;">` +
         `${isActive ? `<span class="comment-anchor__line" style="height:${Math.max(rect.height, 52)}px"></span>` : ""}` +
@@ -1051,7 +1489,36 @@ function renderCommentAnchors() {
     );
   });
 
+  if (commentSelectionDraft && commentSelectionDraft.rect) {
+    const rect = commentSelectionDraft.rect;
+    const top = rect.top - canvasRect.top + editorCanvas.scrollTop;
+    const left = Math.max(18, Math.min(rect.right - canvasRect.left + 12, editorCanvas.clientWidth - reserve));
+    html.push(
+      `<div class="comment-anchor" style="top:${top}px;left:${left}px;">` +
+        `<button class="comment-anchor__button is-empty is-create" data-comment-create="selection" data-comment-tooltip="Начать обсуждение" type="button">` +
+          `<span class="comment-anchor__icon">${commentPlusSvg()}</span>` +
+        `</button>` +
+      `</div>`
+    );
+  }
+
   commentAnchorLayer.innerHTML = html.join("");
+}
+
+async function openDiscussionFromSelection() {
+  await ensureCommentPage();
+  const targetId = createTargetFromSelectionDraft();
+  if (!targetId) {
+    scheduleCommentAnchors();
+    return;
+  }
+
+  commentSelectionDraft = null;
+  scheduleCommentDocumentSave("Добавлено обсуждение", getCurrentCommentActor().id);
+  await openThreadForTarget(targetId, true);
+  requestAnimationFrame(() => {
+    commentsComposerInput.focus();
+  });
 }
 
 function renderReplyPill(thread) {
@@ -1143,8 +1610,8 @@ function renderCommentCard(thread, comment) {
   const canEdit = canManageComment(thread, comment);
   const canDelete = isRootComment ? canDeleteThread(thread) : canManageComment(thread, comment);
   const canOpenMenu = canEdit || canDelete;
-  const isLiked = hasThreadLikeFromCurrentActor(thread);
-  const likeCount = Array.isArray(thread.likedBy) ? thread.likedBy.length : (comment.likes || 0);
+  const isLiked = hasCommentLikeFromCurrentActor(comment);
+  const likeCount = getCommentLikeCount(comment);
   const replyPreview = getReplyPreview(thread, comment);
   const targetChip = renderTargetChip(thread, comment);
   const attachmentPreview = renderAttachmentPreview(comment.attachmentType, comment.attachmentLabel);
@@ -1239,6 +1706,7 @@ async function openThreadForTarget(targetId, instant = false) {
     return;
   }
   commentOpenTargetId = targetId;
+  commentHoveredTargetId = targetId;
   commentReplyTo = null;
   commentEditingId = null;
   commentMenuOpenId = null;
@@ -1294,6 +1762,7 @@ async function openThreadForTarget(targetId, instant = false) {
 
 function closeCommentsPanel() {
   commentOpenTargetId = null;
+  commentHoveredTargetId = "";
   commentReplyTo = null;
   commentEditingId = null;
   commentMenuOpenId = null;
@@ -1319,7 +1788,7 @@ function addHistorySnapshot(thread, statusText, focusComment = null) {
     statusText,
     preview: getTargetPreview(target).slice(0, 120),
     text: baseComment.text,
-    likes: Array.isArray(thread.likedBy) ? thread.likedBy.length : (baseComment.likes || 0),
+    likes: getCommentLikeCount(baseComment),
     thread: replies.map((item) => ({ userId: item.userId, date: item.date, text: item.text })),
     toggleLabel: formatThreadCommentsLabel(replies.length)
   });
@@ -1338,6 +1807,10 @@ async function toggleResolvedThread() {
       body: JSON.stringify({ resolved: nextResolved, author: getCurrentCommentActor().id })
     });
     await syncThreadsFromServer();
+    await createCommentVersion(
+      nextResolved ? "Обсуждение отмечено решенным" : "Обсуждение возвращено в работу",
+      getCurrentCommentActor().id
+    );
   } else {
     thread.status = nextResolved ? "resolved" : "open";
     if (thread.status === "resolved") {
@@ -1358,8 +1831,13 @@ async function addCommentToThread() {
     return;
   }
   const thread = getOrCreateThread(commentOpenTargetId);
+  const isNewDiscussion = !thread.comments.length;
+  const versionLabel = isNewDiscussion
+    ? "Добавлено обсуждение"
+    : (commentReplyTo ? "Добавлен ответ в обсуждении" : "Добавлен комментарий в обсуждении");
   let text = raw;
   const targetElement = document.querySelector(`[data-comment-target-id="${commentOpenTargetId}"]`);
+  const replyToMessageId = commentReplyTo || "";
   if (commentReplyTo) {
     const targetComment = getComment(thread, commentReplyTo);
     if (targetComment) {
@@ -1370,44 +1848,72 @@ async function addCommentToThread() {
     }
   }
 
-  if (commentPageId) {
-    if (!thread.comments.length) {
-      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`, {
-        method: "POST",
-        body: JSON.stringify({
-          author: getCurrentCommentActor().id,
-          body: text,
-          selectionLabel: getTargetPreview(targetElement),
-          targetId: commentOpenTargetId,
-          targetType: inferTargetType(targetElement),
-          targetPreview: getTargetPreview(targetElement)
-        })
-      });
-    } else {
-      await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/replies`, {
-        method: "POST",
-        body: JSON.stringify({
-          author: getCurrentCommentActor().id,
-          body: text,
-          replyToMessageId: commentReplyTo || ""
-        })
-      });
-    }
-    await syncThreadsFromServer();
-  } else {
-    const now = new Date();
-    const dateLabel = now.toLocaleDateString("ru-RU") + " в " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
-    thread.comments.push(createComment(`comment-${Date.now()}`, getCurrentCommentActor().id, dateLabel, text));
-    thread.badgeCount = Math.max(thread.badgeCount + 1, thread.comments.length);
-    thread.demoState = "ready";
-    thread.status = "open";
-  }
-
   commentReplyTo = null;
   commentEditingId = null;
   commentMenuOpenId = null;
   commentsComposerInput.value = "";
-  commentPanelMode = getOrCreateThread(commentOpenTargetId).comments.length ? "list" : "empty";
+  updateComposerState();
+  const now = new Date();
+  const dateLabel = now.toLocaleDateString("ru-RU") + " в " + now.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+  const optimisticCommentId = `comment-pending-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`;
+  const optimisticComment = createComment(
+    optimisticCommentId,
+    getCurrentCommentActor().id,
+    dateLabel,
+    text,
+    {
+      likedBy: [],
+      likes: 0,
+      replyTo: replyToMessageId || null,
+      targetPreview: getTargetPreview(targetElement),
+      targetType: inferTargetType(targetElement)
+    }
+  );
+  thread.comments.push(optimisticComment);
+  thread.badgeCount = Math.max(thread.badgeCount + 1, thread.comments.length);
+  thread.demoState = "ready";
+  thread.status = "open";
+
+  if (commentPageId) {
+    const request = isNewDiscussion
+      ? commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments`, {
+          method: "POST",
+          body: JSON.stringify({
+            author: getCurrentCommentActor().id,
+            body: text,
+            selectionLabel: getTargetPreview(targetElement),
+            targetId: commentOpenTargetId,
+            targetType: inferTargetType(targetElement),
+            targetPreview: getTargetPreview(targetElement)
+          })
+        })
+      : commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/replies`, {
+          method: "POST",
+          body: JSON.stringify({
+            author: getCurrentCommentActor().id,
+            body: text,
+            replyToMessageId
+          })
+        });
+
+    request.then(() => syncThreadsFromServer(true))
+      .then(() => {
+        commentPanelMode = getOrCreateThread(commentOpenTargetId).comments.length ? "list" : "empty";
+        renderCommentsPanel();
+        scheduleCommentAnchors();
+      })
+      .catch((error) => {
+        thread.comments = thread.comments.filter((item) => item.id !== optimisticCommentId);
+        thread.badgeCount = Math.max(thread.comments.length, 0);
+        commentPanelMode = thread.comments.length ? "list" : "empty";
+        renderCommentsPanel();
+        scheduleCommentAnchors();
+        console.warn("Failed to refresh thread after comment send", error);
+      });
+    createCommentVersion(versionLabel, getCurrentCommentActor().id).catch((error) => console.warn("Failed to create comment version", error));
+  }
+
+  commentPanelMode = thread.comments.length ? "list" : "empty";
   renderCommentsPanel();
   scheduleCommentAnchors();
   requestAnimationFrame(() => {
@@ -1500,7 +2006,7 @@ async function openHistoryModal(mode = "list") {
   commentHistoryMode = mode;
   if (mode === "list" && commentPageId) {
     try {
-      await syncThreadsFromServer();
+      await loadCommentHistoryFromServer(true);
     } catch (error) {
       console.warn("Failed to load comment history", error);
       commentHistoryMode = "error";
@@ -1528,17 +2034,38 @@ function initializeCommentsSystem() {
 
   if (commentsActorSelect) {
     commentsActorSelect.addEventListener("change", () => {
-      currentCommentActorId = commentsActorSelect.value || "ivan";
-      window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
-      renderActorPicker();
-      renderCommentsPanel();
+      setCurrentCommentActor(commentsActorSelect.value || "ivan");
+    });
+  }
+
+  if (accountTrigger && accountSwitcher) {
+    accountTrigger.addEventListener("click", (event) => {
+      event.stopPropagation();
+      accountSwitcher.classList.toggle("is-open");
+    });
+  }
+
+  if (accountMenu) {
+    accountMenu.addEventListener("click", (event) => {
+      const userButton = event.target.closest("[data-account-user]");
+      if (userButton) {
+        setCurrentCommentActor(userButton.dataset.accountUser || "ivan");
+        accountSwitcher.classList.remove("is-open");
+        return;
+      }
+      const actionButton = event.target.closest("[data-account-action='logout']");
+      if (actionButton) {
+        window.localStorage.removeItem(commentActorStorageKey);
+        setCurrentCommentActor("viewer", false);
+        accountSwitcher.classList.remove("is-open");
+      }
     });
   }
 
   if (commentObserver) {
     commentObserver.disconnect();
   }
-  commentObserver = new MutationObserver(() => {
+  commentObserver = new MutationObserver((mutations) => {
     if (commentOpenTargetId) {
       const thread = getThread(commentOpenTargetId);
       if (thread) {
@@ -1546,17 +2073,65 @@ function initializeCommentsSystem() {
         thread.preview = getTargetPreview(target);
       }
     }
+    const mutationLabel = classifyMutationLabel(mutations);
+    if (mutationLabel) {
+      scheduleCommentDocumentSave(mutationLabel, getCurrentCommentActor().id);
+    }
     scheduleCommentAnchors();
+    scheduleOrphanThreadCleanup();
     renderCommentsPanel();
   });
   commentObserver.observe(bodyEditor, { childList: true, subtree: true, characterData: true });
 
   commentAnchorLayer.addEventListener("click", (event) => {
+    const createButton = event.target.closest("[data-comment-create='selection']");
+    if (createButton) {
+      openDiscussionFromSelection().catch((error) => console.warn("Failed to create discussion from selection", error));
+      return;
+    }
     const button = event.target.closest("[data-comment-target]");
     if (!button) {
       return;
     }
     openThreadForTarget(button.dataset.commentTarget, true);
+  });
+
+  commentAnchorLayer.addEventListener("mouseover", (event) => {
+    const button = event.target && event.target.closest
+      ? event.target.closest("[data-comment-target]")
+      : null;
+    if (button) {
+      setHoveredCommentTarget(button.dataset.commentTarget || "");
+      return;
+    }
+    const createButton = event.target && event.target.closest
+      ? event.target.closest("[data-comment-create='selection']")
+      : null;
+    if (createButton && commentSelectionDraft) {
+      if (commentHoverClearTimer) {
+        clearTimeout(commentHoverClearTimer);
+        commentHoverClearTimer = null;
+      }
+    }
+  });
+
+  commentAnchorLayer.addEventListener("mouseleave", () => {
+    clearHoveredCommentTargetSoon();
+  });
+
+  bodyEditor.addEventListener("mouseover", (event) => {
+    const target = event.target && event.target.closest
+      ? event.target.closest("[data-comment-target-id]")
+      : null;
+    if (target) {
+      setHoveredCommentTarget(target.dataset.commentTargetId || "");
+      return;
+    }
+    clearHoveredCommentTargetSoon();
+  });
+
+  bodyEditor.addEventListener("mouseleave", () => {
+    clearHoveredCommentTargetSoon();
   });
 
   commentsCloseButton.addEventListener("click", closeCommentsPanel);
@@ -1623,30 +2198,48 @@ function initializeCommentsSystem() {
     if (!actionTarget || !commentOpenTargetId) {
       return;
     }
+    event.preventDefault();
+    event.stopPropagation();
     const thread = getOrCreateThread(commentOpenTargetId);
     const commentId = actionTarget.dataset.commentId;
     const comment = getComment(thread, commentId);
     const action = actionTarget.dataset.commentAction;
 
     if (action === "like" && comment) {
+      const actorId = normalizeActorId(getCurrentCommentActor().id);
+      comment.likedBy = Array.isArray(comment.likedBy) ? [...comment.likedBy] : [];
+      const existingIndex = comment.likedBy.findIndex((item) => normalizeActorId(item) === actorId);
+      if (existingIndex === -1) {
+        comment.likedBy.push(actorId);
+      } else {
+        comment.likedBy.splice(existingIndex, 1);
+      }
+      comment.likes = comment.likedBy.length;
+      renderCommentsPanel();
       if (commentPageId) {
         commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/like`, {
           method: "POST",
-          body: JSON.stringify({ author: getCurrentCommentActor().id })
-        }).then(async () => {
-          await syncThreadsFromServer();
+          body: JSON.stringify({ author: getCurrentCommentActor().id, messageId: comment.id })
+        }).then(() => syncThreadsFromServer())
+        .then(() => {
           renderCommentsPanel();
           scheduleCommentAnchors();
-        }).catch((error) => console.warn("Failed to toggle like", error));
+          createCommentVersion("Изменена реакция в обсуждении", getCurrentCommentActor().id).catch((error) => console.warn("Failed to create like version", error));
+        }).catch((error) => {
+          const rollbackIndex = comment.likedBy.findIndex((item) => normalizeActorId(item) === actorId);
+          if (existingIndex === -1) {
+            if (rollbackIndex !== -1) {
+              comment.likedBy.splice(rollbackIndex, 1);
+            }
+          } else if (rollbackIndex === -1) {
+            comment.likedBy.push(actorId);
+          }
+          comment.likes = comment.likedBy.length;
+          renderCommentsPanel();
+          scheduleCommentAnchors();
+          console.warn("Failed to toggle like", error);
+        });
       } else {
-        const actorId = normalizeActorId(getCurrentCommentActor().id);
-        thread.likedBy = Array.isArray(thread.likedBy) ? thread.likedBy : [];
-        const existingIndex = thread.likedBy.findIndex((item) => normalizeActorId(item) === actorId);
-        if (existingIndex === -1) {
-          thread.likedBy.push(actorId);
-        } else {
-          thread.likedBy.splice(existingIndex, 1);
-        }
         renderCommentsPanel();
       }
       return;
@@ -1677,6 +2270,22 @@ function initializeCommentsSystem() {
     }
     if (action === "delete" && comment) {
       const isRootMessage = thread.comments[0] && thread.comments[0].id === comment.id;
+      const targetId = commentOpenTargetId;
+      const previousThread = cloneThreadState(thread);
+      commentMenuOpenId = null;
+      commentEditingId = null;
+      commentReplyTo = null;
+
+      if (isRootMessage) {
+        commentThreads.delete(targetId);
+        closeCommentsPanel();
+      } else {
+        thread.comments = thread.comments.filter((item) => item.id !== comment.id);
+        thread.badgeCount = Math.max(thread.comments.length, 0);
+        commentPanelMode = thread.comments.length ? "list" : "empty";
+        renderCommentsPanel();
+      }
+      scheduleCommentAnchors();
       const request = commentPageId
         ? (
             isRootMessage
@@ -1689,23 +2298,30 @@ function initializeCommentsSystem() {
                   body: JSON.stringify({ author: getCurrentCommentActor().id })
                 })
           )
-        : Promise.resolve().then(() => {
-            thread.comments = thread.comments.filter((item) => item.id !== comment.id);
-            thread.badgeCount = Math.max(thread.comments.length, thread.badgeCount ? thread.badgeCount - 1 : 0);
-            addHistorySnapshot(thread, "Удалена " + new Date().toLocaleDateString("ru-RU") + " в " + new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }), comment);
-          });
-      request.then(async () => {
+        : Promise.resolve();
+      request.then(() => {
         if (commentPageId) {
-          await syncThreadsFromServer();
+          syncThreadsFromServer(true).then(() => {
+            if (commentOpenTargetId === targetId) {
+              const nextThread = getThread(targetId);
+              commentPanelMode = nextThread && nextThread.comments.length ? "list" : "empty";
+              renderCommentsPanel();
+            }
+            scheduleCommentAnchors();
+          }).catch((error) => console.warn("Failed to sync threads after delete", error));
+          createCommentVersion(
+            isRootMessage ? "Удалено обсуждение" : "Удален комментарий",
+            getCurrentCommentActor().id
+          ).catch((error) => console.warn("Failed to create delete version", error));
         }
-        commentMenuOpenId = null;
-        commentEditingId = null;
-        commentReplyTo = null;
-        const nextThread = getThread(commentOpenTargetId);
-        commentPanelMode = nextThread && nextThread.comments.length ? "list" : "empty";
+      }).catch((error) => {
+        commentThreads.set(targetId, previousThread);
+        commentOpenTargetId = targetId;
+        commentPanelMode = previousThread.comments.length ? "list" : "empty";
         renderCommentsPanel();
         scheduleCommentAnchors();
-      }).catch((error) => console.warn("Failed to delete comment", error));
+        console.warn("Failed to delete comment", error);
+      });
       return;
     }
     if (action === "save-edit" && comment) {
@@ -1714,21 +2330,32 @@ function initializeCommentsSystem() {
       if (!nextValue) {
         return;
       }
+      const previousText = comment.text;
+      comment.text = nextValue;
+      commentEditingId = null;
+      commentMenuOpenId = null;
+      renderCommentsPanel();
       const request = commentPageId
         ? commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/messages/${encodeURIComponent(comment.id)}`, {
             method: "PUT",
             body: JSON.stringify({ body: nextValue, author: getCurrentCommentActor().id })
           })
-        : Promise.resolve().then(() => {
-            comment.text = nextValue;
-          });
-      request.then(async () => {
+        : Promise.resolve();
+      request.then(() => {
         if (commentPageId) {
-          await syncThreadsFromServer();
+          syncThreadsFromServer(true).then(() => {
+            renderCommentsPanel();
+            scheduleCommentAnchors();
+          }).catch((error) => console.warn("Failed to sync threads after edit", error));
+          createCommentVersion("Изменен комментарий", getCurrentCommentActor().id)
+            .catch((error) => console.warn("Failed to create edit version", error));
         }
-        commentEditingId = null;
+      }).catch((error) => {
+        comment.text = previousText;
+        commentEditingId = comment.id;
         renderCommentsPanel();
-      }).catch((error) => console.warn("Failed to save comment edit", error));
+        console.warn("Failed to save comment edit", error);
+      });
     }
   });
 
@@ -1788,6 +2415,9 @@ function initializeCommentsSystem() {
       commentsTopDropdown.classList.remove("is-open");
       commentsAccessPopup.classList.remove("is-open");
     }
+    if (accountSwitcher && !accountSwitcher.contains(event.target)) {
+      accountSwitcher.classList.remove("is-open");
+    }
     if (!commentsPanel.contains(event.target)) {
       commentMenuOpenId = null;
       if (commentEditingId && !commentsPanel.contains(event.target)) {
@@ -1803,9 +2433,9 @@ function initializeCommentsSystem() {
   bodyEditor.addEventListener("input", scheduleCommentAnchors);
   bodyEditor.addEventListener("keyup", scheduleCommentAnchors);
   bodyEditor.addEventListener("mouseup", scheduleCommentAnchors);
-  bodyEditor.addEventListener("input", scheduleCommentDocumentSave);
-  titleEditor.addEventListener("input", scheduleCommentDocumentSave);
-  titleEditor.addEventListener("keyup", scheduleCommentDocumentSave);
+  bodyEditor.addEventListener("input", () => scheduleCommentDocumentSave("Изменение текста", getCurrentCommentActor().id));
+  titleEditor.addEventListener("input", () => scheduleCommentDocumentSave("Изменен заголовок", getCurrentCommentActor().id));
+  titleEditor.addEventListener("keyup", () => scheduleCommentDocumentSave("Изменен заголовок", getCurrentCommentActor().id));
 
   document.querySelectorAll('input[name="commentAccess"]').forEach((input) => {
     input.addEventListener("change", async () => {
@@ -1817,6 +2447,7 @@ function initializeCommentsSystem() {
             method: "PUT",
             body: JSON.stringify({ mode: nextMode })
           });
+          await createCommentVersion("Изменен доступ к комментариям", getCurrentCommentActor().id);
         } catch (error) {
           console.warn("Failed to save comment access", error);
         }
@@ -1828,15 +2459,6 @@ function initializeCommentsSystem() {
   window.setTimeout(scheduleCommentAnchors, 980);
   window.setTimeout(scheduleCommentAnchors, 1400);
   ensureCommentSocket();
-  commentSyncTimer = window.setInterval(() => {
-    if (!commentPageId || !commentsPanel.classList.contains("is-open")) {
-      return;
-    }
-    syncThreadsFromServer().then(() => {
-      renderCommentsPanel();
-      scheduleCommentAnchors();
-    }).catch(() => {});
-  }, 6000);
   window.addEventListener("beforeunload", () => {
     if (commentSocketReconnectTimer) {
       clearTimeout(commentSocketReconnectTimer);

@@ -29,6 +29,10 @@ public:
     [[nodiscard]] utils::VoidExpected saveThread(const models::CommentThread& thread);
     [[nodiscard]] utils::Expected<std::string> getCommentAccess(const std::string& pageId) const;
     [[nodiscard]] utils::VoidExpected saveCommentAccess(const std::string& pageId, const std::string& accessMode);
+    [[nodiscard]] utils::VoidExpected restoreCommentSnapshot(
+        const std::string& pageId,
+        const std::vector<models::CommentThread>& threads,
+        const std::string& accessMode);
 
     [[nodiscard]] utils::VoidExpected deletePageData(const std::string& pageId);
 

@@ -203,15 +203,29 @@ void handlesVersionsAndCommentsFlow() {
     wikilive::tests::expect(commentResponse.body.find("\"selectionLabel\":\"Paragraph 1\"") != std::string::npos, "selection label should be persisted");
     wikilive::tests::expect(commentResponse.body.find("\"targetId\":\"block-1\"") != std::string::npos, "target id should be persisted");
 
+    const auto duplicateTargetResponse = router.createComment(
+        "page-1",
+        R"({"author":"anton","body":"Duplicate target should not create another thread","selectionLabel":"Paragraph 1","targetId":"block-1","targetType":"paragraph","targetPreview":"Paragraph 1"})");
+    wikilive::tests::expectEqual(duplicateTargetResponse.statusCode, 201, "duplicate target should still return a thread payload");
+
     const auto commentsResponse = router.listComments("page-1");
     wikilive::tests::expectEqual(commentsResponse.statusCode, 200, "comments should return 200");
     wikilive::tests::expect(commentsResponse.body.find("\"Needs review\"") != std::string::npos, "comment list should contain body");
+    wikilive::tests::expect(
+        commentsResponse.body.find("Duplicate target should not create another thread") == std::string::npos,
+        "duplicate target should not create a second active thread");
 
     const auto threadIdStart = commentsResponse.body.find("\"threadId\":\"");
     wikilive::tests::expect(threadIdStart != std::string::npos, "threadId should be present");
     const auto threadValueStart = threadIdStart + std::string("\"threadId\":\"").size();
     const auto threadValueEnd = commentsResponse.body.find('"', threadValueStart);
     const auto threadId = commentsResponse.body.substr(threadValueStart, threadValueEnd - threadValueStart);
+
+    const auto rootMessageIdStart = commentsResponse.body.find("\"messageId\":\"");
+    wikilive::tests::expect(rootMessageIdStart != std::string::npos, "root messageId should be present");
+    const auto rootMessageValueStart = rootMessageIdStart + std::string("\"messageId\":\"").size();
+    const auto rootMessageValueEnd = commentsResponse.body.find('"', rootMessageValueStart);
+    const auto rootMessageId = commentsResponse.body.substr(rootMessageValueStart, rootMessageValueEnd - rootMessageValueStart);
 
     const auto replyResponse = router.replyToComment("page-1", threadId, R"({"author":"ivan","body":"Working on it"})");
     wikilive::tests::expectEqual(replyResponse.statusCode, 200, "reply should return 200");
@@ -231,11 +245,11 @@ void handlesVersionsAndCommentsFlow() {
         router.updateCommentMessage("page-1", threadId, messageId, R"({"author":"anna","body":"Nope"})");
     wikilive::tests::expectEqual(forbiddenEditResponse.statusCode, 403, "foreign author edit should be rejected");
 
-    const auto likeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
+    const auto likeResponse = router.toggleCommentLike("page-1", threadId, std::string("{\"author\":\"tester\",\"messageId\":\"") + rootMessageId + "\"}");
     wikilive::tests::expectEqual(likeResponse.statusCode, 200, "like should return 200");
     wikilive::tests::expect(likeResponse.body.find("\"likeCount\":1") != std::string::npos, "like count should increase");
 
-    const auto unlikeResponse = router.toggleCommentLike("page-1", threadId, R"({"author":"tester"})");
+    const auto unlikeResponse = router.toggleCommentLike("page-1", threadId, std::string("{\"author\":\"tester\",\"messageId\":\"") + rootMessageId + "\"}");
     wikilive::tests::expectEqual(unlikeResponse.statusCode, 200, "second like should toggle off");
     wikilive::tests::expect(unlikeResponse.body.find("\"likeCount\":0") != std::string::npos, "like count should drop back to zero");
 
