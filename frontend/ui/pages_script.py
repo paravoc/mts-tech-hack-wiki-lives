@@ -177,6 +177,130 @@ def pages_script() -> str:
               color: #8b93a4;
             }
 
+            
+            .pages-switcher__footer {
+              margin-top: 10px;
+              display: flex;
+              gap: 8px;
+            }
+
+            .pages-switcher__action {
+              flex: 1;
+              border: 1px solid #e3e7ef;
+              border-radius: 10px;
+              background: #ffffff;
+              color: #4a5568;
+              padding: 8px 10px;
+              font-size: 12px;
+              font-weight: 700;
+            }
+
+            .pages-switcher__action:hover {
+              background: #f7f9fc;
+              border-color: #d6dce7;
+            }
+
+            .pages-switcher__action--danger {
+              background: #fff4f6;
+              color: #ff0032;
+              border-color: #ffd2dc;
+            }
+
+            .page-access-panel {
+              position: fixed;
+              top: 96px;
+              right: 30px;
+              width: 300px;
+              padding: 16px;
+              border-radius: 16px;
+              border: 1px solid #e3e7ef;
+              background: #ffffff;
+              box-shadow: 0 18px 36px rgba(17, 24, 39, 0.14);
+              opacity: 0;
+              visibility: hidden;
+              transform: translateY(-6px);
+              transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+              z-index: 46;
+            }
+
+            .page-access-panel.is-open {
+              opacity: 1;
+              visibility: visible;
+              transform: translateY(0);
+            }
+
+            .page-access-panel__head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+            }
+
+            .page-access-panel__title {
+              font-size: 14px;
+              font-weight: 800;
+              color: #252b36;
+            }
+
+            .page-access-panel__close {
+              width: 26px;
+              height: 26px;
+              border: 0;
+              border-radius: 999px;
+              background: #f4f6fb;
+              color: #6b7280;
+            }
+
+            .page-access-panel__subtitle {
+              margin-top: 6px;
+              font-size: 12px;
+              color: #8b93a4;
+            }
+
+            .page-access-panel__list {
+              margin-top: 12px;
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              max-height: 220px;
+              overflow: auto;
+            }
+
+            .page-access-item {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 6px 8px;
+              border-radius: 10px;
+              background: #f7f9fc;
+            }
+
+            .page-access-item input {
+              margin: 0;
+              accent-color: #ff0032;
+            }
+
+            .page-access-item__meta {
+              font-size: 11px;
+              color: #8b93a4;
+            }
+
+            .page-access-panel__actions {
+              margin-top: 12px;
+              display: flex;
+              justify-content: flex-end;
+            }
+
+            .page-access-panel__save {
+              border: 0;
+              border-radius: 10px;
+              background: #ff0032;
+              color: #ffffff;
+              padding: 8px 12px;
+              font-size: 12px;
+              font-weight: 700;
+            }
+
             .pages-switcher__empty {
               padding: 12px 8px;
               border-radius: 12px;
@@ -306,7 +430,7 @@ def pages_script() -> str:
           return (commentPages || []).filter((page) => {
             const ownerId = normalizeActorId(page.ownerId || "viewer");
             const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
-            return ownerId === normalizedActorId || sharedWith.includes(normalizedActorId) || sharedWith.includes("*") || true;
+            return ownerId === normalizedActorId || sharedWith.includes(normalizedActorId) || sharedWith.includes("*");
           });
         }
 
@@ -869,7 +993,68 @@ def pages_script() -> str:
           }).join("");
         };
 
-        function initializePagesWorkspace() {
+        
+        const pageAccessButton = document.getElementById("pageAccessButton");
+        const pageDeleteButton = document.getElementById("pageDeleteButton");
+        const pageAccessPanel = document.getElementById("pageAccessPanel");
+        const pageAccessClose = document.getElementById("pageAccessClose");
+        const pageAccessList = document.getElementById("pageAccessList");
+        const pageAccessSave = document.getElementById("pageAccessSave");
+
+        const pageAccessUsers = [
+          { id: "ivan", name: "???? ??????", role: "?????", team: "WikiLive" },
+          { id: "sergei", name: "?????? ??????", role: "????????", team: "WikiLive" },
+          { id: "anton", name: "????? ????????", role: "PM", team: "Release" },
+          { id: "anna", name: "???? ??????", role: "Designer", team: "Design" },
+          { id: "maxim", name: "?????? ??????", role: "Backend", team: "Platform" },
+        ];
+
+        function getCurrentPage() {
+          return (commentPages || []).find((page) => page.pageId === commentPageId) || null;
+        }
+
+        function renderPageAccessPanel() {
+          if (!pageAccessList) {
+            return;
+          }
+          const page = getCurrentPage();
+          if (!page) {
+            pageAccessList.innerHTML = '<div class="page-access-item">???????? ?? ???????</div>';
+            return;
+          }
+          const ownerId = normalizeActorId(page.ownerId || "viewer");
+          const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
+          pageAccessList.innerHTML = pageAccessUsers.map((user) => {
+            const normalized = normalizeActorId(user.id);
+            const isOwner = normalized === ownerId;
+            const isChecked = isOwner || sharedWith.includes(normalized) || sharedWith.includes("*");
+            return `
+              <label class="page-access-item">
+                <input type="checkbox" value="${normalized}" ${isChecked ? "checked" : ""} ${isOwner ? "disabled" : ""} />
+                <span>
+                  <div>${escapeHtml(user.name)}</div>
+                  <div class="page-access-item__meta">${escapeHtml(user.role)} ? ${escapeHtml(user.team)}</div>
+                </span>
+              </label>
+            `;
+          }).join("");
+        }
+
+        function openPageAccessPanel() {
+          if (!pageAccessPanel) {
+            return;
+          }
+          renderPageAccessPanel();
+          pageAccessPanel.classList.add("is-open");
+        }
+
+        function closePageAccessPanel() {
+          if (pageAccessPanel) {
+            pageAccessPanel.classList.remove("is-open");
+          }
+        }
+
+function initializePagesWorkspace() {
           const newPageButton = document.getElementById("newPageButton");
           const docHeaderTitleButton = document.getElementById("docHeaderTitleButton");
 
@@ -881,6 +1066,97 @@ def pages_script() -> str:
             pagesTrigger.addEventListener("click", (event) => {
               event.stopPropagation();
               pagesSwitcher.classList.toggle("is-open");
+            });
+          }
+
+          if (pageAccessButton) {
+            pageAccessButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openPageAccessPanel();
+            });
+          }
+
+          if (pageAccessClose) {
+            pageAccessClose.addEventListener("click", closePageAccessPanel);
+          }
+
+          if (pageAccessSave) {
+            pageAccessSave.addEventListener("click", async () => {
+              const page = getCurrentPage();
+              if (!page) {
+                closePageAccessPanel();
+                return;
+              }
+              const ownerId = normalizeActorId(page.ownerId || "viewer");
+              const selected = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"]'))
+                .filter((input) => input.checked)
+                .map((input) => normalizeActorId(input.value))
+                .filter((value) => value && value !== ownerId);
+              const payload = {
+                ...serializeEditorDocument(),
+                ownerId: page.ownerId || normalizeActorId(currentCommentActorId || "viewer"),
+                ownerName: page.ownerName || getCurrentCommentActor().name || "?????",
+                sharedWith: selected,
+                versionLabel: "???????? ??????",
+                versionAuthor: getCurrentCommentActor().id || "viewer",
+              };
+              try {
+                const response = await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`, {
+                  method: "PUT",
+                  body: JSON.stringify(payload),
+                  timeoutMs: 20000,
+                });
+                const updated = response.item || response;
+                if (updated && updated.pageId) {
+                  upsertCommentPage(updated);
+                  syncCurrentPageSnapshot({ sharedWith: selected });
+                  renderPagesSwitcher();
+                }
+              } catch (error) {
+                console.warn("Failed to save page access", error);
+              }
+              closePageAccessPanel();
+            });
+          }
+
+          document.addEventListener("click", (event) => {
+            if (pageAccessPanel && pageAccessPanel.classList.contains("is-open")) {
+              if (!pageAccessPanel.contains(event.target) && !pageAccessButton.contains(event.target)) {
+                closePageAccessPanel();
+              }
+            }
+          });
+
+          if (pageDeleteButton) {
+            pageDeleteButton.addEventListener("click", async (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const page = getCurrentPage();
+              if (!page) {
+                return;
+              }
+              const ownerId = normalizeActorId(page.ownerId || "viewer");
+              const actorId = normalizeActorId(currentCommentActorId || "viewer");
+              if (ownerId !== actorId && !isCommentAdmin(actorId)) {
+                return;
+              }
+              if (!window.confirm("??????? ?????????")) {
+                return;
+              }
+              try {
+                await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`, {
+                  method: "DELETE",
+                  timeoutMs: 15000,
+                });
+                commentPages = (commentPages || []).filter((item) => item.pageId !== page.pageId);
+                renderPagesSwitcher();
+                closePagesSwitcher();
+                closePageAccessPanel();
+                await ensureActorPage(true);
+              } catch (error) {
+                console.warn("Failed to delete page", error);
+              }
             });
           }
 

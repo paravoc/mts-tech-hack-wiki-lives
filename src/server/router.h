@@ -65,6 +65,10 @@ public:
         const std::string& pageId,
         const std::string& threadId,
         const std::string& payload);
+    [[nodiscard]] RouteResponse pauseComment(
+        const std::string& pageId,
+        const std::string& threadId,
+        const std::string& payload);
     [[nodiscard]] RouteResponse toggleCommentLike(
         const std::string& pageId,
         const std::string& threadId,
@@ -100,6 +104,10 @@ private:
         const std::string& payload,
         const std::string& key,
         bool required = true) const;
+    [[nodiscard]] utils::Expected<std::vector<std::string>> extractJsonStringArray(
+        const std::string& payload,
+        const std::string& key,
+        bool required = false) const;
     [[nodiscard]] std::string aiSuggestInsertResultToJson(const ai::AiSuggestInsertResult& result) const;
 
     services::PageService& pageService_;

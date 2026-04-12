@@ -104,6 +104,7 @@ utils::Expected<models::Page> PageService::updatePage(const std::string& pageId,
     if (!validDraft->ownerName.empty()) {
         page.ownerName = validDraft->ownerName;
     }
+    page.sharedWith = validDraft->sharedWith;
 
     const auto saveResult = storage_.savePage(page);
     if (!saveResult) {

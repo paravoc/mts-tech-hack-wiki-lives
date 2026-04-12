@@ -28,6 +28,9 @@ struct CommentThread {
     bool resolved = false;
     std::string resolvedAt;
     std::string resolvedBy;
+    bool paused = false;
+    std::string pausedAt;
+    std::string pausedBy;
     bool deleted = false;
     std::string deletedAt;
     std::string deletedBy;

@@ -51,6 +51,17 @@ def _account_switcher_markup() -> str:
             </button>
           </div>
         </div>
+        <div class="page-access-panel" id="pageAccessPanel">
+          <div class="page-access-panel__head">
+            <div class="page-access-panel__title">?????? ? ????????</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+          </div>
+          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__list" id="pageAccessList"></div>
+          <div class="page-access-panel__actions">
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
+          </div>
+        </div>
         """
     ).strip()
 
@@ -69,6 +80,21 @@ def _pages_switcher_markup() -> str:
               <button class="pages-switcher__create" id="pagesCreateButton" type="button">+ Новая</button>
             </div>
             <div class="pages-switcher__list" id="pagesList"></div>
+            <div class="pages-switcher__footer">
+              <button class="pages-switcher__action" id="pageAccessButton" type="button">??????</button>
+              <button class="pages-switcher__action pages-switcher__action--danger" id="pageDeleteButton" type="button">???????</button>
+            </div>
+          </div>
+        </div>
+        <div class="page-access-panel" id="pageAccessPanel">
+          <div class="page-access-panel__head">
+            <div class="page-access-panel__title">?????? ? ????????</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+          </div>
+          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__list" id="pageAccessList"></div>
+          <div class="page-access-panel__actions">
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
           </div>
         </div>
         """
@@ -81,6 +107,17 @@ def _presence_markup() -> str:
         <div class="page-presence is-empty" id="pagePresence">
           <div class="page-presence__avatars" id="pagePresenceAvatars"></div>
           <div class="page-presence__count" id="pagePresenceCount">0</div>
+        </div>
+        <div class="page-access-panel" id="pageAccessPanel">
+          <div class="page-access-panel__head">
+            <div class="page-access-panel__title">?????? ? ????????</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+          </div>
+          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__list" id="pageAccessList"></div>
+          <div class="page-access-panel__actions">
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
+          </div>
         </div>
         """
     ).strip()

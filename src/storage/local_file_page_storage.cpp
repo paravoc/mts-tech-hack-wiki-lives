@@ -20,6 +20,7 @@ nlohmann::json pageToJson(const models::Page& page) {
         {"updatedAt", page.updatedAt},
         {"ownerId", page.ownerId},
         {"ownerName", page.ownerName},
+        {"sharedWith", page.sharedWith},
     };
 }
 
@@ -33,6 +34,7 @@ models::Page pageFromJson(const nlohmann::json& value) {
         .updatedAt = value.value("updatedAt", std::string{}),
         .ownerId = value.value("ownerId", std::string{}),
         .ownerName = value.value("ownerName", std::string{}),
+        .sharedWith = value.value("sharedWith", std::vector<std::string>{}),
         .renderedHtml = {},
     };
 }

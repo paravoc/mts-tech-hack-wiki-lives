@@ -9,6 +9,7 @@ const commentsPanelLoading = document.getElementById("commentsPanelLoading");
 const commentsPanelError = document.getElementById("commentsPanelError");
 const commentsRetryButton = document.getElementById("commentsRetryButton");
 const commentsCloseButton = document.getElementById("commentsCloseButton");
+const commentsPauseButton = document.getElementById("commentsPauseButton");
 const commentsResolveButton = document.getElementById("commentsResolveButton");
 const commentsComposerInput = document.getElementById("commentsComposerInput");
 const commentsComposerSend = document.getElementById("commentsComposerSend");
@@ -29,6 +30,8 @@ const commentsHistoryModal = document.getElementById("commentsHistoryModal");
 const commentsHistoryBody = document.getElementById("commentsHistoryBody");
 const commentsHistoryFooter = document.getElementById("commentsHistoryFooter");
 const commentsHistoryClose = document.getElementById("commentsHistoryClose");
+const commentsHistoryPageSelect = document.getElementById("commentsHistoryPageSelect");
+const commentsHistoryThreadSelect = document.getElementById("commentsHistoryThreadSelect");
 const accountSwitcher = document.getElementById("accountSwitcher");
 const accountTrigger = document.getElementById("accountTrigger");
 const accountMenu = document.getElementById("accountMenu");
@@ -117,6 +120,10 @@ let commentHistoryItems = [];
 let commentHistoryExpanded = new Set();
 let commentHistoryPage = 1;
 let commentHistoryMode = "list";
+let commentHistorySelectedPageId = "";
+let commentHistorySelectedThreadId = "";
+let commentHistoryThreadOptions = [];
+let commentHistoryLoadedPageId = "";
 let commentInitDone = false;
 let commentOpenTargetId = null;
 let commentPanelMode = "empty";
@@ -419,9 +426,32 @@ function escapeHtml(value) {
   return String(value || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\\"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+function resolveCommentPageLink(label) {
+  const normalizedLabel = normalizePreviewText(label || "");
+  if (!normalizedLabel) {
+    return "";
+  }
+  const page = (commentPages || []).find((item) => normalizePreviewText(item.title || "") === normalizedLabel);
+  if (!page || !page.pageId) {
+    return "";
+  }
+  return `wikilive://page/${encodeURIComponent(page.pageId)}`;
+}
+
 function formatCommentText(text) {
-  const safe = escapeHtml(text).replace(/\\n/g, "<br>");
-  return safe.replace(/(^|\\s)(@[a-zA-Zа-яА-Я0-9._-]+)/g, (match, prefix, mention) => prefix + '<span class="comment-mention">' + mention + "</span>");
+  let safe = escapeHtml(text).replace(/\n/g, "<br>");
+  safe = safe.replace(/\[\[([^\]]+)\]\]/g, (match, rawLabel) => {
+    const label = String(rawLabel || "").trim();
+    const href = resolveCommentPageLink(label);
+    if (!href) {
+      return `<span class="comment-mention">[[${escapeHtml(label)}]]</span>`;
+    }
+    return `<a href="${href}" data-comment-link="page">${escapeHtml(label)}</a>`;
+  });
+  safe = safe.replace(/(https?:\/\/[^\s<]+)/g, (match) => {
+    return `<a href="${match}" target="_blank" rel="noopener noreferrer" data-comment-link="external">${match}</a>`;
+  });
+  return safe.replace(/(^|\s)(@[a-zA-Zа-яА-Я0-9._-]+)/g, (match, prefix, mention) => prefix + '<span class="comment-mention">' + mention + "</span>");
 }
 
 function getCommentUser(userId) {
@@ -979,7 +1009,7 @@ function mapThreadFromApi(item) {
   ));
   return createThread(item.threadId, resolvedTargetId, {
     badgeCount: item.messages ? item.messages.length : 0,
-    status: item.resolved ? "resolved" : "open",
+    status: item.paused ? "paused" : (item.resolved ? "resolved" : "open"),
     preview: item.targetPreview || item.selectionLabel || "",
     comments,
     likedBy: Array.isArray(item.likedBy) ? item.likedBy : [],
@@ -989,14 +1019,16 @@ function mapThreadFromApi(item) {
   });
 }
 
-async function loadCommentHistoryFromServer(force = false) {
-  if (!commentPageId) {
+async function loadCommentHistoryFromServer(force = false, pageId = commentHistorySelectedPageId || commentPageId) {
+  const historyPageId = pageId || commentPageId;
+  if (!historyPageId) {
     return [];
   }
-  if (commentHistoryPromise && !force) {
+  if (commentHistoryPromise && !force && commentHistoryLoadedPageId === historyPageId) {
     return commentHistoryPromise;
   }
-  commentHistoryPromise = commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/history`, {
+  commentHistoryLoadedPageId = historyPageId;
+  commentHistoryPromise = commentApiRequest(`/api/pages/${encodeURIComponent(historyPageId)}/comments/history`, {
     timeoutMs: 14000
   })
     .then((historyData) => {
@@ -1010,9 +1042,16 @@ async function loadCommentHistoryFromServer(force = false) {
         const attachment = inferAttachmentForThread(item.targetType || "", preview);
         return {
           id: item.threadId,
+          pageId: historyPageId,
           userId: rootMessage ? rootMessage.author : "ivan",
           date: formatThreadDate((rootMessage && (rootMessage.updatedAt || rootMessage.createdAt)) || item.createdAt),
           statusText: formatHistoryStatus(item),
+          resolved: Boolean(item.resolved),
+          resolvedAt: item.resolvedAt || "",
+          paused: Boolean(item.paused),
+          pausedAt: item.pausedAt || "",
+          deleted: Boolean(item.deleted),
+          deletedAt: item.deletedAt || "",
           preview,
           text: rootMessage ? rootMessage.body : preview,
           likes: rootMessage ? (rootMessage.likeCount || 0) : (item.likeCount || 0),
@@ -1058,6 +1097,66 @@ async function loadCommentAccessFromServer(force = false) {
       commentAccessPromise = null;
     });
   return commentAccessPromise;
+}
+
+async function loadHistoryThreadOptions(pageId, force = false) {
+  const historyPageId = pageId || commentPageId;
+  if (!historyPageId) {
+    commentHistoryThreadOptions = [];
+    return [];
+  }
+
+  const [activeData, historyData] = await Promise.all([
+    commentApiRequest(`/api/pages/${encodeURIComponent(historyPageId)}/comments`, {
+      timeoutMs: 12000
+    }).catch(() => ({ items: [] })),
+    commentApiRequest(`/api/pages/${encodeURIComponent(historyPageId)}/comments/history`, {
+      timeoutMs: 12000
+    }).catch(() => ({ items: [] }))
+  ]);
+
+  const threadMap = new Map();
+  [...(activeData.items || []), ...(historyData.items || [])].forEach((item) => {
+    if (!item || !item.threadId) {
+      return;
+    }
+    if (!threadMap.has(item.threadId)) {
+      threadMap.set(item.threadId, {
+        threadId: item.threadId,
+        preview: item.targetPreview || item.selectionLabel || "Без названия обсуждения",
+        targetType: item.targetType || "",
+        status: item.deleted ? "deleted" : (item.paused ? "paused" : (item.resolved ? "resolved" : "open"))
+      });
+    }
+  });
+
+  commentHistoryThreadOptions = Array.from(threadMap.values());
+  return commentHistoryThreadOptions;
+}
+
+function renderHistoryFilters() {
+  if (!commentsHistoryPageSelect || !commentsHistoryThreadSelect) {
+    return;
+  }
+
+  const accessiblePages = getAccessiblePagesForActor();
+  const selectedPageId = commentHistorySelectedPageId || commentPageId || (accessiblePages[0] && accessiblePages[0].pageId) || "";
+  commentsHistoryPageSelect.innerHTML = accessiblePages.map((page) => `
+    <option value="${page.pageId}"${page.pageId === selectedPageId ? " selected" : ""}>${escapeHtml(page.title || "Без названия")}</option>
+  `).join("");
+
+  const options = [{ threadId: "", preview: "Все обсуждения", status: "all" }, ...commentHistoryThreadOptions];
+  commentsHistoryThreadSelect.innerHTML = options.map((thread) => {
+    let suffix = "";
+    if (thread.status === "paused") {
+      suffix = " · на паузе";
+    } else if (thread.status === "resolved") {
+      suffix = " · решена";
+    } else if (thread.status === "deleted") {
+      suffix = " · удалена";
+    }
+    return `<option value="${thread.threadId}"${thread.threadId === (commentHistorySelectedThreadId || "") ? " selected" : ""}>${escapeHtml((thread.preview || "Без названия обсуждения") + suffix)}</option>`;
+  }).join("");
 }
 
 async function syncThreadsFromServer(force = false) {
@@ -1690,6 +1789,15 @@ function canDeleteThread(thread) {
   return rootComment ? normalizeActorId(rootComment.userId) === currentActorId : false;
 }
 
+function canPauseThread(thread) {
+  const currentActorId = normalizeActorId(getCurrentCommentActor().id);
+  if (isCommentAdmin(currentActorId)) {
+    return true;
+  }
+  const rootComment = thread.comments && thread.comments.length ? thread.comments[0] : null;
+  return rootComment ? normalizeActorId(rootComment.userId) === currentActorId : false;
+}
+
 function formatThreadCommentsLabel(count) {
   const value = Math.max(Number(count) || 0, 0);
   const mod10 = value % 10;
@@ -1706,6 +1814,9 @@ function formatThreadCommentsLabel(count) {
 function formatHistoryStatus(item) {
   if (item.deleted) {
     return "Удалена " + formatThreadDate(item.deletedAt);
+  }
+  if (item.paused) {
+    return "На паузе " + formatThreadDate(item.pausedAt);
   }
   if (item.resolved) {
     return "Решена " + formatThreadDate(item.resolvedAt);
@@ -1789,13 +1900,14 @@ function renderCommentAnchors() {
     const left = Math.max(18, Math.min(rect.right - canvasRect.left + 12, editorCanvas.clientWidth - reserve));
     const isActive = commentOpenTargetId === targetId;
     const isHovered = commentHoveredTargetId === targetId;
+    const isPaused = thread.status === "paused";
     if (!panelVisible && !isActive && !isHovered) {
       return;
     }
     html.push(
-      `<div class="comment-anchor" style="top:${top}px;left:${left}px;">` +
+      `<div class="comment-anchor${isPaused ? " is-paused" : ""}" style="top:${top}px;left:${left}px;">` +
         `${isActive ? `<span class="comment-anchor__line" style="height:${Math.max(rect.height, 52)}px"></span>` : ""}` +
-        `<button class="comment-anchor__button${count ? "" : " is-empty"}${isActive ? " is-active" : ""}" data-comment-target="${targetId}" data-comment-tooltip="${escapeHtml(tooltip)}" type="button">` +
+        `<button class="comment-anchor__button${count ? "" : " is-empty"}${isActive ? " is-active" : ""}${isPaused ? " is-paused" : ""}" data-comment-target="${targetId}" data-comment-tooltip="${escapeHtml(tooltip)}" type="button">` +
           `<span class="comment-anchor__icon">${commentIconSvg()}</span>` +
           `${count ? `<span class="comment-anchor__badge">${count}</span>` : ""}` +
         `</button>` +
@@ -1978,9 +2090,13 @@ function renderCommentsPanel() {
   const isOpen = Boolean(commentOpenTargetId);
   commentsPanel.classList.toggle("is-open", isOpen);
   commentsResolveButton.disabled = !isOpen;
+  if (commentsPauseButton) {
+    commentsPauseButton.disabled = !isOpen;
+  }
 
   if (!isOpen) {
     commentsPanelStatus.hidden = true;
+    commentsPanelStatus.classList.remove("is-paused");
     commentsPanelList.innerHTML = "";
     commentsPanelPlaceholder.hidden = false;
     commentsPanelScroll.hidden = true;
@@ -1996,8 +2112,14 @@ function renderCommentsPanel() {
   const target = document.querySelector(`[data-comment-target-id="${commentOpenTargetId}"]`);
   thread.preview = getTargetPreview(target);
   commentsPanelContext.textContent = thread.preview;
-  commentsPanelStatus.hidden = thread.status !== "resolved";
-  commentsPanelStatus.textContent = thread.status === "resolved" ? "Решена" : "";
+  commentsPanelStatus.hidden = !["resolved", "paused"].includes(thread.status);
+  commentsPanelStatus.classList.toggle("is-paused", thread.status === "paused");
+  commentsPanelStatus.textContent = thread.status === "resolved" ? "Решена" : (thread.status === "paused" ? "На паузе" : "");
+  if (commentsPauseButton) {
+    commentsPauseButton.dataset.commentTooltip = thread.status === "paused" ? "Продолжить обсуждение" : "Приостановить обсуждение";
+    commentsPauseButton.classList.toggle("is-paused", thread.status === "paused");
+    commentsPauseButton.classList.toggle("is-active", thread.status === "paused");
+  }
 
   commentsPanelLoading.hidden = commentPanelMode !== "loading";
   commentsPanelError.hidden = commentPanelMode !== "error";
@@ -2013,6 +2135,23 @@ function renderCommentsPanel() {
   renderReplyPill(thread);
   renderMentionDropdown();
   updateComposerState();
+
+  const canTogglePause = canPauseThread(thread);
+  if (commentsPauseButton) {
+    commentsPauseButton.disabled = !isOpen || !canTogglePause;
+    commentsPauseButton.hidden = !canTogglePause;
+  }
+  if (commentsResolveButton) {
+    commentsResolveButton.disabled = !isOpen || thread.status === "paused";
+  }
+  if (commentsComposerInput) {
+    const paused = thread.status === "paused";
+    commentsComposerInput.disabled = paused;
+    commentsComposerInput.placeholder = paused ? "Обсуждение приостановлено" : "Новый комментарий";
+  }
+  if (commentsComposerSend) {
+    commentsComposerSend.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
+  }
 }
 
 async function openThreadForTarget(targetId, instant = false) {
@@ -2120,15 +2259,44 @@ async function toggleResolvedThread() {
       method: "POST",
       body: JSON.stringify({ resolved: nextResolved, author: getCurrentCommentActor().id })
     });
-    await syncThreadsFromServer();
+    await syncThreadsFromServer(true);
     await createCommentVersion(
-      nextResolved ? "Обсуждение отмечено решенным" : "Обсуждение возвращено в работу",
+      nextResolved ? "Обсуждение отмечено как решенное" : "Обсждение возвращено в работу",
       getCurrentCommentActor().id
     );
   } else {
     thread.status = nextResolved ? "resolved" : "open";
     if (thread.status === "resolved") {
-      addHistorySnapshot(thread, "Решена " + new Date().toLocaleDateString("ru-RU") + " в " + new Date().toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }));
+      addHistorySnapshot(thread, "Решена " + formatThreadDate(new Date().toISOString()));
+    }
+  }
+  renderCommentsPanel();
+  scheduleCommentAnchors();
+}
+
+async function togglePausedThread() {
+  if (!commentOpenTargetId) {
+    return;
+  }
+  const thread = getOrCreateThread(commentOpenTargetId);
+  if (!canPauseThread(thread)) {
+    return;
+  }
+  const nextPaused = thread.status !== "paused";
+  if (commentPageId) {
+    await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/comments/${encodeURIComponent(thread.id)}/pause`, {
+      method: "POST",
+      body: JSON.stringify({ paused: nextPaused, author: getCurrentCommentActor().id })
+    });
+    await syncThreadsFromServer(true);
+    await createCommentVersion(
+      nextPaused ? "Обсуждение поставлено на паузу" : "Обсуждение возобновлено",
+      getCurrentCommentActor().id
+    );
+  } else {
+    thread.status = nextPaused ? "paused" : "open";
+    if (thread.status === "paused") {
+      addHistorySnapshot(thread, "На паузе " + formatThreadDate(new Date().toISOString()));
     }
   }
   renderCommentsPanel();
@@ -2145,6 +2313,10 @@ async function addCommentToThread() {
     return;
   }
   const thread = getOrCreateThread(commentOpenTargetId);
+  if (thread.status === "paused") {
+    updateComposerState();
+    return;
+  }
   const isNewDiscussion = !thread.comments.length;
   const versionLabel = isNewDiscussion
     ? "Добавлено обсуждение"
@@ -2236,10 +2408,27 @@ async function addCommentToThread() {
   });
 }
 
+function getFilteredCommentHistoryItems() {
+  const selectedPageId = commentHistorySelectedPageId || commentPageId || "";
+  const selectedThreadId = commentHistorySelectedThreadId || "";
+  return (commentHistoryItems || []).filter((item) => {
+    if (selectedPageId && item.pageId !== selectedPageId) {
+      return false;
+    }
+    if (selectedThreadId && item.id !== selectedThreadId) {
+      return false;
+    }
+    return true;
+  });
+}
+
 function renderHistoryModal() {
   if (!commentsHistoryModal.classList.contains("is-open")) {
     return;
   }
+
+  renderHistoryFilters();
+
   if (commentHistoryMode === "error") {
     commentsHistoryBody.innerHTML = `
       <div class="comments-history-modal__error">
@@ -2253,17 +2442,21 @@ function renderHistoryModal() {
     return;
   }
 
-  if (!commentHistoryItems.length) {
-    commentsHistoryBody.innerHTML = '<div class="comments-history-modal__error"><div class="comments-history-modal__error-inner"><div>История комментариев пока пуста</div></div></div>';
+  const filteredItems = getFilteredCommentHistoryItems();
+  if (!filteredItems.length) {
+    const emptyMessage = commentHistorySelectedThreadId
+      ? "Для выбранного обсуждения пока нет истории"
+      : "История комментариев пока пуста";
+    commentsHistoryBody.innerHTML = `<div class="comments-history-modal__error"><div class="comments-history-modal__error-inner"><div>${emptyMessage}</div></div></div>`;
     commentsHistoryFooter.innerHTML = "";
     return;
   }
 
   const itemsPerPage = 3;
-  const totalPages = Math.max(1, Math.max(Math.ceil(commentHistoryItems.length / itemsPerPage), 10));
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / itemsPerPage));
   const page = Math.min(Math.max(commentHistoryPage, 1), totalPages);
   const start = (page - 1) * itemsPerPage;
-  const pageItems = commentHistoryItems.slice(start, start + itemsPerPage);
+  const pageItems = filteredItems.slice(start, start + itemsPerPage);
 
   commentsHistoryBody.innerHTML = pageItems.map((item) => {
     const user = getCommentUser(item.userId);
@@ -2318,14 +2511,29 @@ function renderHistoryModal() {
 async function openHistoryModal(mode = "list") {
   ensureHistorySeed();
   commentHistoryMode = mode;
-  if (mode === "list" && commentPageId) {
+  commentHistoryPage = 1;
+  commentHistorySelectedPageId = commentPageId || commentHistorySelectedPageId || "";
+  commentHistorySelectedThreadId = "";
+
+  if (typeof loadPagesCatalog === "function") {
     try {
-      await loadCommentHistoryFromServer(true);
+      await loadPagesCatalog(true);
+    } catch (error) {
+      console.warn("Failed to refresh pages catalog for history", error);
+    }
+  }
+
+  if (mode === "list" && (commentHistorySelectedPageId || commentPageId)) {
+    const historyPageId = commentHistorySelectedPageId || commentPageId;
+    try {
+      await loadHistoryThreadOptions(historyPageId, true);
+      await loadCommentHistoryFromServer(true, historyPageId);
     } catch (error) {
       console.warn("Failed to load comment history", error);
       commentHistoryMode = "error";
     }
   }
+
   commentsHistoryModal.classList.add("is-open");
   renderHistoryModal();
 }
@@ -2473,10 +2681,30 @@ function initializeCommentsSystem() {
     clearHoveredCommentTargetSoon();
   });
 
+  const handleCommentLinkClick = (event) => {
+    const link = event.target && event.target.closest ? event.target.closest("a[data-comment-link]") : null;
+    if (!link) {
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (link.dataset.commentLink === "external") {
+      window.open(link.href, "_blank", "noopener,noreferrer");
+      return true;
+    }
+    navigateToLink(link);
+    return true;
+  };
+
   commentsCloseButton.addEventListener("click", closeCommentsPanel);
   commentsResolveButton.addEventListener("click", () => {
     toggleResolvedThread().catch((error) => console.warn("Failed to toggle resolved state", error));
   });
+  if (commentsPauseButton) {
+    commentsPauseButton.addEventListener("click", () => {
+      togglePausedThread().catch((error) => console.warn("Failed to toggle paused state", error));
+    });
+  }
   commentsRetryButton.addEventListener("click", () => {
     if (!commentOpenTargetId) {
       return;
@@ -2533,6 +2761,9 @@ function initializeCommentsSystem() {
   });
 
   commentsPanelList.addEventListener("click", (event) => {
+    if (handleCommentLinkClick(event)) {
+      return;
+    }
     const actionTarget = event.target.closest("[data-comment-action]");
     if (!actionTarget || !commentOpenTargetId) {
       return;
@@ -2714,6 +2945,9 @@ function initializeCommentsSystem() {
   });
   commentsHistoryClose.addEventListener("click", closeHistoryModal);
   commentsHistoryModal.addEventListener("click", (event) => {
+    if (handleCommentLinkClick(event)) {
+      return;
+    }
     if (event.target === commentsHistoryModal) {
       closeHistoryModal();
       return;
@@ -2744,10 +2978,36 @@ function initializeCommentsSystem() {
       return;
     }
     if (action === "retry") {
-      commentHistoryMode = "list";
-      renderHistoryModal();
+      openHistoryModal("list").catch((error) => console.warn("Failed to reload history", error));
     }
   });
+
+  if (commentsHistoryPageSelect) {
+    commentsHistoryPageSelect.addEventListener("change", async () => {
+      commentHistorySelectedPageId = commentsHistoryPageSelect.value || commentPageId || "";
+      commentHistorySelectedThreadId = "";
+      commentHistoryPage = 1;
+      commentHistoryExpanded.clear();
+      commentHistoryMode = "list";
+      try {
+        await loadHistoryThreadOptions(commentHistorySelectedPageId, true);
+        await loadCommentHistoryFromServer(true, commentHistorySelectedPageId);
+      } catch (error) {
+        console.warn("Failed to switch history page", error);
+        commentHistoryMode = "error";
+      }
+      renderHistoryModal();
+    });
+  }
+
+  if (commentsHistoryThreadSelect) {
+    commentsHistoryThreadSelect.addEventListener("change", () => {
+      commentHistorySelectedThreadId = commentsHistoryThreadSelect.value || "";
+      commentHistoryPage = 1;
+      commentHistoryExpanded.clear();
+      renderHistoryModal();
+    });
+  }
 
   document.addEventListener("click", (event) => {
     if (!commentsTopbar.contains(event.target)) {

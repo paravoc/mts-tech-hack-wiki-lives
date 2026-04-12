@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <exception>
 #include <unordered_set>
+#include <vector>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -10,6 +11,21 @@
 #include "src/utils/string_utils.h"
 
 namespace {
+
+std::string toJsonArray(const std::vector<std::string>& items) {
+    std::string result = "[";
+    bool first = true;
+    for (const auto& item : items) {
+        if (!first) {
+            result += ",";
+        }
+        first = false;
+        result += "\"" + wikilive::utils::escapeJson(item) + "\"";
+    }
+    result += "]";
+    return result;
+}
+
 
 std::string makeAbsoluteTablesUrl(const std::string& value) {
     if (value.empty()) {
@@ -74,7 +90,7 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
         "\",\"createdAt\":\"" + wikilive::utils::escapeJson(page.createdAt) +
         "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(page.updatedAt) +
         "\",\"ownerId\":\"" + wikilive::utils::escapeJson(page.ownerId) +
-        "\",\"ownerName\":\"" + wikilive::utils::escapeJson(page.ownerName) + "\"";
+        "\",\"ownerName\":\"" + wikilive::utils::escapeJson(page.ownerName) + "\"" + ",\"sharedWith\":" + toJsonArray(page.sharedWith);
 
     if (includeRenderedHtml) {
         json += ",\"renderedHtml\":\"" + wikilive::utils::escapeJson(page.renderedHtml) + "\"";
@@ -133,6 +149,9 @@ std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
         {"resolved", thread.resolved},
         {"resolvedAt", thread.resolvedAt},
         {"resolvedBy", thread.resolvedBy},
+        {"paused", thread.paused},
+        {"pausedAt", thread.pausedAt},
+        {"pausedBy", thread.pausedBy},
         {"deleted", thread.deleted},
         {"deletedAt", thread.deletedAt},
         {"deletedBy", thread.deletedBy},
@@ -848,6 +867,50 @@ RouteResponse Router::resolveComment(
     }
 }
 
+RouteResponse Router::pauseComment(
+    const std::string& pageId,
+    const std::string& threadId,
+    const std::string& payload) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        bool paused = true;
+        std::string author = "viewer";
+        if (!payload.empty()) {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            paused = parsedPayload.value("paused", true);
+            author = parsedPayload.value("author", author);
+        }
+
+        const auto thread = collaborationService_->setPaused(pageId, threadId, paused, author);
+        if (!thread) {
+            return fail(thread.error());
+        }
+
+        if (webSocketManager_ != nullptr) {
+            webSocketManager_->broadcastPageEvent(pageId, "comments.changed");
+        }
+
+        return ok("{\"item\":" + commentThreadToJson(thread.value()) + "}");
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed pause JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
 RouteResponse Router::toggleCommentLike(
     const std::string& pageId,
     const std::string& threadId,
@@ -1261,6 +1324,49 @@ utils::Expected<std::string> Router::extractJsonString(
         400,
         false));
 }
+
+utils::Expected<std::vector<std::string>> Router::extractJsonStringArray(
+    const std::string& payload,
+    const std::string& key,
+    const bool required) const {
+    try {
+        auto parsed = nlohmann::json::parse(payload);
+        if (!parsed.contains(key)) {
+            if (!required) {
+                return std::vector<std::string>{};
+            }
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Missing JSON field: " + key,
+                400,
+                false));
+        }
+
+        if (!parsed[key].is_array()) {
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Expected array field: " + key,
+                400,
+                false));
+        }
+
+        std::vector<std::string> result;
+        for (const auto& item : parsed[key]) {
+            if (!item.is_string()) {
+                continue;
+            }
+            result.push_back(item.get<std::string>());
+        }
+        return result;
+    } catch (const std::exception& exception) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Failed to parse array field: ") + exception.what(),
+            400,
+            false));
+    }
+}
+
 
 std::string Router::aiSuggestInsertResultToJson(const ai::AiSuggestInsertResult& result) const {
     std::string items = "[";

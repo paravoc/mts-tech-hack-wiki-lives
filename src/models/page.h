@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 
 namespace wikilive::models {
 
@@ -13,6 +14,7 @@ struct Page {
     std::string updatedAt;
     std::string ownerId;
     std::string ownerName;
+    std::vector<std::string> sharedWith;
     std::string renderedHtml;
 };
 

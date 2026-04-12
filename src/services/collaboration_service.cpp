@@ -66,6 +66,9 @@ json commentThreadToJson(const models::CommentThread& thread) {
         {"resolved", thread.resolved},
         {"resolvedAt", thread.resolvedAt},
         {"resolvedBy", thread.resolvedBy},
+        {"paused", thread.paused},
+        {"pausedAt", thread.pausedAt},
+        {"pausedBy", thread.pausedBy},
         {"deleted", thread.deleted},
         {"deletedAt", thread.deletedAt},
         {"deletedBy", thread.deletedBy},
@@ -256,7 +259,7 @@ utils::Expected<std::vector<models::CommentThread>> CollaborationService::listHi
 
     std::vector<models::CommentThread> historyThreads;
     for (const auto& thread : threads.value()) {
-        if (thread.deleted || thread.resolved) {
+        if (thread.deleted || thread.resolved || thread.paused) {
             historyThreads.push_back(thread);
         }
     }
@@ -396,9 +399,49 @@ utils::Expected<models::CommentThread> CollaborationService::setResolved(
     if (resolved) {
         thread->resolvedAt = thread->updatedAt;
         thread->resolvedBy = normalizedActor;
+        thread->paused = false;
+        thread->pausedAt.clear();
+        thread->pausedBy.clear();
     } else {
         thread->resolvedAt.clear();
         thread->resolvedBy.clear();
+    }
+
+    const auto saveResult = storage_.saveThread(thread.value());
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return thread.value();
+}
+
+utils::Expected<models::CommentThread> CollaborationService::setPaused(
+    const std::string& pageId,
+    const std::string& threadId,
+    const bool paused,
+    const std::string& actor) {
+    auto thread = storage_.getThread(pageId, threadId);
+    if (!thread) {
+        return std::unexpected(thread.error());
+    }
+
+    const auto normalizedActor = actor.empty() ? std::string("viewer") : actor;
+    const auto rootAuthor = thread->messages.empty() ? std::string("viewer") : thread->messages.front().author;
+    if (!isAdminActor(normalizedActor) && normalizeActor(rootAuthor) != normalizeActor(normalizedActor)) {
+        return std::unexpected(forbiddenError("Only the thread author or admin may pause this discussion"));
+    }
+
+    thread->paused = paused;
+    thread->updatedAt = utils::formatIso(utils::now());
+    if (paused) {
+        thread->pausedAt = thread->updatedAt;
+        thread->pausedBy = normalizedActor;
+        thread->resolved = false;
+        thread->resolvedAt.clear();
+        thread->resolvedBy.clear();
+    } else {
+        thread->pausedAt.clear();
+        thread->pausedBy.clear();
     }
 
     const auto saveResult = storage_.saveThread(thread.value());

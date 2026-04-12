@@ -59,6 +59,11 @@ public:
         const std::string& threadId,
         bool resolved,
         const std::string& actor = {});
+    [[nodiscard]] utils::Expected<models::CommentThread> setPaused(
+        const std::string& pageId,
+        const std::string& threadId,
+        bool paused,
+        const std::string& actor = {});
     [[nodiscard]] utils::Expected<models::CommentThread> toggleLike(
         const std::string& pageId,
         const std::string& threadId,

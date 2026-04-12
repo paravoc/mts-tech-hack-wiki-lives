@@ -12,6 +12,10 @@ def comments_styles() -> str:
           --comment-accent-strong: #7461ff;
           --comment-accent-soft: #f2efff;
           --comment-accent-line: #d9d0ff;
+          --comment-paused: #ef8e94;
+          --comment-paused-strong: #dd6d76;
+          --comment-paused-soft: #fff1f2;
+          --comment-paused-line: #f4c4c8;
           --comment-panel-bg: rgba(250, 251, 255, 0.96);
           --comment-border: #e4e8f0;
           --comment-text: #2a3140;
@@ -187,6 +191,23 @@ def comments_styles() -> str:
           box-shadow: 0 12px 24px rgba(139, 124, 255, 0.28);
         }
 
+        .comment-anchor.is-paused .comment-anchor__line {
+          background: var(--comment-paused-line);
+        }
+
+        .comment-anchor__button.is-paused {
+          color: var(--comment-paused-strong);
+          background: rgba(255, 255, 255, 0.96);
+          box-shadow: 0 10px 20px rgba(221, 109, 118, 0.16);
+        }
+
+        .comment-anchor__button.is-paused:hover,
+        .comment-anchor__button.is-paused.is-active {
+          background: var(--comment-paused);
+          color: #ffffff;
+          box-shadow: 0 12px 24px rgba(221, 109, 118, 0.24);
+        }
+
         .comment-anchor__button.is-empty {
           width: 22px;
           padding: 0;
@@ -317,6 +338,11 @@ def comments_styles() -> str:
           font-weight: 700;
         }
 
+        .comments-panel__status.is-paused {
+          background: var(--comment-paused-soft);
+          color: var(--comment-paused-strong);
+        }
+
         .comments-panel__header-actions {
           display: inline-flex;
           align-items: center;
@@ -339,6 +365,12 @@ def comments_styles() -> str:
         .comments-panel__header-button:hover {
           background: #f3f5f9;
           color: var(--comment-accent-strong);
+        }
+
+        .comments-panel__header-button.is-paused:hover,
+        .comments-panel__header-button.is-paused.is-active {
+          background: var(--comment-paused-soft);
+          color: var(--comment-paused-strong);
         }
 
         .comments-panel__body {
@@ -504,6 +536,20 @@ def comments_styles() -> str:
         .comment-card__text .comment-mention {
           color: var(--comment-accent-strong);
           font-weight: 600;
+        }
+
+        .comment-card__text a,
+        .comments-history-item__text a,
+        .comments-history-item__preview a {
+          color: var(--comment-accent-strong);
+          text-decoration: none;
+          font-weight: 600;
+        }
+
+        .comment-card__text a:hover,
+        .comments-history-item__text a:hover,
+        .comments-history-item__preview a:hover {
+          text-decoration: underline;
         }
 
         .comment-card__target {
@@ -1020,6 +1066,42 @@ def comments_styles() -> str:
           padding: 0 24px;
         }
 
+        .comments-history-modal__filters {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+          gap: 12px;
+          padding: 14px 24px;
+          border-bottom: 1px solid #eceff5;
+          background: rgba(250, 251, 255, 0.95);
+        }
+
+        .comments-history-modal__field {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+
+        .comments-history-modal__field label {
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: .03em;
+          text-transform: uppercase;
+          color: #97a0b1;
+        }
+
+        .comments-history-modal__select {
+          width: 100%;
+          min-width: 0;
+          height: 38px;
+          border-radius: 12px;
+          border: 1px solid #dde3ee;
+          background: #ffffff;
+          color: #334052;
+          padding: 0 12px;
+          font-size: 13px;
+        }
+
         .comments-history-item {
           padding: 20px 0;
           border-bottom: 1px solid #eceff5;
@@ -1264,6 +1346,12 @@ def comments_markup() -> str:
               <div class="comments-panel__status" id="commentsPanelStatus" hidden>Решена</div>
             </div>
             <div class="comments-panel__header-actions">
+              <button class="comments-panel__header-button" id="commentsPauseButton" type="button" data-comment-tooltip="Приостановить обсуждение">
+                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="4" y="3" width="3" height="10" rx="1"></rect>
+                  <rect x="9" y="3" width="3" height="10" rx="1"></rect>
+                </svg>
+              </button>
               <button class="comments-panel__header-button" id="commentsResolveButton" type="button" data-comment-tooltip="Отметить ветку как решенную">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M3.2 8.4l3 3.1 6.7-7"></path>
@@ -1302,7 +1390,7 @@ def comments_markup() -> str:
             </div>
             <div class="comments-panel__reply" id="commentsReplyPill">
               <div id="commentsReplyText">Ответ</div>
-              <button class="comments-panel__reply-cancel" id="commentsReplyCancel" type="button" aria-label="Отменить ответ">×</button>
+              <button class="comments-panel__reply-cancel" id="commentsReplyCancel" type="button" aria-label="Отменить ответ">?</button>
             </div>
             <div class="comments-panel__composer-shell">
               <div class="comments-mentions" id="commentsMentionDropdown"></div>
@@ -1323,7 +1411,17 @@ def comments_markup() -> str:
                 <div class="comments-history-modal__title" id="commentsHistoryTitle">История комментариев</div>
                 <div class="comments-history-modal__subtitle">Отображаются удаленные или решенные ветки</div>
               </div>
-              <button class="comments-history-modal__close" id="commentsHistoryClose" type="button" aria-label="Закрыть">×</button>
+              <button class="comments-history-modal__close" id="commentsHistoryClose" type="button" aria-label="Закрыть">?</button>
+            </div>
+            <div class="comments-history-modal__filters">
+              <div class="comments-history-modal__field">
+                <label for="commentsHistoryPageSelect">Страница</label>
+                <select class="comments-history-modal__select" id="commentsHistoryPageSelect"></select>
+              </div>
+              <div class="comments-history-modal__field">
+                <label for="commentsHistoryThreadSelect">Обсуждение</label>
+                <select class="comments-history-modal__select" id="commentsHistoryThreadSelect"></select>
+              </div>
             </div>
             <div class="comments-history-modal__body" id="commentsHistoryBody"></div>
             <div class="comments-history-modal__footer" id="commentsHistoryFooter"></div>

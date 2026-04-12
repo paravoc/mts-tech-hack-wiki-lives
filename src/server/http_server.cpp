@@ -189,6 +189,14 @@ utils::VoidExpected HttpServer::start(const int port) {
             });
         });
 
+        app.post("/api/pages/:pageId/comments/:threadId/pause", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.pauseComment(pageId, threadId, body));
+            });
+        });
+
         app.post("/api/pages/:pageId/comments/:threadId/like", [this](HttpResponse* response, HttpRequest* request) {
             const std::string pageId(request->getParameter(0));
             const std::string threadId(request->getParameter(1));
