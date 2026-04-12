@@ -106,6 +106,7 @@ add_library(wikilive_core STATIC
     src/wiki/wiki_renderer.cpp
     src/storage/in_memory_page_storage.cpp
     src/storage/local_collaboration_storage.cpp
+    src/storage/local_file_page_storage.cpp
     src/storage/mws_page_storage.cpp
     src/storage/cache.cpp
     src/utils/logger.cpp

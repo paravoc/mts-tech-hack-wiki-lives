@@ -12,6 +12,10 @@ namespace wikilive::server {
 
 struct WebSocketSessionData {
     std::unordered_set<std::string> pageSubscriptions;
+    std::string actorId = "viewer";
+    std::string actorName = "Гость";
+    std::string actorShort = "Г";
+    std::string actorColor = "#a6afbf";
 };
 
 class WebSocketManager {
@@ -26,6 +30,9 @@ public:
     void broadcastPageEvent(const std::string& pageId, const std::string& eventName) const;
 
 private:
+    [[nodiscard]] std::string buildPresenceMessageUnlocked(const std::string& pageId) const;
+    void broadcastPresence(const std::string& pageId) const;
+
     mutable std::mutex mutex_{};
     std::unordered_map<std::string, std::unordered_set<Socket*>> pageSubscribers_{};
 };

@@ -142,6 +142,8 @@ utils::Expected<models::Page> MwsPageStorage::toPage(const api::MwsRecord& recor
         .content = getFieldOrEmpty(record, "content"),
         .createdAt = createdAt,
         .updatedAt = updatedAt.empty() ? createdAt : updatedAt,
+        .ownerId = getFieldOrEmpty(record, "ownerId"),
+        .ownerName = getFieldOrEmpty(record, "ownerName"),
     };
 }
 
@@ -157,6 +159,8 @@ std::string MwsPageStorage::buildCreatePayload(const models::Page& page) const {
                       {"content", page.content},
                       {"createdAt", page.createdAt},
                       {"updatedAt", page.updatedAt},
+                      {"ownerId", page.ownerId},
+                      {"ownerName", page.ownerName},
                   }},
              },
          })},
@@ -179,6 +183,8 @@ std::string MwsPageStorage::buildUpdatePayload(const std::string& recordId, cons
                       {"content", page.content},
                       {"createdAt", page.createdAt},
                       {"updatedAt", page.updatedAt},
+                      {"ownerId", page.ownerId},
+                      {"ownerName", page.ownerName},
                   }},
              },
          })},

@@ -55,6 +55,37 @@ def _account_switcher_markup() -> str:
     ).strip()
 
 
+def _pages_switcher_markup() -> str:
+    return dedent(
+        """
+        <div class="pages-switcher" id="pagesSwitcher">
+          <button class="pages-switcher__trigger" id="pagesTrigger" type="button">
+            <span>Мои страницы</span>
+            <span class="pages-switcher__count" id="pagesCount">0</span>
+          </button>
+          <div class="pages-switcher__menu" id="pagesMenu">
+            <div class="pages-switcher__menu-head">
+              <div class="pages-switcher__menu-title">Мои страницы</div>
+              <button class="pages-switcher__create" id="pagesCreateButton" type="button">+ Новая</button>
+            </div>
+            <div class="pages-switcher__list" id="pagesList"></div>
+          </div>
+        </div>
+        """
+    ).strip()
+
+
+def _presence_markup() -> str:
+    return dedent(
+        """
+        <div class="page-presence is-empty" id="pagePresence">
+          <div class="page-presence__avatars" id="pagePresenceAvatars"></div>
+          <div class="page-presence__count" id="pagePresenceCount">0</div>
+        </div>
+        """
+    ).strip()
+
+
 def document_header_markup(
     title: str = "Новая страница",
     subtitle: str = "Добавить описание",
@@ -67,10 +98,14 @@ def document_header_markup(
               {file_icon_svg()}
               <div class="doc-head__title-block">
                 <div class="doc-head__title-row">
-                  <div class="doc-title">{title}</div>
-                  {_account_switcher_markup()}
+                  <div class="doc-title" id="docHeaderTitle">{title}</div>
+                  <div class="doc-head__inline-tools">
+                    {_account_switcher_markup()}
+                    {_pages_switcher_markup()}
+                    {_presence_markup()}
+                  </div>
                 </div>
-                <div class="doc-subtitle">{subtitle}</div>
+                <div class="doc-subtitle" id="docHeaderSubtitle">{subtitle}</div>
               </div>
             </div>
           </div>

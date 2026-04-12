@@ -19,6 +19,7 @@
 #include "src/services/render_service.h"
 #include "src/storage/in_memory_page_storage.h"
 #include "src/storage/local_collaboration_storage.h"
+#include "src/storage/local_file_page_storage.h"
 #include "src/storage/mws_page_storage.h"
 #include "src/utils/logger.h"
 
@@ -110,8 +111,9 @@ bool Application::initialize(const char* envPath) {
         pageStorage_ = std::make_unique<storage::MwsPageStorage>(*wikiPagesClient_);
         utils::Logger::instance().info("Wiki pages storage backend: MWS Tables");
     } else {
-        pageStorage_ = std::make_unique<storage::InMemoryPageStorage>();
-        utils::Logger::instance().warn("WikiPages configuration is incomplete, falling back to in-memory page storage");
+        pageStorage_ = std::make_unique<storage::LocalFilePageStorage>(
+            (std::filesystem::current_path() / "data" / "wikilive_pages.json").string());
+        utils::Logger::instance().warn("WikiPages configuration is incomplete, falling back to local file page storage");
     }
 
     pageService_ = std::make_unique<services::PageService>(*pageStorage_);

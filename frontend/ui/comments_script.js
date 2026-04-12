@@ -33,6 +33,15 @@ const accountSwitcher = document.getElementById("accountSwitcher");
 const accountTrigger = document.getElementById("accountTrigger");
 const accountMenu = document.getElementById("accountMenu");
 const accountAvatar = document.getElementById("accountAvatar");
+const pagesSwitcher = document.getElementById("pagesSwitcher");
+const pagesTrigger = document.getElementById("pagesTrigger");
+const pagesMenu = document.getElementById("pagesMenu");
+const pagesList = document.getElementById("pagesList");
+const pagesCreateButton = document.getElementById("pagesCreateButton");
+const pagesCount = document.getElementById("pagesCount");
+const pagePresence = document.getElementById("pagePresence");
+const pagePresenceAvatars = document.getElementById("pagePresenceAvatars");
+const pagePresenceCount = document.getElementById("pagePresenceCount");
 
 const commentUsers = [
   { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Редактор знаний", team: "Wiki editors" },
@@ -117,7 +126,19 @@ let commentMentionIndex = 0;
 let commentLoadToken = 0;
 let commentObserver = null;
 let commentFrame = null;
-const commentApiBase = "http://127.0.0.1:3000";
+const commentApiBase = (() => {
+  try {
+    const host = window.parent && window.parent.location && window.parent.location.hostname
+      ? window.parent.location.hostname
+      : (window.location.hostname || "127.0.0.1");
+    const protocol = window.parent && window.parent.location && window.parent.location.protocol === "https:"
+      ? "https://"
+      : "http://";
+    return `${protocol}${host}:3000`;
+  } catch (error) {
+    return "http://127.0.0.1:3000";
+  }
+})();
 const commentPageStorageKey = "wikilive-comment-page-id-v2";
 let commentPageId = "";
 let commentAccessMode = "all_users";
@@ -136,10 +157,14 @@ let commentPendingVersionAuthor = "";
 let commentSyncPromise = null;
 let commentHistoryPromise = null;
 let commentAccessPromise = null;
+let commentPagesPromise = null;
 let commentCleanupTimer = null;
 let commentSaveInFlight = false;
 let commentSaveQueued = false;
 let commentHoveredTargetId = "";
+let commentPages = [];
+let commentPresencePeople = [];
+let commentApplyingDocument = false;
 
 function commentIconSvg() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-7l-2.8 2V10.5H2.5z"></path><path d="M5.2 6.2h5.6M5.2 8.2h3.4"></path></svg>';
@@ -151,6 +176,69 @@ function commentPlusSvg() {
 
 function getCurrentCommentActor() {
   return getCommentUser(currentCommentActorId || "ivan");
+}
+
+function getCurrentCommentPageStorageKey(actorId = currentCommentActorId) {
+  return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
+}
+
+function isCurrentActorPage(page) {
+  return normalizeActorId(page && page.ownerId ? page.ownerId : "viewer") === normalizeActorId(currentCommentActorId || "viewer");
+}
+
+function upsertCommentPage(page) {
+  if (!page || !page.pageId) {
+    return;
+  }
+  const nextPages = (commentPages || []).filter((item) => item.pageId !== page.pageId);
+  nextPages.push(page);
+  nextPages.sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+  commentPages = nextPages;
+}
+
+function renderPagePresence() {
+  if (!pagePresence || !pagePresenceAvatars || !pagePresenceCount) {
+    return;
+  }
+
+  const people = Array.isArray(commentPresencePeople) ? commentPresencePeople : [];
+  pagePresenceAvatars.innerHTML = people.slice(0, 4).map((person) => `
+    <span
+      class="page-presence__avatar"
+      title="${escapeHtml(person.actorName || person.actorId || "Участник")}"
+      style="background:${escapeHtml(person.actorColor || "#a6afbf")}"
+    >${escapeHtml(person.actorShort || "?")}</span>
+  `).join("");
+  pagePresenceCount.textContent = String(people.length);
+  pagePresence.classList.toggle("is-empty", people.length === 0);
+}
+
+function renderPagesSwitcher() {
+  if (!pagesSwitcher || !pagesList || !pagesCount) {
+    renderPagePresence();
+    return;
+  }
+
+  const ownedPages = (commentPages || []).filter((page) => isCurrentActorPage(page));
+  pagesCount.textContent = String(ownedPages.length);
+  if (!ownedPages.length) {
+    pagesList.innerHTML = '<div class="pages-switcher__empty">Пока нет страниц</div>';
+    renderPagePresence();
+    return;
+  }
+
+  pagesList.innerHTML = ownedPages.map((page) => {
+    const isActive = page.pageId === commentPageId;
+    const preview = String(page.title || "Без названия").trim() || "Без названия";
+    const headingCount = extractPageHeadingTargets(page).length;
+    return `
+      <button class="pages-switcher__item${isActive ? " is-active" : ""}" data-page-id="${page.pageId}" type="button">
+        <span class="pages-switcher__item-title">${escapeHtml(preview)}</span>
+        <span class="pages-switcher__item-meta">${headingCount ? `${headingCount} заголовков` : "Без разделов"}</span>
+      </button>
+    `;
+  }).join("");
+  renderPagePresence();
 }
 
 function renderAccountSwitcher() {
@@ -220,6 +308,98 @@ function renderActorPicker() {
   }
   renderAccountSwitcher();
 }
+
+function extractPageHeadingTargets(page) {
+  if (!page || !page.pageId) {
+    return [];
+  }
+
+  const container = document.createElement("div");
+  container.innerHTML = page.content || "";
+  const items = [];
+
+  const title = String(page.title || "").trim();
+  if (title) {
+    items.push({
+      kind: "page",
+      pageId: page.pageId,
+      label: title,
+      level: "PAGE",
+      href: `wikilive://page/${encodeURIComponent(page.pageId)}`,
+    });
+  }
+
+  Array.from(container.querySelectorAll("h1, h2, h3")).forEach((heading, index) => {
+    const label = heading.textContent.replace(/\u200B/g, "").trim();
+    if (!label) {
+      return;
+    }
+    items.push({
+      kind: "heading",
+      pageId: page.pageId,
+      label,
+      level: heading.tagName.toUpperCase(),
+      anchorId: `heading-${index + 1}`,
+      href: `wikilive://page/${encodeURIComponent(page.pageId)}#heading-${index + 1}`,
+    });
+  });
+
+  return items;
+}
+
+function buildWikiLiveLinkSections() {
+  const currentPage = {
+    pageId: commentPageId,
+    title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Новая страница",
+    content: bodyEditor.innerHTML || "",
+    ownerId: currentCommentActorId,
+    ownerName: getCurrentCommentActor().name,
+  };
+
+  const sections = [];
+  const currentItems = extractPageHeadingTargets(currentPage);
+  sections.push({
+    id: "current-page",
+    title: "Текущая страница",
+    open: true,
+    items: currentItems,
+  });
+
+  const otherPages = (commentPages || []).filter((page) => page.pageId && page.pageId !== commentPageId);
+  otherPages.forEach((page) => {
+    sections.push({
+      id: `page-${page.pageId}`,
+      title: page.title || "Без названия",
+      subtitle: page.ownerName || "",
+      open: false,
+      items: extractPageHeadingTargets(page),
+    });
+  });
+
+  const discussionItems = Array.from(commentThreads.values())
+    .filter((thread) => thread && thread.targetId && thread.preview)
+    .map((thread) => ({
+      kind: "discussion",
+      pageId: commentPageId,
+      label: thread.preview,
+      level: "DISC",
+      href: `wikilive://discussion/${encodeURIComponent(thread.targetId)}`,
+    }));
+  if (discussionItems.length) {
+    sections.push({
+      id: "discussions",
+      title: "Обсуждения",
+      open: false,
+      items: discussionItems,
+    });
+  }
+
+  return sections.filter((section) => Array.isArray(section.items) && section.items.length);
+}
+
+window.getWikiLiveLinkTargets = function getWikiLiveLinkTargets() {
+  return buildWikiLiveLinkSections();
+};
 
 function thumbsUpSvg() {
   return '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.4 7V4.7c0-1.4.8-2.6 2.1-3.2l.2-.1v4h4c.7 0 1.2.6 1.1 1.3l-.6 4.8c-.1.6-.6 1.1-1.2 1.1H6.4M4.2 7h2.2v5.9H4.2z"></path></svg>';
@@ -364,6 +544,84 @@ async function commentApiRequest(path, options = {}) {
   }
 
   return payload.data || {};
+}
+
+async function loadPagesCatalog(force = false) {
+  if (commentPagesPromise && !force) {
+    return commentPagesPromise;
+  }
+
+  commentPagesPromise = commentApiRequest("/api/pages", { timeoutMs: 12000 })
+    .then((pagesData) => {
+      commentPages = (pagesData.items || []).slice().sort((left, right) => {
+        return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+      });
+      renderPagesSwitcher();
+      return commentPages;
+    })
+    .finally(() => {
+      commentPagesPromise = null;
+    });
+
+  return commentPagesPromise;
+}
+
+function updateDocumentHeader(page) {
+  const docHeaderTitle = document.getElementById("docHeaderTitle");
+  if (docHeaderTitle) {
+    docHeaderTitle.textContent = (page && page.title) || "Новая страница";
+  }
+}
+
+async function saveCommentDocumentNow(label = "Изменение текста", author = "editor") {
+  if (!commentPageId || commentApplyingDocument) {
+    return null;
+  }
+  if (commentSaveTimer) {
+    clearTimeout(commentSaveTimer);
+    commentSaveTimer = null;
+  }
+  if (commentSaveInFlight) {
+    commentSaveQueued = true;
+    queueCommentVersionLabel(label, author);
+    return null;
+  }
+
+  commentSaveInFlight = true;
+  try {
+    const documentPayload = serializeEditorDocument();
+    documentPayload.versionLabel = commentPendingVersionLabel || label || "Изменение текста";
+    documentPayload.versionAuthor = commentPendingVersionAuthor || author || "editor";
+    documentPayload.ownerId = normalizeActorId(currentCommentActorId || "viewer");
+    documentPayload.ownerName = getCurrentCommentActor().name || "Гость";
+    const response = await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
+      method: "PUT",
+      body: JSON.stringify(documentPayload),
+      timeoutMs: 20000
+    });
+    const savedPage = response.item || {
+      pageId: commentPageId,
+      ...documentPayload,
+      updatedAt: new Date().toISOString(),
+    };
+    upsertCommentPage(savedPage);
+    renderPagesSwitcher();
+    commentPendingVersionLabel = "";
+    commentPendingVersionAuthor = "";
+    if (window.refreshTimeMachinePanel) {
+      window.refreshTimeMachinePanel();
+    }
+    return savedPage;
+  } catch (error) {
+    console.warn("Failed to save comment page", error);
+    return null;
+  } finally {
+    commentSaveInFlight = false;
+    if (commentSaveQueued) {
+      commentSaveQueued = false;
+      scheduleCommentDocumentSave(commentPendingVersionLabel || label, commentPendingVersionAuthor || author);
+    }
+  }
 }
 
 function getCommentSocketUrl() {

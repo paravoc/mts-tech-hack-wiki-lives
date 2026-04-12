@@ -13,6 +13,8 @@ namespace wikilive::services {
 struct PageDraft {
     std::string title;
     std::string content;
+    std::string ownerId;
+    std::string ownerName;
 };
 
 class PageService {

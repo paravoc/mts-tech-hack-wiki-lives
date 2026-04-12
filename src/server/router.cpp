@@ -71,7 +71,9 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
         "\",\"title\":\"" + wikilive::utils::escapeJson(page.title) +
         "\",\"content\":\"" + wikilive::utils::escapeJson(page.content) +
         "\",\"createdAt\":\"" + wikilive::utils::escapeJson(page.createdAt) +
-        "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(page.updatedAt) + "\"";
+        "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(page.updatedAt) +
+        "\",\"ownerId\":\"" + wikilive::utils::escapeJson(page.ownerId) +
+        "\",\"ownerName\":\"" + wikilive::utils::escapeJson(page.ownerName) + "\"";
 
     if (includeRenderedHtml) {
         json += ",\"renderedHtml\":\"" + wikilive::utils::escapeJson(page.renderedHtml) + "\"";
@@ -1169,9 +1171,21 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         return std::unexpected(content.error());
     }
 
+    auto ownerId = extractJsonString(payload, "ownerId", false);
+    if (!ownerId) {
+        return std::unexpected(ownerId.error());
+    }
+
+    auto ownerName = extractJsonString(payload, "ownerName", false);
+    if (!ownerName) {
+        return std::unexpected(ownerName.error());
+    }
+
     return services::PageDraft{
         .title = title.value(),
         .content = content.value(),
+        .ownerId = ownerId.value(),
+        .ownerName = ownerName.value(),
     };
 }
 

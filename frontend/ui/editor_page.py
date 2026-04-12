@@ -7,6 +7,7 @@ import streamlit.components.v1 as components
 from ui.comments import comments_markup, comments_script, comments_styles
 from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
+from ui.pages_script import pages_script
 from ui.time_machine import time_machine_markup, time_machine_script, time_machine_styles
 
 
@@ -4514,7 +4515,13 @@ __TIME_MACHINE_SCRIPT__
     html = html.replace("__COMMENTS_STYLES__", comments_styles() + "\n" + time_machine_styles())
     html = html.replace("__COMMENTS_MARKUP__", comments_markup())
     html = html.replace("__TIME_MACHINE_MARKUP__", time_machine_markup())
-    html = html.replace("__COMMENTS_SCRIPT__", comments_script() + "\n            window.initializeCommentsSystem && window.initializeCommentsSystem();")
+    html = html.replace(
+        "__COMMENTS_SCRIPT__",
+        comments_script()
+        + "\n"
+        + pages_script()
+        + "\n            window.initializeCommentsSystem && window.initializeCommentsSystem();",
+    )
     html = html.replace("__TIME_MACHINE_SCRIPT__", time_machine_script() + "\n            window.initializeTimeMachine && window.initializeTimeMachine();")
 
     components.html(html, height=780, scrolling=False)

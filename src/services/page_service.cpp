@@ -1,12 +1,38 @@
 #include "src/services/page_service.h"
 
 #include <algorithm>
+#include <charconv>
+#include <string_view>
 
 #include "src/utils/time_utils.h"
 
 namespace wikilive::services {
 
 PageService::PageService(storage::PageStorage& storage) : storage_(storage) {
+    const auto pages = storage_.listPages();
+    if (!pages) {
+        return;
+    }
+
+    std::size_t maxPageNumber = 0;
+    for (const auto& page : pages.value()) {
+        constexpr std::string_view prefix = "page-";
+        if (page.pageId.rfind(prefix, 0) != 0) {
+            continue;
+        }
+
+        const auto numberView = std::string_view(page.pageId).substr(prefix.size());
+        std::size_t parsedNumber = 0;
+        const auto result = std::from_chars(
+            numberView.data(),
+            numberView.data() + numberView.size(),
+            parsedNumber);
+        if (result.ec == std::errc{} && result.ptr == numberView.data() + numberView.size()) {
+            maxPageNumber = std::max(maxPageNumber, parsedNumber);
+        }
+    }
+
+    pageCounter_ = std::max<std::size_t>(pageCounter_, maxPageNumber + 1);
 }
 
 utils::Expected<std::vector<models::Page>> PageService::listPages() const {
@@ -43,6 +69,8 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
         .content = validDraft->content,
         .createdAt = timestamp,
         .updatedAt = timestamp,
+        .ownerId = validDraft->ownerId.empty() ? "viewer" : validDraft->ownerId,
+        .ownerName = validDraft->ownerName.empty() ? "Гость" : validDraft->ownerName,
     };
 
     const auto saveResult = storage_.savePage(page);
@@ -68,6 +96,12 @@ utils::Expected<models::Page> PageService::updatePage(const std::string& pageId,
     page.title = validDraft->title;
     page.content = validDraft->content;
     page.updatedAt = utils::formatIso(utils::now());
+    if (!validDraft->ownerId.empty()) {
+        page.ownerId = validDraft->ownerId;
+    }
+    if (!validDraft->ownerName.empty()) {
+        page.ownerName = validDraft->ownerName;
+    }
 
     const auto saveResult = storage_.savePage(page);
     if (!saveResult) {
