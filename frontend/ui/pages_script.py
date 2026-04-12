@@ -686,13 +686,6 @@ def pages_script() -> str:
                 return;
               }
               if (payload.event === "page.updated") {
-                refreshCurrentPageFromServer(true)
-                  .then(() => syncThreadsFromServer(true))
-                  .then(() => {
-                    renderCommentsPanel();
-                    scheduleCommentAnchors();
-                  })
-                  .catch((error) => console.warn("Failed to refresh current page from socket", error));
                 return;
               }
               if (payload.event === "page.deleted") {

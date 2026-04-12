@@ -63,6 +63,21 @@ function Resolve-CMake {
     return $null
 }
 
+function Resolve-VcVars {
+    $fallbacks = @(
+        "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat",
+        "C:\Program Files\Microsoft Visual Studio\17\Community\VC\Auxiliary\Build\vcvars64.bat"
+    )
+
+    foreach ($candidate in $fallbacks) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
 function Stop-Existing {
     Get-Process wikilive_backend -ErrorAction SilentlyContinue | Stop-Process -Force
 
@@ -79,9 +94,30 @@ function Stop-Existing {
         }
 }
 
+function Invoke-CMakeCommand {
+    param(
+        [string]$CMakeExe,
+        [string]$VcVarsBat,
+        [string[]]$Arguments
+    )
+
+    if ($VcVarsBat) {
+        $cmakeWithArgs = '"' + $CMakeExe + '" ' + ($Arguments -join " ")
+        $cmdLine = 'call "' + $VcVarsBat + '" && ' + $cmakeWithArgs
+        cmd.exe /c $cmdLine
+    } else {
+        & $CMakeExe @Arguments
+    }
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "CMake command failed with exit code $LASTEXITCODE"
+    }
+}
+
 function Invoke-BuildIfAvailable {
     param(
         [string]$CMakeExe,
+        [string]$VcVarsBat,
         [string]$BackendExe,
         [bool]$ShouldConfigure
     )
@@ -94,17 +130,11 @@ function Invoke-BuildIfAvailable {
     try {
         if ($ShouldConfigure) {
             Write-Step "Configuring project"
-            & $CMakeExe --preset windows-debug
-            if ($LASTEXITCODE -ne 0) {
-                throw "CMake configure failed with exit code $LASTEXITCODE"
-            }
+            Invoke-CMakeCommand -CMakeExe $CMakeExe -VcVarsBat $VcVarsBat -Arguments @("--preset", "windows-debug")
         }
 
         Write-Step "Building backend"
-        & $CMakeExe --build --preset windows-debug
-        if ($LASTEXITCODE -ne 0) {
-            throw "CMake build failed with exit code $LASTEXITCODE"
-        }
+        Invoke-CMakeCommand -CMakeExe $CMakeExe -VcVarsBat $VcVarsBat -Arguments @("--build", "--preset", "windows-debug")
     }
     catch {
         if (Test-Path $BackendExe) {
@@ -119,6 +149,7 @@ function Invoke-BuildIfAvailable {
 
 $pythonExe = Resolve-Python
 $cmakeExe = Resolve-CMake
+$vcVarsBat = Resolve-VcVars
 $buildDir = Join-Path $projectRoot "out\build\x64-Debug"
 $backendExe = Join-Path $buildDir "wikilive_backend.exe"
 $backendOut = Join-Path $projectRoot "server-debug.out.log"
@@ -130,7 +161,7 @@ Write-Step "Stopping old processes"
 Stop-Existing
 
 $hasBuildSystem = (Test-Path (Join-Path $buildDir "build.ninja")) -and (Test-Path (Join-Path $buildDir "CMakeCache.txt"))
-Invoke-BuildIfAvailable -CMakeExe $cmakeExe -BackendExe $backendExe -ShouldConfigure ($ForceConfigure.IsPresent -or -not $hasBuildSystem)
+Invoke-BuildIfAvailable -CMakeExe $cmakeExe -VcVarsBat $vcVarsBat -BackendExe $backendExe -ShouldConfigure ($ForceConfigure.IsPresent -or -not $hasBuildSystem)
 
 if (-not (Test-Path $backendExe)) {
     throw "Backend was not found: $backendExe"
