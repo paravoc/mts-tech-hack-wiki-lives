@@ -119,6 +119,28 @@ def pages_script() -> str:
               padding-right: 2px;
             }
 
+            .pages-switcher__section {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+
+            .pages-switcher__section + .pages-switcher__section {
+              margin-top: 10px;
+              padding-top: 10px;
+              border-top: 1px solid #eef1f6;
+            }
+
+            .pages-switcher__section-label {
+              font-size: 11px;
+              line-height: 1.2;
+              font-weight: 800;
+              letter-spacing: .04em;
+              text-transform: uppercase;
+              color: #9aa3b3;
+              padding: 0 2px;
+            }
+
             .pages-switcher__item {
               width: 100%;
               border: 1px solid #e7ebf2;
@@ -279,6 +301,57 @@ def pages_script() -> str:
           return (commentPages || []).filter((page) => normalizeActorId(page.ownerId || "viewer") === normalizeActorId(actorId || "viewer"));
         }
 
+        function getAccessiblePagesForActor(actorId = currentCommentActorId) {
+          const normalizedActorId = normalizeActorId(actorId || "viewer");
+          return (commentPages || []).filter((page) => {
+            const ownerId = normalizeActorId(page.ownerId || "viewer");
+            const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
+            return ownerId === normalizedActorId || sharedWith.includes(normalizedActorId) || sharedWith.includes("*") || true;
+          });
+        }
+
+        function normalizePageTitleText(value) {
+          const text = String(value || "").replace(/\u200B/g, "").replace(/\s+/g, " ").trim();
+          return text || "Новая страница";
+        }
+
+        function syncCurrentPageSnapshot(partial = {}) {
+          if (!commentPageId) {
+            return;
+          }
+          const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId);
+          if (!currentPage) {
+            return;
+          }
+          Object.assign(currentPage, partial);
+          currentPage.updatedAt = partial.updatedAt || currentPage.updatedAt || new Date().toISOString();
+        }
+
+        function focusTitleEditor(selectAll = false) {
+          if (!titleEditor) {
+            return;
+          }
+          titleEditor.focus();
+          if (selectAll) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(titleEditor);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return;
+          }
+          placeCaretAtEnd(titleEditor);
+        }
+
+        function syncHeaderTitleFromEditor() {
+          const normalizedTitle = normalizePageTitleText(titleEditor ? titleEditor.textContent : "");
+          if (docHeaderTitle) {
+            docHeaderTitle.textContent = normalizedTitle;
+          }
+          syncCurrentPageSnapshot({ title: normalizedTitle });
+          renderPagesSwitcher();
+        }
+
         function closePagesSwitcher() {
           if (pagesSwitcher) {
             pagesSwitcher.classList.remove("is-open");
@@ -291,30 +364,51 @@ def pages_script() -> str:
             return;
           }
 
-          const ownedPages = getOwnedPagesForActor();
-          const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId) || null;
-          const visiblePages = currentPage && !ownedPages.some((page) => page.pageId === currentPage.pageId)
-            ? [currentPage, ...ownedPages]
-            : ownedPages;
+          const accessiblePages = getAccessiblePagesForActor();
+          const ownedPages = accessiblePages.filter((page) => isCurrentActorPage(page));
+          const sharedPages = accessiblePages.filter((page) => !isCurrentActorPage(page));
 
-          pagesCount.textContent = String(ownedPages.length);
-          if (!visiblePages.length) {
+          pagesCount.textContent = String(accessiblePages.length);
+          if (!accessiblePages.length) {
             pagesList.innerHTML = '<div class="pages-switcher__empty">Пока нет страниц</div>';
             renderPagePresence();
             return;
           }
 
-          pagesList.innerHTML = visiblePages.map((page) => {
+          const renderPageItem = (page, isSharedView) => {
             const isActive = page.pageId === commentPageId;
             const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
-            const isSharedView = !isCurrentActorPage(page);
+            const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
+            const meta = isSharedView
+              ? `Автор: ${ownerName}`
+              : (headingCount ? `${headingCount} заголовков` : "Без разделов");
             return `
               <button class="pages-switcher__item${isActive ? " is-active" : ""}" data-page-id="${page.pageId}" type="button">
                 <span class="pages-switcher__item-title">${escapeHtml(page.title || "Без названия")}</span>
-                <span class="pages-switcher__item-meta">${isSharedView ? "Открыта по ссылке" : (headingCount ? `${headingCount} заголовков` : "Без разделов")}</span>
+                <span class="pages-switcher__item-meta">${escapeHtml(meta)}</span>
               </button>
             `;
-          }).join("");
+          };
+
+          const sections = [];
+          if (ownedPages.length) {
+            sections.push(`
+              <div class="pages-switcher__section">
+                <div class="pages-switcher__section-label">Мои страницы</div>
+                ${ownedPages.map((page) => renderPageItem(page, false)).join("")}
+              </div>
+            `);
+          }
+          if (sharedPages.length) {
+            sections.push(`
+              <div class="pages-switcher__section">
+                <div class="pages-switcher__section-label">Доступные мне</div>
+                ${sharedPages.map((page) => renderPageItem(page, true)).join("")}
+              </div>
+            `);
+          }
+
+          pagesList.innerHTML = sections.join("");
           renderPagePresence();
         }
 
@@ -560,6 +654,7 @@ def pages_script() -> str:
           upsertCommentPage(page);
           renderPagesSwitcher();
           await switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true, workspaceToken });
+          syncHeaderTitleFromEditor();
           return page;
         }
 
@@ -569,12 +664,13 @@ def pages_script() -> str:
             return null;
           }
           const ownedPages = getOwnedPagesForActor();
+          const accessiblePages = getAccessiblePagesForActor();
           const savedPageId = window.localStorage.getItem(getActorPageStorageKey()) || "";
-          const candidatePageId = savedPageId || (ownedPages[0] && ownedPages[0].pageId) || "";
+          const candidatePageId = savedPageId || (ownedPages[0] && ownedPages[0].pageId) || (accessiblePages[0] && accessiblePages[0].pageId) || "";
           if (!candidatePageId) {
             return createPageForCurrentActor(workspaceToken);
           }
-          const page = commentPages.find((item) => item.pageId === candidatePageId) || ownedPages[0];
+          const page = commentPages.find((item) => item.pageId === candidatePageId) || ownedPages[0] || accessiblePages[0];
           if (!page) {
             return createPageForCurrentActor(workspaceToken);
           }
@@ -774,6 +870,9 @@ def pages_script() -> str:
         };
 
         function initializePagesWorkspace() {
+          const newPageButton = document.getElementById("newPageButton");
+          const docHeaderTitleButton = document.getElementById("docHeaderTitleButton");
+
           ensurePagesWorkspaceStyles();
           renderPagesSwitcher();
           renderPagePresence();
@@ -785,13 +884,34 @@ def pages_script() -> str:
             });
           }
 
+          const createAndFocusPage = () => {
+            createPageForCurrentActor().then(() => {
+              closePagesSwitcher();
+              window.setTimeout(() => focusTitleEditor(true), 80);
+            }).catch((error) => console.warn("Failed to create page", error));
+          };
+
           if (pagesCreateButton) {
             pagesCreateButton.addEventListener("click", (event) => {
               event.preventDefault();
               event.stopPropagation();
-              createPageForCurrentActor().then(() => {
-                closePagesSwitcher();
-              }).catch((error) => console.warn("Failed to create page", error));
+              createAndFocusPage();
+            });
+          }
+
+          if (newPageButton) {
+            newPageButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              createAndFocusPage();
+            });
+          }
+
+          if (docHeaderTitleButton) {
+            docHeaderTitleButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              focusTitleEditor(true);
             });
           }
 
@@ -804,6 +924,25 @@ def pages_script() -> str:
               switchCommentPage(pageButton.dataset.pageId || "", { persist: true }).then(() => {
                 closePagesSwitcher();
               }).catch((error) => console.warn("Failed to switch page", error));
+            });
+          }
+
+          if (titleEditor) {
+            titleEditor.addEventListener("keydown", (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+              }
+            });
+
+            titleEditor.addEventListener("input", () => {
+              syncHeaderTitleFromEditor();
+              scheduleCommentDocumentSave("Изменено название страницы", getCurrentCommentActor().id);
+            });
+
+            titleEditor.addEventListener("blur", () => {
+              const normalizedTitle = normalizePageTitleText(titleEditor.textContent);
+              titleEditor.textContent = normalizedTitle;
+              syncHeaderTitleFromEditor();
             });
           }
 

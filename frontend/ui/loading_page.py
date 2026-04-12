@@ -60,12 +60,12 @@ def _pages_switcher_markup() -> str:
         """
         <div class="pages-switcher" id="pagesSwitcher">
           <button class="pages-switcher__trigger" id="pagesTrigger" type="button">
-            <span>Мои страницы</span>
+            <span>Страницы</span>
             <span class="pages-switcher__count" id="pagesCount">0</span>
           </button>
           <div class="pages-switcher__menu" id="pagesMenu">
             <div class="pages-switcher__menu-head">
-              <div class="pages-switcher__menu-title">Мои страницы</div>
+              <div class="pages-switcher__menu-title">Доступные страницы</div>
               <button class="pages-switcher__create" id="pagesCreateButton" type="button">+ Новая</button>
             </div>
             <div class="pages-switcher__list" id="pagesList"></div>
@@ -95,10 +95,14 @@ def document_header_markup(
         <header class="doc-head">
           <div class="doc-head__meta">
             <div class="doc-head__title-wrap">
-              {file_icon_svg()}
+              <button class="doc-icon-button" id="newPageButton" type="button" aria-label="Создать новую страницу" title="Новая страница">
+                {file_icon_svg()}
+              </button>
               <div class="doc-head__title-block">
                 <div class="doc-head__title-row">
-                  <div class="doc-title" id="docHeaderTitle">{title}</div>
+                  <button class="doc-title-button" id="docHeaderTitleButton" type="button" title="Переименовать страницу">
+                    <div class="doc-title" id="docHeaderTitle">{title}</div>
+                  </button>
                   <div class="doc-head__inline-tools">
                     {_account_switcher_markup()}
                     {_pages_switcher_markup()}

@@ -356,8 +356,45 @@ __CURSOR_ROOT_VARIABLES__
               width: 15px;
               height: 15px;
               flex: none;
-              margin-top: 2px;
               color: var(--icon);
+            }
+
+            .doc-icon-button {
+              width: 24px;
+              height: 24px;
+              margin: 0;
+              padding: 0;
+              border: 0;
+              background: transparent;
+              color: var(--icon);
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              border-radius: 8px;
+              transition: background .18s ease, transform .18s ease, box-shadow .18s ease;
+            }
+
+            .doc-icon-button:hover {
+              background: #fff1f4;
+              transform: translateY(-1px);
+            }
+
+            .doc-icon-button:focus-visible,
+            .doc-title-button:focus-visible {
+              outline: 2px solid rgba(255, 0, 50, 0.22);
+              outline-offset: 2px;
+            }
+
+            .doc-title-button {
+              margin: 0;
+              padding: 0;
+              border: 0;
+              background: transparent;
+              display: inline-flex;
+              align-items: center;
+              min-width: 0;
+              text-align: left;
+              border-radius: 8px;
             }
 
             .doc-title {
@@ -366,6 +403,11 @@ __CURSOR_ROOT_VARIABLES__
               font-weight: 700;
               letter-spacing: -0.01em;
               color: #262a33;
+              transition: color .18s ease;
+            }
+
+            .doc-title-button:hover .doc-title {
+              color: #ff0032;
             }
 
             .doc-subtitle {
