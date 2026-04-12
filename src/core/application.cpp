@@ -18,6 +18,7 @@
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/storage/in_memory_page_storage.h"
+#include "src/storage/hybrid_page_storage.h"
 #include "src/storage/local_collaboration_storage.h"
 #include "src/storage/local_file_page_storage.h"
 #include "src/storage/mws_page_storage.h"
@@ -98,6 +99,8 @@ bool Application::initialize(const char* envPath) {
         webSocketManager_ = std::make_unique<server::WebSocketManager>();
     }
 
+    const auto localPagesPath = (std::filesystem::current_path() / "data" / "wikilive_pages.json").string();
+
     if (!config_.mwsToken.empty() && !config_.wikiPagesTableId.empty() && !config_.wikiPagesViewId.empty()) {
         wikiPagesClient_ = std::make_unique<api::MwsClient>(
             config_.mwsToken,
@@ -108,11 +111,12 @@ bool Application::initialize(const char* envPath) {
                 .retryAttempts = config_.retryAttempts,
                 .retryBaseDelayMs = config_.retryBaseDelayMs,
             });
-        pageStorage_ = std::make_unique<storage::MwsPageStorage>(*wikiPagesClient_);
-        utils::Logger::instance().info("Wiki pages storage backend: MWS Tables");
+        pageStorage_ = std::make_unique<storage::HybridPageStorage>(
+            std::make_unique<storage::LocalFilePageStorage>(localPagesPath),
+            std::make_unique<storage::MwsPageStorage>(*wikiPagesClient_));
+        utils::Logger::instance().info("Wiki pages storage backend: local file with MWS mirror");
     } else {
-        pageStorage_ = std::make_unique<storage::LocalFilePageStorage>(
-            (std::filesystem::current_path() / "data" / "wikilive_pages.json").string());
+        pageStorage_ = std::make_unique<storage::LocalFilePageStorage>(localPagesPath);
         utils::Logger::instance().warn("WikiPages configuration is incomplete, falling back to local file page storage");
     }
 
