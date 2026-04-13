@@ -4,12 +4,11 @@ from textwrap import dedent
 
 import streamlit.components.v1 as components
 
-from ui.comments import comments_markup, comments_script, comments_styles
+from ui.comments import comments_markup, comments_styles
 from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
-from ui.mws_blocks import mws_blocks_markup, mws_blocks_script, mws_blocks_styles
-from ui.pages_script import pages_script
-from ui.time_machine import time_machine_markup, time_machine_script, time_machine_styles
+from ui.mws_blocks import mws_blocks_markup, mws_blocks_styles
+from ui.time_machine import time_machine_markup, time_machine_styles
 
 
 _EMPTY_HINT = "Начните вводить содержимое или нажмите / чтобы использовать команды"
@@ -180,6 +179,202 @@ def _selection_toolbar_markup() -> str:
     ).strip()
 
 
+def _minimal_client_script() -> str:
+    return dedent(
+        """
+            }
+
+            const bodyEditor = document.getElementById("bodyEditor");
+            if (bodyEditor && window.Quill) {
+              const initialHtml = bodyEditor.innerHTML;
+              bodyEditor.innerHTML = "";
+              const quill = new Quill(bodyEditor, {
+                theme: "bubble",
+                placeholder: "Начните вводить текст...",
+              });
+              if (initialHtml && initialHtml.trim()) {
+                quill.clipboard.dangerouslyPasteHTML(initialHtml);
+              }
+            }
+
+            const commentsTopTrigger = document.getElementById("commentsTopTrigger");
+            const commentsTopDropdown = document.getElementById("commentsTopDropdown");
+            const commentsHistoryButton = document.getElementById("commentsHistoryButton");
+            const commentsAccessButton = document.getElementById("commentsAccessButton");
+            const commentsAccessPopup = document.getElementById("commentsAccessPopup");
+            const commentsPanel = document.getElementById("commentsPanel");
+            const commentsCloseButton = document.getElementById("commentsCloseButton");
+            const commentsHistoryModal = document.getElementById("commentsHistoryModal");
+            const commentsHistoryClose = document.getElementById("commentsHistoryClose");
+
+            const timeMachineTrigger = document.getElementById("timeMachineTrigger");
+            const timeMachinePanel = document.getElementById("timeMachinePanel");
+            const timeMachineClose = document.getElementById("timeMachineClose");
+            const timeMachinePreview = document.getElementById("timeMachinePreview");
+            const timeMachineList = document.getElementById("timeMachineList");
+            const timeMachineScroll = document.getElementById("timeMachineScroll");
+            const timeMachineLoading = document.getElementById("timeMachineLoading");
+            const timeMachineEmpty = document.getElementById("timeMachineEmpty");
+
+            const commentsPanelLoading = document.getElementById("commentsPanelLoading");
+            const commentsPanelError = document.getElementById("commentsPanelError");
+            const commentsPanelPlaceholder = document.getElementById("commentsPanelPlaceholder");
+            const commentsPanelList = document.getElementById("commentsPanelList");
+
+            const toggleOpen = (node, state) => {
+              if (!node) return;
+              const nextState = typeof state === "boolean" ? state : !node.classList.contains("is-open");
+              node.classList.toggle("is-open", nextState);
+            };
+
+            const closeDropdowns = () => {
+              if (commentsTopDropdown) commentsTopDropdown.classList.remove("is-open");
+              if (commentsAccessPopup) commentsAccessPopup.classList.remove("is-open");
+            };
+
+            document.addEventListener("click", (event) => {
+              if (!commentsTopDropdown?.contains(event.target) && event.target !== commentsTopTrigger) {
+                closeDropdowns();
+              }
+            });
+
+            if (commentsTopTrigger) {
+              commentsTopTrigger.addEventListener("click", (event) => {
+                event.stopPropagation();
+                toggleOpen(commentsPanel);
+                commentsTopTrigger.classList.toggle("is-active", commentsPanel?.classList.contains("is-open"));
+              });
+              commentsTopTrigger.addEventListener("contextmenu", (event) => {
+                event.preventDefault();
+                toggleOpen(commentsTopDropdown);
+              });
+            }
+
+            if (commentsHistoryButton) {
+              commentsHistoryButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                if (commentsHistoryModal) commentsHistoryModal.classList.add("is-open");
+                closeDropdowns();
+              });
+            }
+
+            if (commentsHistoryClose) {
+              commentsHistoryClose.addEventListener("click", () => {
+                commentsHistoryModal?.classList.remove("is-open");
+              });
+            }
+
+            if (commentsAccessButton) {
+              commentsAccessButton.addEventListener("click", (event) => {
+                event.stopPropagation();
+                toggleOpen(commentsAccessPopup);
+                if (commentsTopDropdown) commentsTopDropdown.classList.remove("is-open");
+              });
+            }
+
+            if (commentsCloseButton) {
+              commentsCloseButton.addEventListener("click", () => {
+                commentsPanel?.classList.remove("is-open");
+                commentsTopTrigger?.classList.remove("is-active");
+              });
+            }
+
+            if (commentsPanelLoading) commentsPanelLoading.hidden = true;
+            if (commentsPanelError) commentsPanelError.hidden = true;
+            if (commentsPanelPlaceholder) commentsPanelPlaceholder.hidden = false;
+
+            if (commentsPanelList) {
+              commentsPanelList.innerHTML = `
+                <div class="comment-card">
+                  <div class="comment-card__avatar" style="background:#64b5ff;">И</div>
+                  <div class="comment-card__body">
+                    <div class="comment-card__top">
+                      <div>
+                        <div class="comment-card__name">Иван Иванов</div>
+                        <div class="comment-card__date">27.10.25 в 18:03</div>
+                      </div>
+                      <div class="comment-card__actions">
+                        <button class="comment-action" type="button" title="Лайк">👍 <span class="comment-action__count">4</span></button>
+                        <button class="comment-action" type="button" title="Реакция">☆</button>
+                        <button class="comment-action" type="button" title="Меню">…</button>
+                      </div>
+                    </div>
+                    <div class="comment-card__text">Думаю, этот абзац стоит переписать, слишком сложно.</div>
+                  </div>
+                </div>
+                <div class="comment-card">
+                  <div class="comment-card__avatar" style="background:#8b7cff;">С</div>
+                  <div class="comment-card__body">
+                    <div class="comment-card__top">
+                      <div>
+                        <div class="comment-card__name">Сергей Иванов</div>
+                        <div class="comment-card__date">27.10.25 в 18:03</div>
+                      </div>
+                    </div>
+                    <div class="comment-card__text">@sergei уволен!</div>
+                  </div>
+                </div>
+              `;
+            }
+
+            if (timeMachineTrigger) {
+              timeMachineTrigger.addEventListener("click", () => {
+                toggleOpen(timeMachinePanel);
+                timeMachineTrigger.classList.toggle("is-active", timeMachinePanel?.classList.contains("is-open"));
+              });
+            }
+
+            if (timeMachineClose) {
+              timeMachineClose.addEventListener("click", () => {
+                timeMachinePanel?.classList.remove("is-open");
+                timeMachineTrigger?.classList.remove("is-active");
+              });
+            }
+
+            if (timeMachineLoading) timeMachineLoading.hidden = true;
+            if (timeMachineEmpty) timeMachineEmpty.hidden = true;
+            if (timeMachineScroll) timeMachineScroll.hidden = false;
+
+            if (timeMachineList) {
+              timeMachineList.innerHTML = `
+                <button class="time-machine-item is-active" type="button">
+                  <div class="time-machine-item__top">
+                    <div class="time-machine-item__title">Вставка медиа</div>
+                    <span class="time-machine-item__badge">Медиа</span>
+                  </div>
+                  <div class="time-machine-item__summary">Добавлен файл презентации в абзац.</div>
+                  <div class="time-machine-item__meta">
+                    <span>2025-11-14 15:53</span>
+                    <span class="time-machine-item__author">
+                      <span class="time-machine-panel__info">И</span>
+                      <span class="time-machine-item__author-name">Константин Иванов</span>
+                    </span>
+                  </div>
+                </button>
+                <button class="time-machine-item" type="button">
+                  <div class="time-machine-item__top">
+                    <div class="time-machine-item__title">Начато обсуждение</div>
+                    <span class="time-machine-item__badge">Обсуждения</span>
+                  </div>
+                  <div class="time-machine-item__summary">Создана ветка на абзаце 2.</div>
+                  <div class="time-machine-item__meta">
+                    <span>2025-11-14 15:51</span>
+                    <span class="time-machine-item__author">
+                      <span class="time-machine-panel__info">С</span>
+                      <span class="time-machine-item__author-name">Сергей Иванов</span>
+                    </span>
+                  </div>
+                </button>
+              `;
+            }
+
+            if (timeMachinePreview) {
+              timeMachinePreview.classList.add("is-visible");
+            }
+        """
+    ).strip()
+
+
 def render_editor_page() -> None:
     html = dedent(
         """
@@ -189,6 +384,7 @@ def render_editor_page() -> None:
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <style>
+            @import url("https://cdn.quilljs.com/1.3.7/quill.bubble.css");
             :root {
               --page: #ffffff;
               --line: #eceff3;
@@ -1958,6 +2154,16 @@ __CURSOR_ROOT_VARIABLES__
             }
 __COMMENTS_STYLES__
 __MWS_BLOCKS_STYLES__
+            .body-editor .ql-editor {
+              min-height: 420px;
+              padding: 0;
+              font-size: 14px;
+              line-height: 1.7;
+            }
+
+            .body-editor .ql-editor:focus {
+              outline: none;
+            }
           </style>
         </head>
         <body>
@@ -1993,7 +2199,7 @@ __MWS_BLOCKS_STYLES__
                 </aside>
                 <div class="editor-shell">
                   <h1 class="title-editor" id="titleEditor" contenteditable="true" spellcheck="false">Новая страница</h1>
-                  <div class="body-editor" id="bodyEditor" contenteditable="true" spellcheck="false">
+                  <div class="body-editor" id="bodyEditor" spellcheck="false">
                     <p class="body-placeholder">__EMPTY_HINT__</p>
                   </div>
                 </div>
@@ -2042,7 +2248,10 @@ __MWS_BLOCKS_STYLES__
             __MWS_BLOCKS_MARKUP__
           </div>
 
+          <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
           <script>
+            window.WIKILIVE_MINIMAL_MODE = true;
+            if (!window.WIKILIVE_MINIMAL_MODE) {
             const loadingScreen = document.getElementById("loadingScreen");
             const editorScreen = document.getElementById("editorScreen");
             const editorCanvas = document.getElementById("editorCanvas");
@@ -4611,14 +4820,8 @@ __TIME_MACHINE_SCRIPT__
     html = html.replace("__COMMENTS_MARKUP__", comments_markup())
     html = html.replace("__TIME_MACHINE_MARKUP__", time_machine_markup())
     html = html.replace("__MWS_BLOCKS_MARKUP__", mws_blocks_markup())
-    html = html.replace("__MWS_BLOCKS_SCRIPT__", mws_blocks_script())
-    html = html.replace(
-        "__COMMENTS_SCRIPT__",
-        comments_script()
-        + "\n"
-        + pages_script()
-        + "\n            window.initializeCommentsSystem && window.initializeCommentsSystem();",
-    )
-    html = html.replace("__TIME_MACHINE_SCRIPT__", time_machine_script() + "\n            window.initializeTimeMachine && window.initializeTimeMachine();")
+    html = html.replace("__MWS_BLOCKS_SCRIPT__", _minimal_client_script())
+    html = html.replace("__COMMENTS_SCRIPT__", "")
+    html = html.replace("__TIME_MACHINE_SCRIPT__", "")
 
     components.html(html, height=780, scrolling=False)
