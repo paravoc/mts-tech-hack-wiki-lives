@@ -50,12 +50,11 @@ const docHeaderSubtitle = document.getElementById("docHeaderSubtitle");
 const backlinksList = document.getElementById("backlinksList");
 
 const commentUsers = [
-  { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Редактор знаний", team: "Wiki editors" },
-  { id: "sergei", name: "Сергей Иванов", handle: "sergei", short: "С", color: "#7b68ee", nick: "@sergei", role: "Backend", team: "Platform" },
-  { id: "anna", name: "Анна Ивлева", handle: "anna", short: "А", color: "#4f83ff", nick: "@anna", role: "Дизайнер", team: "Design system" },
-  { id: "anton", name: "Антон Серганов", handle: "anton", short: "А", color: "#ffc83d", nick: "@anton", role: "Релиз-менеджер", team: "Release" },
-  { id: "maxim", name: "Максим Карпов", handle: "maxim", short: "М", color: "#5f79ff", nick: "@maxim", role: "Frontend", team: "Editor" },
-  { id: "maria", name: "Мария Волкова", handle: "maria", short: "М", color: "#39c785", nick: "@maria", role: "Аналитик", team: "Data ops" }
+  { id: "ivan", name: "Иван Иванов", handle: "ivan", short: "И", color: "#59c4ff", nick: "@ivan", role: "Автор", team: "WikiLive" },
+  { id: "sergei", name: "Сергей Иванов", handle: "sergei", short: "С", color: "#7b68ee", nick: "@sergei", role: "Редактор", team: "WikiLive" },
+  { id: "anton", name: "Антон Серганов", handle: "anton", short: "А", color: "#ffc83d", nick: "@anton", role: "PM", team: "Release" },
+  { id: "daria", name: "Дарья Смирнова", handle: "daria", short: "Д", color: "#4f83ff", nick: "@daria", role: "Designer", team: "Design" },
+  { id: "maxim", name: "Максим Карпов", handle: "maxim", short: "М", color: "#5f79ff", nick: "@maxim", role: "Backend", team: "Platform" }
 ];
 const commentUserMap = new Map(commentUsers.map((user) => [user.id, user]));
 const commentGroups = [
@@ -338,6 +337,8 @@ let commentSaveQueued = false;
 let commentHoveredTargetId = "";
 let commentPages = [];
 let commentPresencePeople = [];
+let commentPresenceLoaded = false;
+let commentPresencePageId = "";
 let commentApplyingDocument = false;
 let commentLastSavedSnapshot = null;
 
@@ -382,6 +383,14 @@ function renderPagePresence() {
   }
 
   const people = Array.isArray(commentPresencePeople) ? commentPresencePeople : [];
+
+  // Пока presence по текущей странице ещё не загружен —
+  // не показываем фальшивый 0
+  if (!commentPresenceLoaded || commentPresencePageId !== commentPageId) {
+    pagePresence.classList.add("is-empty");
+    return;
+  }
+
   pagePresenceAvatars.innerHTML = people.slice(0, 4).map((person) => `
     <span
       class="page-presence__avatar"
@@ -389,6 +398,7 @@ function renderPagePresence() {
       style="background:${escapeHtml(person.actorColor || "#a6afbf")}"
     >${escapeHtml(person.actorShort || "?")}</span>
   `).join("");
+
   pagePresenceCount.textContent = String(people.length);
   pagePresence.classList.toggle("is-empty", people.length === 0);
 }
