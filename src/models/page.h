@@ -5,8 +5,16 @@
 
 namespace wikilive::models {
 
+struct PageAccess {
+    std::vector<std::string> userIds;
+    std::vector<std::string> groupIds;
+    std::vector<std::string> roles;
+    bool publicAccess = false;
+};
+
 struct Page {
     std::string pageId;
+    std::string projectId;
     std::string title;
     std::string description;
     std::string content;
@@ -15,6 +23,7 @@ struct Page {
     std::string ownerId;
     std::string ownerName;
     std::vector<std::string> sharedWith;
+    PageAccess access;
     std::string renderedHtml;
 };
 

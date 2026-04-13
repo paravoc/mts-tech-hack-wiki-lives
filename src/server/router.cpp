@@ -5,9 +5,13 @@
 #include <exception>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <unordered_set>
 #include <vector>
 #include <utility>
+#include "src/security/access_evaluator.h"
+#include "src/services/project_service.h"
+
 
 #include <nlohmann/json.hpp>
 
@@ -29,6 +33,44 @@ std::string toJsonArray(const std::vector<std::string>& items) {
     return result;
 }
 
+std::string pageAccessToJson(const wikilive::models::PageAccess& access) {
+    nlohmann::json payload{
+        {"public", access.publicAccess},
+        {"users", access.userIds},
+        {"groups", access.groupIds},
+        {"roles", access.roles},
+    };
+    return payload.dump();
+}
+
+std::string toLower(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+bool containsValue(const std::vector<std::string>& items, const std::string& value) {
+    return std::any_of(items.begin(), items.end(), [&](const std::string& item) {
+        return item == value;
+    });
+}
+
+std::optional<wikilive::models::User> findUserByToken(
+    const std::vector<wikilive::models::User>& users,
+    const std::string& token) {
+    if (token.empty()) {
+        return std::nullopt;
+    }
+    const auto normalized = toLower(token);
+    for (const auto& user : users) {
+        if (toLower(user.id) == normalized || toLower(user.email) == normalized) {
+            return user;
+        }
+    }
+    return std::nullopt;
+}
+
 
 std::string makeAbsoluteTablesUrl(const std::string& value) {
     if (value.empty()) {
@@ -44,6 +86,82 @@ std::string makeAbsoluteTablesUrl(const std::string& value) {
     }
 
     return "https://tables.mws.ru/" + value;
+}
+
+struct ParsedTableLink {
+    std::string tableId;
+    std::string viewId;
+};
+
+std::optional<ParsedTableLink> parseMwsTableLink(const std::string& rawValue) {
+    const auto trimmed = wikilive::utils::trim(rawValue);
+    if (trimmed.empty()) {
+        return std::nullopt;
+    }
+
+    std::string tail;
+    const std::string workbenchMarker = "workbench/";
+    const auto workbenchPos = trimmed.find(workbenchMarker);
+    if (workbenchPos != std::string::npos) {
+        tail = trimmed.substr(workbenchPos + workbenchMarker.size());
+    } else if (trimmed.rfind("dst", 0) == 0) {
+        tail = trimmed;
+    } else {
+        return std::nullopt;
+    }
+
+    const auto fragmentPos = tail.find_first_of("?#");
+    if (fragmentPos != std::string::npos) {
+        tail = tail.substr(0, fragmentPos);
+    }
+
+    while (!tail.empty() && tail.front() == '/') {
+        tail.erase(tail.begin());
+    }
+
+    if (tail.empty()) {
+        return std::nullopt;
+    }
+
+    ParsedTableLink parsed;
+    const auto slashPos = tail.find('/');
+    if (slashPos == std::string::npos) {
+        parsed.tableId = tail;
+        return parsed;
+    }
+
+    parsed.tableId = tail.substr(0, slashPos);
+    auto rest = tail.substr(slashPos + 1);
+    const auto nextSlash = rest.find('/');
+    parsed.viewId = nextSlash == std::string::npos ? rest : rest.substr(0, nextSlash);
+    return parsed;
+}
+
+ParsedTableLink resolveTableSelection(
+    const wikilive::api::MwsClient* client,
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::string& tableUrl = {}) {
+    ParsedTableLink selection;
+    selection.tableId = tableId;
+    selection.viewId = viewId;
+
+    const std::string candidate = tableUrl.empty() ? tableId : tableUrl;
+    if (const auto parsed = parseMwsTableLink(candidate)) {
+        selection.tableId = parsed->tableId;
+        if (!parsed->viewId.empty()) {
+            selection.viewId = parsed->viewId;
+        }
+    }
+
+    if (selection.tableId.empty() && client != nullptr) {
+        selection.tableId = client->tableId();
+    }
+    if (selection.viewId.empty() && client != nullptr) {
+        selection.viewId = client->viewId();
+    }
+
+    return selection;
 }
 
 void applyFieldMeta(const nlohmann::json& value, nlohmann::json& meta) {
@@ -236,9 +354,106 @@ std::string buildErrorJson(const wikilive::utils::Error& error) {
         "\",\"retryable\":" + std::string(error.retryable ? "true" : "false") + "}}";
 }
 
+wikilive::utils::Expected<wikilive::models::ProjectDraft> parseProjectDraft(const std::string& payload) {
+    if (payload.empty()) {
+        return std::unexpected(wikilive::utils::makeError(
+            wikilive::utils::ErrorCode::InvalidRequest,
+            "Project payload must not be empty",
+            400,
+            false));
+    }
+
+    const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+
+    const auto name = parsed.value("name", std::string{});
+    if (name.empty()) {
+        return std::unexpected(wikilive::utils::makeError(
+            wikilive::utils::ErrorCode::InvalidRequest,
+            "Project name must not be empty",
+            400,
+            false));
+    }
+
+    wikilive::models::ProjectDraft draft;
+    draft.name = name;
+    draft.description = parsed.value("description", std::string{});
+    draft.ownerId = parsed.value("ownerId", std::string{});
+    if (draft.ownerId.empty()) {
+        draft.ownerId = parsed.value("actorId", std::string{});
+    }
+    if (draft.ownerId.empty()) {
+        draft.ownerId = parsed.value("actorEmail", std::string{});
+    }
+    draft.ownerName = parsed.value("ownerName", std::string{});
+
+    if (parsed.contains("sharedWith")) {
+        if (!parsed["sharedWith"].is_array()) {
+            return std::unexpected(wikilive::utils::makeError(
+                wikilive::utils::ErrorCode::InvalidRequest,
+                "Expected array field: sharedWith",
+                400,
+                false));
+        }
+
+        for (const auto& item : parsed["sharedWith"]) {
+            if (item.is_string()) {
+                draft.sharedWith.push_back(item.get<std::string>());
+            }
+        }
+    }
+
+    if (parsed.contains("access") && parsed["access"].is_object()) {
+        const auto& accessJson = parsed["access"];
+        draft.access.publicAccess = accessJson.value("public", false);
+
+        if (accessJson.contains("users") && accessJson["users"].is_array()) {
+            for (const auto& item : accessJson["users"]) {
+                if (item.is_string()) {
+                    draft.access.userIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (accessJson.contains("groups") && accessJson["groups"].is_array()) {
+            for (const auto& item : accessJson["groups"]) {
+                if (item.is_string()) {
+                    draft.access.groupIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (accessJson.contains("roles") && accessJson["roles"].is_array()) {
+            for (const auto& item : accessJson["roles"]) {
+                if (item.is_string()) {
+                    draft.access.roles.push_back(item.get<std::string>());
+                }
+            }
+        }
+    }
+
+    return draft;
+}
+std::string projectToJson(const wikilive::models::Project& project) {
+    std::string json =
+        "{\"projectId\":\"" + wikilive::utils::escapeJson(project.projectId) +
+        "\",\"name\":\"" + wikilive::utils::escapeJson(project.name) +
+        "\",\"description\":\"" + wikilive::utils::escapeJson(project.description) +
+        "\",\"createdAt\":\"" + wikilive::utils::escapeJson(project.createdAt) +
+        "\",\"updatedAt\":\"" + wikilive::utils::escapeJson(project.updatedAt) +
+        "\",\"ownerId\":\"" + wikilive::utils::escapeJson(project.ownerId) +
+        "\",\"ownerName\":\"" + wikilive::utils::escapeJson(project.ownerName) +
+        "\",\"sharedWith\":" + toJsonArray(project.sharedWith);
+
+    json += ",\"access\":" + pageAccessToJson(project.access);
+    json += "}";
+
+    return json;
+}
+
 std::string pageToJson(const wikilive::models::Page& page, const bool includeRenderedHtml) {
     std::string json =
         "{\"pageId\":\"" + wikilive::utils::escapeJson(page.pageId) +
+        "\",\"projectId\":\"" + wikilive::utils::escapeJson(page.projectId) +
         "\",\"title\":\"" + wikilive::utils::escapeJson(page.title) +
         "\",\"description\":\"" + wikilive::utils::escapeJson(page.description) +
         "\",\"content\":\"" + wikilive::utils::escapeJson(page.content) +
@@ -247,6 +462,8 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
         "\",\"ownerId\":\"" + wikilive::utils::escapeJson(page.ownerId) +
         "\",\"ownerName\":\"" + wikilive::utils::escapeJson(page.ownerName) + "\"" + ",\"sharedWith\":" + toJsonArray(page.sharedWith);
 
+    json += ",\"access\":" + pageAccessToJson(page.access);
+
     if (includeRenderedHtml) {
         json += ",\"renderedHtml\":\"" + wikilive::utils::escapeJson(page.renderedHtml) + "\"";
     }
@@ -254,6 +471,8 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
     json += "}";
     return json;
 }
+
+
 
 std::string pageVersionToJson(const wikilive::models::PageVersion& version, const bool includeContent = true) {
     std::size_t threadCount = version.threadSnapshot.empty() ? version.threadCount : version.threadSnapshot.size();
@@ -267,12 +486,14 @@ std::string pageVersionToJson(const wikilive::models::PageVersion& version, cons
     nlohmann::json payload{
         {"versionId", version.versionId},
         {"pageId", version.pageId},
+        {"projectId", version.projectId},
         {"title", version.title},
         {"description", version.description},
         {"createdAt", version.createdAt},
         {"label", version.label},
         {"author", version.author},
         {"sharedWith", version.sharedWith},
+        {"access", nlohmann::json::parse(pageAccessToJson(version.access))},
         {"commentAccessMode", version.commentAccessMode},
         {"threadCount", threadCount},
         {"commentCount", messageCount},
@@ -308,6 +529,15 @@ std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
         {"targetType", thread.targetType},
         {"selectionLabel", thread.selectionLabel},
         {"targetPreview", thread.targetPreview},
+        {"anchor", {
+            {"anchorId", thread.anchor.anchorId},
+            {"quote", thread.anchor.quote},
+            {"selector", thread.anchor.selector},
+            {"blockId", thread.anchor.blockId},
+            {"blockType", thread.anchor.blockType},
+            {"startOffset", thread.anchor.startOffset},
+            {"endOffset", thread.anchor.endOffset},
+        }},
         {"createdAt", thread.createdAt},
         {"updatedAt", thread.updatedAt},
         {"resolved", thread.resolved},
@@ -364,44 +594,49 @@ wikilive::server::RouteResponse unknownExceptionResponse() {
 
 namespace wikilive::server {
 
-Router::Router(
-    services::PageService& pageService,
-    services::RenderService& renderService,
-    ai::AiService* aiService,
-    services::CollaborationService* collaborationService,
-    WebSocketManager* webSocketManager,
-    std::vector<MwsTablePreset> tablePresets)
-    : Router(
-          pageService,
-          renderService,
-          nullptr,
-          aiService,
-          collaborationService,
-          webSocketManager,
-          std::move(tablePresets),
-          nullptr) {
-}
+    Router::Router(
+        services::PageService& pageService,
+        services::RenderService& renderService,
+        services::ProjectService* projectService,
+        ai::AiService* aiService,
+        services::CollaborationService* collaborationService,
+        WebSocketManager* webSocketManager,
+        std::vector<MwsTablePreset> tablePresets)
+        : Router(
+            pageService,
+            renderService,
+            nullptr,
+            projectService,
+            aiService,
+            collaborationService,
+            webSocketManager,
+            std::move(tablePresets),
+            nullptr,
+            nullptr) {
+    }
 
-Router::Router(
-    services::PageService& pageService,
-    services::RenderService& renderService,
-    api::MwsClient* mwsClient,
-    ai::AiService* aiService,
-    services::CollaborationService* collaborationService,
-    WebSocketManager* webSocketManager,
-    std::vector<MwsTablePreset> tablePresets,
-    std::unique_ptr<storage::LocalUserStorage> userStorage,
-    services::AuthService* authService)
-    : pageService_(pageService),
-      renderService_(renderService),
-      mwsClient_(mwsClient),
-      aiService_(aiService),
-      collaborationService_(collaborationService),
-      webSocketManager_(webSocketManager),
-      tablePresets_(std::move(tablePresets)),
-      userStorage_(std::move(userStorage)),
-      authService_(authService) {
-}
+    Router::Router(
+        services::PageService& pageService,
+        services::RenderService& renderService,
+        api::MwsClient* mwsClient,
+        services::ProjectService* projectService,
+        ai::AiService* aiService,
+        services::CollaborationService* collaborationService,
+        WebSocketManager* webSocketManager,
+        std::vector<MwsTablePreset> tablePresets,
+        std::unique_ptr<storage::LocalUserStorage> userStorage,
+        services::AuthService* authService)
+        : pageService_(pageService),
+        renderService_(renderService),
+        mwsClient_(mwsClient),
+        projectService_(projectService),
+        aiService_(aiService),
+        collaborationService_(collaborationService),
+        webSocketManager_(webSocketManager),
+        tablePresets_(std::move(tablePresets)),
+        userStorage_(std::move(userStorage)),
+        authService_(authService) {
+    }
 
 RouteResponse Router::handleHealth() const {
     try {
@@ -439,7 +674,143 @@ RouteResponse Router::listPages() {
     }
 }
 
-RouteResponse Router::getPage(const std::string& pageId) {
+RouteResponse Router::listPagesForActor(const std::string& actorId) {
+    try {
+        const auto pages = pageService_.listPages();
+        if (!pages) {
+            return fail(pages.error());
+        }
+
+        std::vector<models::User> users;
+        if (userStorage_ != nullptr) {
+            const auto usersResult = userStorage_->listUsers();
+            if (!usersResult) {
+                return fail(usersResult.error());
+            }
+            users = usersResult.value();
+        }
+
+        const auto normalizedActor = toLower(actorId);
+        const models::User* actor = nullptr;
+        for (const auto& user : users) {
+            if (toLower(user.id) == normalizedActor || toLower(user.email) == normalizedActor) {
+                actor = &user;
+                break;
+            }
+        }
+
+        const auto accessActor = actor != nullptr
+            ? security::makeAccessActor(*actor)
+            : security::AccessActor{.userId = actorId, .email = actorId};
+
+        std::string items = "[";
+        bool first = true;
+        for (const auto& page : pages.value()) {
+            bool visible = page.access.publicAccess;
+            if (projectService_ != nullptr && !page.projectId.empty()) {
+                const auto project = projectService_->getProject(page.projectId);
+                if (project) {
+                    visible = security::canReadPage(accessActor, project.value(), page);
+                } else if (!actorId.empty()) {
+                    visible = security::hasDirectAccess(accessActor, page.access);
+                }
+            } else if (!actorId.empty()) {
+                visible = security::hasDirectAccess(accessActor, page.access);
+            }
+
+            if (!visible) {
+                continue;
+            }
+
+            if (!first) {
+                items += ",";
+            }
+            first = false;
+            items += pageToJson(page, false);
+        }
+        items += "]";
+
+        return ok("{\"items\":" + items + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::listPagesForProject(const std::string& projectId, const std::string& actorId) {
+    try {
+        if (projectId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "projectId must not be empty",
+                400,
+                false));
+        }
+
+        const auto pages = pageService_.listPages();
+        if (!pages) {
+            return fail(pages.error());
+        }
+
+        std::optional<models::Project> project;
+        if (projectService_ != nullptr) {
+            const auto projectResult = projectService_->getProject(projectId);
+            if (!projectResult) {
+                return fail(projectResult.error());
+            }
+            project = projectResult.value();
+        }
+
+        std::vector<models::User> users;
+        if (userStorage_ != nullptr && !actorId.empty()) {
+            const auto usersResult = userStorage_->listUsers();
+            if (!usersResult) {
+                return fail(usersResult.error());
+            }
+            users = usersResult.value();
+        }
+
+        const auto actorOpt = actorId.empty() ? std::nullopt : findUserByToken(users, actorId);
+        const auto accessActor = actorOpt
+            ? security::makeAccessActor(*actorOpt)
+            : security::AccessActor{.userId = actorId, .email = actorId};
+
+        std::string items = "[";
+        bool first = true;
+        for (const auto& page : pages.value()) {
+            if (page.projectId != projectId) {
+                continue;
+            }
+
+            bool visible = page.access.publicAccess;
+            if (project.has_value()) {
+                visible = security::canReadPage(accessActor, project.value(), page);
+            } else if (!actorId.empty()) {
+                visible = security::hasDirectAccess(accessActor, page.access);
+            }
+
+            if (!visible) {
+                continue;
+            }
+
+            if (!first) {
+                items += ",";
+            }
+            first = false;
+            items += pageToJson(page, false);
+        }
+        items += "]";
+
+        return ok("{\"items\":" + items + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::getPage(const std::string& pageId, const std::string& actorId) {
     try {
         if (pageId.empty()) {
             return fail(utils::makeError(
@@ -452,6 +823,42 @@ RouteResponse Router::getPage(const std::string& pageId) {
         const auto page = pageService_.getPage(pageId);
         if (!page) {
             return fail(page.error());
+        }
+
+        if (!actorId.empty() && userStorage_ != nullptr) {
+            const auto usersResult = userStorage_->listUsers();
+            if (!usersResult) {
+                return fail(usersResult.error());
+            }
+            const auto userOpt = findUserByToken(usersResult.value(), actorId);
+            const auto actor = userOpt
+                ? security::makeAccessActor(*userOpt)
+                : security::AccessActor{.userId = actorId, .email = actorId};
+
+            if (projectService_ != nullptr && !page->projectId.empty()) {
+                const auto projectResult = projectService_->getProject(page->projectId);
+                if (projectResult) {
+                    if (!security::canReadPage(actor, projectResult.value(), page.value())) {
+                        return fail(utils::makeError(
+                            utils::ErrorCode::InvalidRequest,
+                            "Access denied for page",
+                            403,
+                            false));
+                    }
+                } else if (!security::hasDirectAccess(actor, page->access)) {
+                    return fail(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Access denied for page",
+                        403,
+                        false));
+                }
+            } else if (!security::hasDirectAccess(actor, page->access)) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Access denied for page",
+                    403,
+                    false));
+            }
         }
 
         const auto renderedPage = renderService_.renderPage(page.value());
@@ -472,6 +879,44 @@ RouteResponse Router::createPage(const std::string& payload) {
         const auto draft = parsePagePayload(payload);
         if (!draft) {
             return fail(draft.error());
+        }
+
+        std::string actorToken;
+        try {
+            const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+            actorToken = parsed.value("actorId", std::string{});
+            if (actorToken.empty()) {
+                actorToken = parsed.value("actorEmail", std::string{});
+            }
+            if (actorToken.empty()) {
+                actorToken = parsed.value("ownerId", std::string{});
+            }
+        } catch (const nlohmann::json::exception&) {
+        }
+
+        if (projectService_ != nullptr) {
+            const auto projectResult = projectService_->getProject(draft->projectId);
+            if (!projectResult) {
+                return fail(projectResult.error());
+            }
+
+            if (!actorToken.empty() && userStorage_ != nullptr) {
+                const auto usersResult = userStorage_->listUsers();
+                if (!usersResult) {
+                    return fail(usersResult.error());
+                }
+                const auto userOpt = findUserByToken(usersResult.value(), actorToken);
+                const auto actor = userOpt
+                    ? security::makeAccessActor(*userOpt)
+                    : security::AccessActor{.userId = actorToken, .email = actorToken};
+                if (!security::canEditProject(actor, projectResult.value())) {
+                    return fail(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Access denied for project",
+                        403,
+                        false));
+                }
+            }
         }
 
         const auto versionLabel = extractJsonString(payload, "versionLabel", false);
@@ -529,6 +974,88 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
             return fail(draft.error());
         }
 
+        const auto existingPage = pageService_.getPage(pageId);
+        if (!existingPage) {
+            return fail(existingPage.error());
+        }
+
+        if (!draft->projectId.empty() && !existingPage->projectId.empty() &&
+            draft->projectId != existingPage->projectId) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "projectId mismatch for page update",
+                400,
+                false));
+        }
+
+        std::string targetProjectId = existingPage->projectId.empty()
+            ? draft->projectId
+            : existingPage->projectId;
+
+        std::string actorToken;
+        try {
+            const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+            actorToken = parsed.value("actorId", std::string{});
+            if (actorToken.empty()) {
+                actorToken = parsed.value("actorEmail", std::string{});
+            }
+            if (actorToken.empty()) {
+                actorToken = parsed.value("ownerId", std::string{});
+            }
+        } catch (const nlohmann::json::exception&) {
+        }
+
+        if (projectService_ != nullptr) {
+            if (targetProjectId.empty()) {
+                const auto projectsResult = projectService_->listProjects();
+                if (!projectsResult) {
+                    return fail(projectsResult.error());
+                }
+                const auto& projects = projectsResult.value();
+                if (projects.size() == 1) {
+                    targetProjectId = projects.front().projectId;
+                } else if (!existingPage->ownerId.empty()) {
+                    for (const auto& project : projects) {
+                        if (project.ownerId == existingPage->ownerId) {
+                            targetProjectId = project.projectId;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (targetProjectId.empty()) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "projectId must not be empty for page update",
+                    400,
+                    false));
+            }
+
+            const auto projectResult = projectService_->getProject(targetProjectId);
+            if (!projectResult) {
+                return fail(projectResult.error());
+            }
+
+            if (!actorToken.empty() && userStorage_ != nullptr) {
+                const auto usersResult = userStorage_->listUsers();
+                if (!usersResult) {
+                    return fail(usersResult.error());
+                }
+                const auto userOpt = findUserByToken(usersResult.value(), actorToken);
+                const auto actor = userOpt
+                    ? security::makeAccessActor(*userOpt)
+                    : security::AccessActor{.userId = actorToken, .email = actorToken};
+                if (!security::canEditPage(actor, projectResult.value(), existingPage.value())) {
+                    return fail(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Access denied for page update",
+                        403,
+                        false));
+                }
+            }
+        }
+
         const auto versionLabel = extractJsonString(payload, "versionLabel", false);
         if (!versionLabel) {
             return fail(versionLabel.error());
@@ -546,7 +1073,12 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
         } catch (const nlohmann::json::exception&) {
         }
 
-        const auto updatedPage = pageService_.updatePage(pageId, draft.value());
+        auto adjustedDraft = draft.value();
+        if (adjustedDraft.projectId.empty()) {
+            adjustedDraft.projectId = targetProjectId;
+        }
+
+        const auto updatedPage = pageService_.updatePage(pageId, adjustedDraft);
         if (!updatedPage) {
             return fail(updatedPage.error());
         }
@@ -639,6 +1171,623 @@ RouteResponse Router::listVersions(const std::string& pageId) {
         items += "]";
 
         return ok("{\"items\":" + items + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::getPageAccess(const std::string& pageId) {
+    try {
+        if (pageId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "pageId must not be empty",
+                400,
+                false));
+        }
+
+        const auto page = pageService_.getPage(pageId);
+        if (!page) {
+            return fail(page.error());
+        }
+
+        const auto& access = page->access;
+        nlohmann::json payload{
+            {"pageId", page->pageId},
+            {"ownerId", page->ownerId},
+            {"ownerName", page->ownerName},
+            {"access", {
+                {"public", access.publicAccess},
+                {"users", access.userIds},
+                {"groups", access.groupIds},
+                {"roles", access.roles},
+            }},
+            {"sharedWith", page->sharedWith},
+        };
+
+        return ok(payload.dump());
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::setProjectAccess(const std::string& projectId, const std::string& payload) {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    if (payload.empty()) {
+        return {
+            .statusCode = 400,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Project access payload must not be empty",
+                400,
+                false)),
+        };
+    }
+
+    nlohmann::json parsed;
+    try {
+        parsed = nlohmann::json::parse(payload);
+    }
+    catch (const std::exception& exception) {
+        return {
+            .statusCode = 400,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                std::string("Invalid project access JSON: ") + exception.what(),
+                400,
+                false)),
+        };
+    }
+
+    const auto existing = projectService_->getProject(projectId);
+    if (!existing) {
+        return {
+            .statusCode = existing.error().httpStatus,
+            .body = buildErrorJson(existing.error()),
+        };
+    }
+
+    std::string actorToken = parsed.value("actorId", std::string{});
+    if (actorToken.empty()) {
+        actorToken = parsed.value("actorEmail", std::string{});
+    }
+    if (!actorToken.empty() && userStorage_ != nullptr) {
+        const auto usersResult = userStorage_->listUsers();
+        if (!usersResult) {
+            return {
+                .statusCode = usersResult.error().httpStatus,
+                .body = buildErrorJson(usersResult.error()),
+            };
+        }
+        const auto userOpt = findUserByToken(usersResult.value(), actorToken);
+        const auto actor = userOpt
+            ? security::makeAccessActor(*userOpt)
+            : security::AccessActor{.userId = actorToken, .email = actorToken};
+        if (!security::canEditProjectAccess(actor, existing.value())) {
+            return {
+                .statusCode = 403,
+                .body = buildErrorJson(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Access denied for project",
+                    403,
+                    false)),
+            };
+        }
+    }
+
+    auto access = existing.value().access;
+
+    if (parsed.contains("access") && parsed["access"].is_object()) {
+        const auto& accessJson = parsed["access"];
+
+        access.publicAccess = accessJson.value("public", access.publicAccess);
+
+        if (accessJson.contains("users") && accessJson["users"].is_array()) {
+            access.userIds.clear();
+            for (const auto& item : accessJson["users"]) {
+                if (item.is_string()) {
+                    access.userIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (accessJson.contains("groups") && accessJson["groups"].is_array()) {
+            access.groupIds.clear();
+            for (const auto& item : accessJson["groups"]) {
+                if (item.is_string()) {
+                    access.groupIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (accessJson.contains("roles") && accessJson["roles"].is_array()) {
+            access.roles.clear();
+            for (const auto& item : accessJson["roles"]) {
+                if (item.is_string()) {
+                    access.roles.push_back(item.get<std::string>());
+                }
+            }
+        }
+    }
+    else {
+        if (parsed.contains("publicAccess") && parsed["publicAccess"].is_boolean()) {
+            access.publicAccess = parsed["publicAccess"].get<bool>();
+        }
+
+        if (parsed.contains("accessUsers") && parsed["accessUsers"].is_array()) {
+            access.userIds.clear();
+            for (const auto& item : parsed["accessUsers"]) {
+                if (item.is_string()) {
+                    access.userIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (parsed.contains("accessGroups") && parsed["accessGroups"].is_array()) {
+            access.groupIds.clear();
+            for (const auto& item : parsed["accessGroups"]) {
+                if (item.is_string()) {
+                    access.groupIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        if (parsed.contains("accessRoles") && parsed["accessRoles"].is_array()) {
+            access.roles.clear();
+            for (const auto& item : parsed["accessRoles"]) {
+                if (item.is_string()) {
+                    access.roles.push_back(item.get<std::string>());
+                }
+            }
+        }
+    }
+
+    const auto updated = projectService_->updateAccess(projectId, access);
+    if (!updated) {
+        return {
+            .statusCode = updated.error().httpStatus,
+            .body = buildErrorJson(updated.error()),
+        };
+    }
+
+    const auto refreshed = projectService_->getProject(projectId);
+    if (!refreshed) {
+        return {
+            .statusCode = refreshed.error().httpStatus,
+            .body = buildErrorJson(refreshed.error()),
+        };
+    }
+
+    return {
+        .statusCode = 200,
+        .body = buildSuccessJson(projectToJson(refreshed.value())),
+    };
+}
+
+RouteResponse Router::getProject(const std::string& projectId, const std::string& actorId) {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    const auto project = projectService_->getProject(projectId);
+    if (!project) {
+        return {
+            .statusCode = project.error().httpStatus,
+            .body = buildErrorJson(project.error()),
+        };
+    }
+
+    if (!actorId.empty() && userStorage_ != nullptr) {
+        const auto usersResult = userStorage_->listUsers();
+        if (!usersResult) {
+            return {
+                .statusCode = usersResult.error().httpStatus,
+                .body = buildErrorJson(usersResult.error()),
+            };
+        }
+        const auto userOpt = findUserByToken(usersResult.value(), actorId);
+        const auto actor = userOpt
+            ? security::makeAccessActor(*userOpt)
+            : security::AccessActor{.userId = actorId, .email = actorId};
+        if (!security::canReadProject(actor, project.value())) {
+            return {
+                .statusCode = 403,
+                .body = buildErrorJson(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Access denied for project",
+                    403,
+                    false)),
+            };
+        }
+    }
+
+    return {
+        .statusCode = 200,
+        .body = buildSuccessJson(projectToJson(project.value())),
+    };
+}
+
+RouteResponse Router::createProject(const std::string& payload) {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    const auto draft = parseProjectDraft(payload);
+    if (!draft) {
+        return {
+            .statusCode = draft.error().httpStatus,
+            .body = buildErrorJson(draft.error()),
+        };
+    }
+
+    auto resolvedDraft = draft.value();
+    if (resolvedDraft.ownerName.empty() && userStorage_ != nullptr && !resolvedDraft.ownerId.empty()) {
+        const auto usersResult = userStorage_->listUsers();
+        if (usersResult) {
+            const auto userOpt = findUserByToken(usersResult.value(), resolvedDraft.ownerId);
+            if (userOpt) {
+                resolvedDraft.ownerName = userOpt->name;
+            }
+        }
+    }
+
+    const auto created = projectService_->createProject(resolvedDraft);
+    if (!created) {
+        return {
+            .statusCode = created.error().httpStatus,
+            .body = buildErrorJson(created.error()),
+        };
+    }
+
+    return {
+        .statusCode = 201,
+        .body = buildSuccessJson(projectToJson(created.value())),
+    };
+}
+
+RouteResponse Router::listProjects() {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    const auto projects = projectService_->listProjects();
+    if (!projects) {
+        return {
+            .statusCode = projects.error().httpStatus,
+            .body = buildErrorJson(projects.error()),
+        };
+    }
+
+    std::string payload = "[";
+    bool first = true;
+    for (const auto& project : projects.value()) {
+        if (!first) {
+            payload += ",";
+        }
+        first = false;
+        payload += projectToJson(project);
+    }
+    payload += "]";
+
+    return {
+        .statusCode = 200,
+        .body = buildSuccessJson(payload),
+    };
+}
+
+RouteResponse Router::listProjectsForActor(const std::string& actorId) {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    const auto projects = projectService_->listProjects();
+    if (!projects) {
+        return {
+            .statusCode = projects.error().httpStatus,
+            .body = buildErrorJson(projects.error()),
+        };
+    }
+
+    std::vector<models::User> users;
+    if (userStorage_ != nullptr) {
+        const auto usersResult = userStorage_->listUsers();
+        if (!usersResult) {
+            return {
+                .statusCode = usersResult.error().httpStatus,
+                .body = buildErrorJson(usersResult.error()),
+            };
+        }
+        users = usersResult.value();
+    }
+
+    const auto userOpt = findUserByToken(users, actorId);
+    const auto actor = userOpt
+        ? security::makeAccessActor(*userOpt)
+        : security::AccessActor{.userId = actorId, .email = actorId};
+
+    std::string payload = "[";
+    bool first = true;
+    for (const auto& project : projects.value()) {
+        if (!security::canReadProject(actor, project)) {
+            continue;
+        }
+        if (!first) {
+            payload += ",";
+        }
+        first = false;
+        payload += projectToJson(project);
+    }
+    payload += "]";
+
+    return {
+        .statusCode = 200,
+        .body = buildSuccessJson(payload),
+    };
+}
+
+RouteResponse Router::listWorkspace(const std::string& actorId) {
+    if (projectService_ == nullptr) {
+        return {
+            .statusCode = 503,
+            .body = buildErrorJson(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Project service is not configured",
+                503,
+                false)),
+        };
+    }
+
+    const auto projectsResult = projectService_->listProjects();
+    if (!projectsResult) {
+        return {
+            .statusCode = projectsResult.error().httpStatus,
+            .body = buildErrorJson(projectsResult.error()),
+        };
+    }
+
+    const auto pagesResult = pageService_.listPages();
+    if (!pagesResult) {
+        return fail(pagesResult.error());
+    }
+
+    std::vector<models::User> users;
+    if (userStorage_ != nullptr && !actorId.empty()) {
+        const auto usersResult = userStorage_->listUsers();
+        if (!usersResult) {
+            return fail(usersResult.error());
+        }
+        users = usersResult.value();
+    }
+
+    const auto actorOpt = actorId.empty() ? std::nullopt : findUserByToken(users, actorId);
+    const auto accessActor = actorOpt
+        ? security::makeAccessActor(*actorOpt)
+        : security::AccessActor{.userId = actorId, .email = actorId};
+
+    std::string projectsJson = "[";
+    bool firstProject = true;
+    for (const auto& project : projectsResult.value()) {
+        if (!actorId.empty() && !security::canReadProject(accessActor, project)) {
+            continue;
+        }
+        if (!firstProject) {
+            projectsJson += ",";
+        }
+        firstProject = false;
+        projectsJson += projectToJson(project);
+    }
+    projectsJson += "]";
+
+    std::string pagesJson = "[";
+    bool firstPage = true;
+    for (const auto& page : pagesResult.value()) {
+        bool visible = true;
+        if (!actorId.empty()) {
+            visible = page.access.publicAccess;
+            if (projectService_ != nullptr && !page.projectId.empty()) {
+                const auto project = projectService_->getProject(page.projectId);
+                if (project) {
+                    visible = security::canReadPage(accessActor, project.value(), page);
+                } else {
+                    visible = security::hasDirectAccess(accessActor, page.access);
+                }
+            } else {
+                visible = security::hasDirectAccess(accessActor, page.access);
+            }
+        }
+
+        if (!visible) {
+            continue;
+        }
+
+        if (!firstPage) {
+            pagesJson += ",";
+        }
+        firstPage = false;
+        pagesJson += pageToJson(page, false);
+    }
+    pagesJson += "]";
+
+    return ok("{\"projects\":" + projectsJson + ",\"pages\":" + pagesJson + "}");
+}
+
+
+RouteResponse Router::setPageAccess(const std::string& pageId, const std::string& payload) {
+    try {
+        if (pageId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "pageId must not be empty",
+                400,
+                false));
+        }
+        if (payload.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Access payload must not be empty",
+                400,
+                false));
+        }
+
+        const auto page = pageService_.getPage(pageId);
+        if (!page) {
+            return fail(page.error());
+        }
+
+        const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto actorId = parsed.value("actorId", std::string{});
+        const auto actorEmail = parsed.value("actorEmail", std::string{});
+        const auto actorToken = !actorId.empty() ? actorId : actorEmail;
+
+        if (!actorToken.empty() && userStorage_ != nullptr) {
+            const auto usersResult = userStorage_->listUsers();
+            if (!usersResult) {
+                return fail(usersResult.error());
+            }
+
+            const auto normalizedActor = toLower(actorToken);
+            const models::User* actor = nullptr;
+            for (const auto& user : usersResult.value()) {
+                if (toLower(user.id) == normalizedActor || toLower(user.email) == normalizedActor) {
+                    actor = &user;
+                    break;
+                }
+            }
+
+            if (actor != nullptr) {
+                const bool isAdmin = toLower(actor->role) == "admin";
+                const bool isOwner = (page->ownerId == actor->id || page->ownerId == actor->email);
+                if (!isAdmin && !isOwner) {
+                    return fail(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Only the owner or admin may update access",
+                        403,
+                        false));
+                }
+            }
+        }
+
+        models::PageAccess access = page->access;
+        if (parsed.contains("access") && parsed["access"].is_object()) {
+            const auto& accessJson = parsed["access"];
+            access.publicAccess = accessJson.value("public", access.publicAccess);
+            if (accessJson.contains("users") && accessJson["users"].is_array()) {
+                access.userIds.clear();
+                for (const auto& item : accessJson["users"]) {
+                    if (item.is_string()) {
+                        access.userIds.push_back(item.get<std::string>());
+                    }
+                }
+            }
+            if (accessJson.contains("groups") && accessJson["groups"].is_array()) {
+                access.groupIds.clear();
+                for (const auto& item : accessJson["groups"]) {
+                    if (item.is_string()) {
+                        access.groupIds.push_back(item.get<std::string>());
+                    }
+                }
+            }
+            if (accessJson.contains("roles") && accessJson["roles"].is_array()) {
+                access.roles.clear();
+                for (const auto& item : accessJson["roles"]) {
+                    if (item.is_string()) {
+                        access.roles.push_back(item.get<std::string>());
+                    }
+                }
+            }
+        }
+
+        if (parsed.contains("publicAccess") && parsed["publicAccess"].is_boolean()) {
+            access.publicAccess = parsed["publicAccess"].get<bool>();
+        }
+        if (parsed.contains("accessUsers") && parsed["accessUsers"].is_array()) {
+            access.userIds.clear();
+            for (const auto& item : parsed["accessUsers"]) {
+                if (item.is_string()) {
+                    access.userIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+        if (parsed.contains("accessGroups") && parsed["accessGroups"].is_array()) {
+            access.groupIds.clear();
+            for (const auto& item : parsed["accessGroups"]) {
+                if (item.is_string()) {
+                    access.groupIds.push_back(item.get<std::string>());
+                }
+            }
+        }
+        if (parsed.contains("accessRoles") && parsed["accessRoles"].is_array()) {
+            access.roles.clear();
+            for (const auto& item : parsed["accessRoles"]) {
+                if (item.is_string()) {
+                    access.roles.push_back(item.get<std::string>());
+                }
+            }
+        }
+
+        const auto updatedPage = pageService_.updateAccess(pageId, access);
+        if (!updatedPage) {
+            return fail(updatedPage.error());
+        }
+
+        nlohmann::json response{
+            {"pageId", updatedPage->pageId},
+            {"access", {
+                {"public", access.publicAccess},
+                {"users", access.userIds},
+                {"groups", access.groupIds},
+                {"roles", access.roles},
+            }},
+        };
+        return ok(response.dump());
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed access JSON payload: ") + exception.what(),
+            400,
+            false));
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -817,6 +1966,38 @@ RouteResponse Router::createComment(const std::string& pageId, const std::string
         }
 
         const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+        models::CommentAnchor anchor{};
+        if (parsedPayload.contains("anchor") && parsedPayload["anchor"].is_object()) {
+            const auto& anchorJson = parsedPayload["anchor"];
+            anchor.anchorId = anchorJson.value("anchorId", std::string{});
+            anchor.quote = anchorJson.value("quote", std::string{});
+            anchor.selector = anchorJson.value("selector", std::string{});
+            anchor.blockId = anchorJson.value("blockId", std::string{});
+            anchor.blockType = anchorJson.value("blockType", std::string{});
+            anchor.startOffset = anchorJson.value("startOffset", -1);
+            anchor.endOffset = anchorJson.value("endOffset", -1);
+        }
+        if (parsedPayload.contains("anchorId") && parsedPayload["anchorId"].is_string()) {
+            anchor.anchorId = parsedPayload.value("anchorId", std::string{});
+        }
+        if (parsedPayload.contains("anchorQuote") && parsedPayload["anchorQuote"].is_string()) {
+            anchor.quote = parsedPayload.value("anchorQuote", std::string{});
+        }
+        if (parsedPayload.contains("anchorSelector") && parsedPayload["anchorSelector"].is_string()) {
+            anchor.selector = parsedPayload.value("anchorSelector", std::string{});
+        }
+        if (parsedPayload.contains("anchorBlockId") && parsedPayload["anchorBlockId"].is_string()) {
+            anchor.blockId = parsedPayload.value("anchorBlockId", std::string{});
+        }
+        if (parsedPayload.contains("anchorBlockType") && parsedPayload["anchorBlockType"].is_string()) {
+            anchor.blockType = parsedPayload.value("anchorBlockType", std::string{});
+        }
+        if (parsedPayload.contains("anchorStartOffset") && parsedPayload["anchorStartOffset"].is_number_integer()) {
+            anchor.startOffset = parsedPayload.value("anchorStartOffset", -1);
+        }
+        if (parsedPayload.contains("anchorEndOffset") && parsedPayload["anchorEndOffset"].is_number_integer()) {
+            anchor.endOffset = parsedPayload.value("anchorEndOffset", -1);
+        }
         const auto thread = collaborationService_->createThread(
             pageId,
             services::CommentThreadDraft{
@@ -826,6 +2007,7 @@ RouteResponse Router::createComment(const std::string& pageId, const std::string
                 .targetId = parsedPayload.value("targetId", std::string{}),
                 .targetType = parsedPayload.value("targetType", std::string("paragraph")),
                 .targetPreview = parsedPayload.value("targetPreview", std::string{}),
+                .anchor = anchor,
             });
         if (!thread) {
             return fail(thread.error());
@@ -1250,8 +2432,16 @@ RouteResponse Router::getMwsInsertOptions(const std::string& tableId, const std:
                 false));
         }
 
-        const auto resolvedTableId = tableId.empty() ? mwsClient_->tableId() : tableId;
-        const auto resolvedViewId = viewId.empty() ? mwsClient_->viewId() : viewId;
+        const auto resolved = resolveTableSelection(mwsClient_, tableId, viewId);
+        const auto& resolvedTableId = resolved.tableId;
+        const auto& resolvedViewId = resolved.viewId;
+        if (resolvedTableId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "tableId must not be empty",
+                400,
+                false));
+        }
         const auto records = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId);
         if (!records) {
             return fail(records.error());
@@ -1297,8 +2487,16 @@ RouteResponse Router::getMwsGrid(
                 false));
         }
 
-        const auto resolvedTableId = tableId.empty() ? mwsClient_->tableId() : tableId;
-        const auto resolvedViewId = viewId.empty() ? mwsClient_->viewId() : viewId;
+        const auto resolved = resolveTableSelection(mwsClient_, tableId, viewId);
+        const auto& resolvedTableId = resolved.tableId;
+        const auto& resolvedViewId = resolved.viewId;
+        if (resolvedTableId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "tableId must not be empty",
+                400,
+                false));
+        }
         const auto recordIds = parseCsvList(recordIdsCsv);
         const auto fieldNames = parseCsvList(fieldNamesCsv);
         const auto records = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId, recordIds);
@@ -1339,8 +2537,21 @@ RouteResponse Router::updateMwsGrid(const std::string& payload) {
         }
 
         const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
-        const auto resolvedTableId = parsed.value("tableId", mwsClient_->tableId());
-        const auto resolvedViewId = parsed.value("viewId", mwsClient_->viewId());
+        const auto tableUrl = parsed.value("tableUrl", parsed.value("tableLink", std::string{}));
+        const auto resolved = resolveTableSelection(
+            mwsClient_,
+            parsed.value("tableId", mwsClient_->tableId()),
+            parsed.value("viewId", mwsClient_->viewId()),
+            tableUrl);
+        const auto& resolvedTableId = resolved.tableId;
+        const auto& resolvedViewId = resolved.viewId;
+        if (resolvedTableId.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "tableId must not be empty",
+                400,
+                false));
+        }
         const auto fieldNames = parsed.contains("fieldNames") && parsed["fieldNames"].is_array()
             ? parsed["fieldNames"].get<std::vector<std::string>>()
             : std::vector<std::string>{};
@@ -1623,6 +2834,11 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         return std::unexpected(title.error());
     }
 
+    auto projectId = extractJsonString(payload, "projectId", false);
+    if (!projectId) {
+        return std::unexpected(projectId.error());
+    }
+
     auto content = extractJsonString(payload, "content");
     if (!content) {
         return std::unexpected(content.error());
@@ -1672,7 +2888,82 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         }
     }
 
+    bool accessProvided = false;
+    models::PageAccess access{};
+    if (payload.find("\"access\"") != std::string::npos ||
+        payload.find("\"accessUsers\"") != std::string::npos ||
+        payload.find("\"accessGroups\"") != std::string::npos ||
+        payload.find("\"accessRoles\"") != std::string::npos ||
+        payload.find("\"publicAccess\"") != std::string::npos) {
+        try {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            if (parsedPayload.contains("access") && parsedPayload["access"].is_object()) {
+                const auto& accessJson = parsedPayload["access"];
+                access.publicAccess = accessJson.value("public", false);
+                if (accessJson.contains("users") && accessJson["users"].is_array()) {
+                    for (const auto& item : accessJson["users"]) {
+                        if (item.is_string()) {
+                            access.userIds.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+                if (accessJson.contains("groups") && accessJson["groups"].is_array()) {
+                    for (const auto& item : accessJson["groups"]) {
+                        if (item.is_string()) {
+                            access.groupIds.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+                if (accessJson.contains("roles") && accessJson["roles"].is_array()) {
+                    for (const auto& item : accessJson["roles"]) {
+                        if (item.is_string()) {
+                            access.roles.push_back(item.get<std::string>());
+                        }
+                    }
+                }
+                accessProvided = true;
+            }
+
+            if (parsedPayload.contains("publicAccess") && parsedPayload["publicAccess"].is_boolean()) {
+                access.publicAccess = parsedPayload["publicAccess"].get<bool>();
+                accessProvided = true;
+            }
+
+            if (parsedPayload.contains("accessUsers") && parsedPayload["accessUsers"].is_array()) {
+                accessProvided = true;
+                for (const auto& item : parsedPayload["accessUsers"]) {
+                    if (item.is_string()) {
+                        access.userIds.push_back(item.get<std::string>());
+                    }
+                }
+            }
+            if (parsedPayload.contains("accessGroups") && parsedPayload["accessGroups"].is_array()) {
+                accessProvided = true;
+                for (const auto& item : parsedPayload["accessGroups"]) {
+                    if (item.is_string()) {
+                        access.groupIds.push_back(item.get<std::string>());
+                    }
+                }
+            }
+            if (parsedPayload.contains("accessRoles") && parsedPayload["accessRoles"].is_array()) {
+                accessProvided = true;
+                for (const auto& item : parsedPayload["accessRoles"]) {
+                    if (item.is_string()) {
+                        access.roles.push_back(item.get<std::string>());
+                    }
+                }
+            }
+        } catch (const std::exception& exception) {
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                std::string("Failed to parse access payload: ") + exception.what(),
+                400,
+                false));
+        }
+    }
+
     return services::PageDraft{
+        .projectId = projectId.value(),
         .title = title.value(),
         .description = description.value(),
         .content = content.value(),
@@ -1680,6 +2971,8 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         .ownerName = ownerName.value(),
         .sharedWith = sharedWith,
         .sharedWithProvided = sharedWithProvided,
+        .access = access,
+        .accessProvided = accessProvided,
     };
 }
 

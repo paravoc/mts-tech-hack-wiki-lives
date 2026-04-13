@@ -24,6 +24,7 @@ json toJson(const wikilive::models::PageVersion& version) {
     return {
         {"versionId", version.versionId},
         {"pageId", version.pageId},
+        {"projectId", version.projectId},
         {"title", version.title},
         {"description", version.description},
         {"content", version.content},
@@ -31,6 +32,12 @@ json toJson(const wikilive::models::PageVersion& version) {
         {"label", version.label},
         {"author", version.author},
         {"sharedWith", version.sharedWith},
+        {"access", {
+            {"public", version.access.publicAccess},
+            {"users", version.access.userIds},
+            {"groups", version.access.groupIds},
+            {"roles", version.access.roles},
+        }},
         {"threadSnapshot", threads},
         {"commentAccessMode", version.commentAccessMode},
         {"threadCount", version.threadCount},
@@ -64,6 +71,15 @@ json toJson(const wikilive::models::CommentThread& thread) {
         {"targetType", thread.targetType},
         {"selectionLabel", thread.selectionLabel},
         {"targetPreview", thread.targetPreview},
+        {"anchor", {
+            {"anchorId", thread.anchor.anchorId},
+            {"quote", thread.anchor.quote},
+            {"selector", thread.anchor.selector},
+            {"blockId", thread.anchor.blockId},
+            {"blockType", thread.anchor.blockType},
+            {"startOffset", thread.anchor.startOffset},
+            {"endOffset", thread.anchor.endOffset},
+        }},
         {"createdAt", thread.createdAt},
         {"updatedAt", thread.updatedAt},
         {"resolved", thread.resolved},
@@ -84,6 +100,7 @@ wikilive::models::PageVersion versionFromJson(const json& item) {
     wikilive::models::PageVersion version{
         .versionId = item.value("versionId", std::string{}),
         .pageId = item.value("pageId", std::string{}),
+        .projectId = item.value("projectId", std::string{}),
         .title = item.value("title", std::string{}),
         .description = item.value("description", std::string{}),
         .content = item.value("content", std::string{}),
@@ -91,8 +108,35 @@ wikilive::models::PageVersion versionFromJson(const json& item) {
         .label = item.value("label", std::string{}),
         .author = item.value("author", std::string{}),
         .sharedWith = item.value("sharedWith", std::vector<std::string>{}),
+        .access = {},
         .commentAccessMode = item.value("commentAccessMode", std::string{"all_users"}),
     };
+
+    if (item.contains("access") && item["access"].is_object()) {
+        const auto& access = item["access"];
+        version.access.publicAccess = access.value("public", false);
+        if (access.contains("users") && access["users"].is_array()) {
+            for (const auto& value : access["users"]) {
+                if (value.is_string()) {
+                    version.access.userIds.push_back(value.get<std::string>());
+                }
+            }
+        }
+        if (access.contains("groups") && access["groups"].is_array()) {
+            for (const auto& value : access["groups"]) {
+                if (value.is_string()) {
+                    version.access.groupIds.push_back(value.get<std::string>());
+                }
+            }
+        }
+        if (access.contains("roles") && access["roles"].is_array()) {
+            for (const auto& value : access["roles"]) {
+                if (value.is_string()) {
+                    version.access.roles.push_back(value.get<std::string>());
+                }
+            }
+        }
+    }
 
     if (item.contains("threadSnapshot") && item["threadSnapshot"].is_array()) {
         for (const auto& threadItem : item["threadSnapshot"]) {
@@ -140,6 +184,7 @@ wikilive::models::CommentThread commentThreadFromJson(const json& item) {
         .targetType = item.value("targetType", std::string{}),
         .selectionLabel = item.value("selectionLabel", std::string{}),
         .targetPreview = item.value("targetPreview", std::string{}),
+        .anchor = {},
         .createdAt = item.value("createdAt", std::string{}),
         .updatedAt = item.value("updatedAt", std::string{}),
         .resolved = item.value("resolved", false),
@@ -153,6 +198,17 @@ wikilive::models::CommentThread commentThreadFromJson(const json& item) {
         .deletedBy = item.value("deletedBy", std::string{}),
         .likedBy = item.value("likedBy", std::vector<std::string>{}),
     };
+
+    if (item.contains("anchor") && item["anchor"].is_object()) {
+        const auto& anchor = item["anchor"];
+        thread.anchor.anchorId = anchor.value("anchorId", std::string{});
+        thread.anchor.quote = anchor.value("quote", std::string{});
+        thread.anchor.selector = anchor.value("selector", std::string{});
+        thread.anchor.blockId = anchor.value("blockId", std::string{});
+        thread.anchor.blockType = anchor.value("blockType", std::string{});
+        thread.anchor.startOffset = anchor.value("startOffset", -1);
+        thread.anchor.endOffset = anchor.value("endOffset", -1);
+    }
 
     if (item.contains("messages") && item["messages"].is_array()) {
         for (const auto& message : item["messages"]) {
@@ -509,7 +565,7 @@ utils::VoidExpected LocalCollaborationStorage::persistStateUnlocked(const State&
                 true));
         }
 
-        stream << root.dump(2);
+        stream << root.dump(2, ' ', false, json::error_handler_t::replace);
         stream.flush();
         cachedState_ = state;
         cacheLoaded_ = true;

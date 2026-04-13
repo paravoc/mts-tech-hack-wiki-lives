@@ -108,17 +108,6 @@ def _presence_markup() -> str:
           <div class="page-presence__avatars" id="pagePresenceAvatars"></div>
           <div class="page-presence__count" id="pagePresenceCount">0</div>
         </div>
-        <div class="page-access-panel" id="pageAccessPanel">
-          <div class="page-access-panel__head">
-            <div class="page-access-panel__title">Доступ к странице</div>
-            <button class="page-access-panel__close" id="pageAccessClose" type="button">×</button>
-          </div>
-          <div class="page-access-panel__subtitle">Укажите, у кого есть доступ</div>
-          <div class="page-access-panel__list" id="pageAccessList"></div>
-          <div class="page-access-panel__actions">
-            <button class="page-access-panel__save" id="pageAccessSave" type="button">Сохранить</button>
-          </div>
-        </div>
         """
     ).strip()
 

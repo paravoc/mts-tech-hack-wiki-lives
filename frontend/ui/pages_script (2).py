@@ -405,10 +405,102 @@ def pages_script() -> str:
         }
 
         let commentWorkspaceToken = 0;
+        let commentProjects = [];
 
         function getActorPageStorageKey(actorId = currentCommentActorId) {
           return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
         }
+
+        function getActorProjectStorageKey(actorId = currentCommentActorId) {
+          return `${commentPageStorageKey}:project:${normalizeActorId(actorId || "viewer")}`;
+        }
+
+        function getOwnedProjectsForActor(actorId = currentCommentActorId) {
+          return (commentProjects || []).filter((project) => normalizeActorId(project.ownerId || "viewer") === normalizeActorId(actorId || "viewer"));
+        }
+
+        function getProjectById(projectId) {
+          return (commentProjects || []).find((project) => project.projectId === projectId) || null;
+        }
+
+        function getProjectLabel(project, fallbackPage = null) {
+          if (project && String(project.name || "").trim()) {
+            return String(project.name || "").trim();
+          }
+          const ownerName = String((project && project.ownerName) || (fallbackPage && fallbackPage.ownerName) || "Гость").trim() || "Гость";
+          return `Проект ${ownerName}`;
+        }
+
+        async function ensureProjectForCurrentActor(forceCatalog = false) {
+          await loadPagesCatalog(forceCatalog);
+          const actor = getCurrentCommentActor();
+          const normalizedActorId = normalizeActorId(currentCommentActorId || "viewer");
+          const savedProjectId = window.localStorage.getItem(getActorProjectStorageKey()) || "";
+          const ownedProjects = getOwnedProjectsForActor();
+          const savedProject = ownedProjects.find((project) => project.projectId === savedProjectId);
+          const project = savedProject || ownedProjects[0] || null;
+          if (project && project.projectId) {
+            window.localStorage.setItem(getActorProjectStorageKey(), project.projectId);
+            return project;
+          }
+
+          const created = await commentApiRequest("/api/projects", {
+            method: "POST",
+            body: JSON.stringify({
+              name: actor && actor.name ? `Проект ${actor.name}` : "Личный проект",
+              description: "Личная рабочая область",
+              ownerId: normalizedActorId,
+              ownerName: actor.name || "Гость",
+              actorId: normalizedActorId,
+              sharedWith: [normalizedActorId],
+              access: {
+                public: false,
+                users: [normalizedActorId],
+                groups: [],
+                roles: []
+              }
+            }),
+            timeoutMs: 30000
+          });
+
+          const nextProject = created.item || created;
+          if (nextProject && nextProject.projectId) {
+            commentProjects = [...(commentProjects || []).filter((item) => item.projectId !== nextProject.projectId), nextProject]
+              .sort((left, right) => String(right.updatedAt || "").localeCompare(String(left.updatedAt || "")));
+            window.localStorage.setItem(getActorProjectStorageKey(), nextProject.projectId);
+            renderPagesSwitcher();
+            return nextProject;
+          }
+          return null;
+        }
+
+        loadPagesCatalog = async function(force = false) {
+          if (commentPagesPromise && !force) {
+            return commentPagesPromise;
+          }
+
+          const actorId = normalizeActorId(currentCommentActorId || "viewer");
+          commentPagesPromise = commentApiRequest(`/api/workspace?actorId=${encodeURIComponent(actorId)}`, { timeoutMs: 12000 })
+            .then((workspaceData) => {
+              commentProjects = (workspaceData.projects || []).slice().sort((left, right) => {
+                return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+              });
+              commentPages = (workspaceData.pages || []).slice().sort((left, right) => {
+                return String(right.updatedAt || "").localeCompare(String(left.updatedAt || ""));
+              });
+              renderPagesSwitcher();
+              if (typeof renderLinkHeadingList === "function") {
+                renderLinkHeadingList();
+              }
+              renderBacklinksList();
+              return commentPages;
+            })
+            .finally(() => {
+              commentPagesPromise = null;
+            });
+
+          return commentPagesPromise;
+        };
 
         function getCurrentPageSnapshot() {
   const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId) || {};
@@ -494,6 +586,27 @@ def pages_script() -> str:
           const accessiblePages = getAccessiblePagesForActor();
           const ownedPages = accessiblePages.filter((page) => isCurrentActorPage(page));
           const sharedPages = accessiblePages.filter((page) => !isCurrentActorPage(page));
+          const projectMap = new Map((commentProjects || []).map((project) => [project.projectId, project]));
+
+          const groupPages = (pages) => {
+            const groups = new Map();
+            (pages || []).forEach((page) => {
+              const key = page.projectId || `owner:${normalizeActorId(page.ownerId || "viewer")}`;
+              if (!groups.has(key)) {
+                groups.set(key, {
+                  key,
+                  project: page.projectId ? (projectMap.get(page.projectId) || null) : null,
+                  pages: []
+                });
+              }
+              groups.get(key).pages.push(page);
+            });
+            return Array.from(groups.values()).sort((left, right) => {
+              const leftStamp = String((left.project && left.project.updatedAt) || (left.pages[0] && left.pages[0].updatedAt) || "");
+              const rightStamp = String((right.project && right.project.updatedAt) || (right.pages[0] && right.pages[0].updatedAt) || "");
+              return rightStamp.localeCompare(leftStamp);
+            });
+          };
 
           pagesCount.textContent = String(accessiblePages.length);
           if (!accessiblePages.length) {
@@ -503,15 +616,15 @@ def pages_script() -> str:
           }
 
           const renderPageItem = (page, isSharedView) => {
-  const isActive = page.pageId === commentPageId;
-  const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
-  const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
-  const scenarioMeta = page.mwsScenarioTitle ? `MWS: ${page.mwsScenarioTitle}` : "";
-  const meta = scenarioMeta || (
-    isSharedView
-      ? `Автор: ${ownerName}`
-      : (headingCount ? `${headingCount} заголовков` : "Без разделов")
-  );
+            const isActive = page.pageId === commentPageId;
+            const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
+            const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
+            const scenarioMeta = page.mwsScenarioTitle ? `MWS: ${page.mwsScenarioTitle}` : "";
+            const meta = scenarioMeta || (
+              isSharedView
+                ? `Автор: ${ownerName}`
+                : (headingCount ? `${headingCount} заголовков` : "Без разделов")
+            );
             return `
               <button class="pages-switcher__item${isActive ? " is-active" : ""}" data-page-id="${page.pageId}" type="button">
                 <span class="pages-switcher__item-title">${escapeHtml(page.title || "Без названия")}</span>
@@ -520,20 +633,32 @@ def pages_script() -> str:
             `;
           };
 
-          const sections = [];
-          if (ownedPages.length) {
-            sections.push(`
+          const renderProjectSection = (group, isSharedView = false) => {
+            const title = getProjectLabel(group.project, group.pages[0]);
+            const subtitle = isSharedView
+              ? String((group.project && group.project.ownerName) || (group.pages[0] && group.pages[0].ownerName) || "").trim()
+              : `${group.pages.length} ${group.pages.length === 1 ? "страница" : "страниц"}`;
+            return `
               <div class="pages-switcher__section">
-                <div class="pages-switcher__section-label">Мои страницы</div>
-                ${ownedPages.map((page) => renderPageItem(page, false)).join("")}
+                <div class="pages-switcher__section-label">${escapeHtml(title)}</div>
+                ${subtitle ? `<div class="pages-switcher__section-label pages-switcher__section-label--subtle">${escapeHtml(subtitle)}</div>` : ""}
+                ${group.pages.map((page) => renderPageItem(page, isSharedView)).join("")}
               </div>
-            `);
+            `;
+          };
+
+          const sections = [];
+          const ownedGroups = groupPages(ownedPages);
+          const sharedGroups = groupPages(sharedPages);
+
+          if (ownedGroups.length) {
+            sections.push(ownedGroups.map((group) => renderProjectSection(group, false)).join(""));
           }
-          if (sharedPages.length) {
+          if (sharedGroups.length) {
             sections.push(`
               <div class="pages-switcher__section">
-                <div class="pages-switcher__section-label">Доступные мне</div>
-                ${sharedPages.map((page) => renderPageItem(page, true)).join("")}
+                <div class="pages-switcher__section-label">Доступные мне проекты</div>
+                ${sharedGroups.map((group) => renderProjectSection(group, true)).join("")}
               </div>
             `);
           }
@@ -781,10 +906,15 @@ def pages_script() -> str:
         async function createPageForCurrentActor(workspaceToken = commentWorkspaceToken) {
           const actor = getCurrentCommentActor();
           const mwsContext = window.currentMwsContext || null;
+          const project = await ensureProjectForCurrentActor();
+          if (!project || !project.projectId) {
+            throw new Error("Не удалось подготовить проект для пользователя");
+          }
 
           const created = await commentApiRequest("/api/pages", {
             method: "POST",
             body: JSON.stringify({
+              projectId: project.projectId,
               title: mwsContext ? `Страница по ${mwsContext.label || "MWS"}` : "Новая страница",
               content: "",
               ownerId: normalizeActorId(currentCommentActorId || "viewer"),
@@ -812,14 +942,21 @@ def pages_script() -> str:
           if (workspaceToken !== commentWorkspaceToken) {
             return null;
           }
+          const actorProject = await ensureProjectForCurrentActor(false);
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
           const ownedPages = getOwnedPagesForActor();
+          const projectOwnedPages = actorProject && actorProject.projectId
+            ? ownedPages.filter((page) => page.projectId === actorProject.projectId)
+            : ownedPages;
           const accessiblePages = getAccessiblePagesForActor();
           const savedPageId = window.localStorage.getItem(getActorPageStorageKey()) || "";
-          const candidatePageId = savedPageId || (ownedPages[0] && ownedPages[0].pageId) || (accessiblePages[0] && accessiblePages[0].pageId) || "";
+          const candidatePageId = savedPageId || (projectOwnedPages[0] && projectOwnedPages[0].pageId) || (ownedPages[0] && ownedPages[0].pageId) || (accessiblePages[0] && accessiblePages[0].pageId) || "";
           if (!candidatePageId) {
             return createPageForCurrentActor(workspaceToken);
           }
-          const page = commentPages.find((item) => item.pageId === candidatePageId) || ownedPages[0] || accessiblePages[0];
+          const page = commentPages.find((item) => item.pageId === candidatePageId) || projectOwnedPages[0] || ownedPages[0] || accessiblePages[0];
           if (!page) {
             return createPageForCurrentActor(workspaceToken);
           }
@@ -1136,31 +1273,18 @@ function initializePagesWorkspace() {
             pageAccessClose.addEventListener("click", closePageAccessPanel);
           }
 
-          if (pageAccessPanel) {
-            pageAccessPanel.addEventListener("click", (event) => {
-              event.stopPropagation();
-            });
-          }
-
           if (pageAccessSave) {
-            pageAccessSave.addEventListener("click", async (event) => {
-              event.preventDefault();
-              event.stopPropagation();
-
+            pageAccessSave.addEventListener("click", async () => {
               const page = getCurrentPage();
               if (!page) {
                 closePageAccessPanel();
                 return;
               }
               const ownerId = normalizeActorId(page.ownerId || "viewer");
-              const actor = getCurrentCommentActor();
-              const actorId = normalizeActorId((actor && (actor.id || actor.email)) || currentCommentActorId || "viewer");
-
               const selectedUsers = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][value]'))
                 .filter((input) => input.checked)
                 .map((input) => normalizeActorId(input.value))
                 .filter((value) => value && value !== ownerId);
-
               const selectedGroups = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][data-group]'))
                 .filter((input) => input.checked)
                 .map((input) => input.dataset.group || "");
@@ -1171,11 +1295,7 @@ function initializePagesWorkspace() {
 
               const selected = Array.from(new Set([...selectedUsers, ...groupMembers]))
                 .filter((value) => value && value !== ownerId);
-
-              const previousShared = Array.isArray(page.sharedWith)
-                ? page.sharedWith.map((value) => normalizeActorId(value))
-                : [];
-
+              const previousShared = Array.isArray(page.sharedWith) ? page.sharedWith.map((value) => normalizeActorId(value)) : [];
               const addedAccess = selected.filter((value) => !previousShared.includes(value));
               const removedAccess = previousShared.filter((value) => !selected.includes(value));
               const accessVersionLabel = addedAccess.length && !removedAccess.length
@@ -1183,34 +1303,14 @@ function initializePagesWorkspace() {
                 : (!addedAccess.length && removedAccess.length
                   ? "Закрыт доступ к странице"
                   : "Обновление доступа");
-
-              const nextAccess = {
-                public: false,
-                users: [ownerId, ...selected],
-                groups: selectedGroups,
-                roles: []
-              };
-
               const payload = {
                 ...serializeEditorDocument(),
                 ownerId: page.ownerId || normalizeActorId(currentCommentActorId || "viewer"),
                 ownerName: page.ownerName || getCurrentCommentActor().name || "Автор",
                 sharedWith: selected,
-                access: nextAccess,
-                actorId,
                 versionLabel: accessVersionLabel,
                 versionAuthor: getCurrentCommentActor().id || "viewer",
               };
-
-              console.log("[wikilive][access] save:start", {
-                pageId: page.pageId,
-                actorId,
-                ownerId,
-                selected,
-                selectedGroups,
-                payload
-              });
-
               try {
                 const response = await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`, {
                   method: "PUT",
@@ -1218,28 +1318,21 @@ function initializePagesWorkspace() {
                   timeoutMs: 30000,
                 });
                 const updated = response.item || response;
-                console.log("[wikilive][access] save:response", updated);
-
                 if (updated && updated.pageId) {
                   upsertCommentPage(updated);
-                  syncCurrentPageSnapshot({
-                    sharedWith: selected,
-                    access: nextAccess
-                  });
+                  syncCurrentPageSnapshot({ sharedWith: selected });
                   renderPagesSwitcher();
-                  renderPageAccessPanel();
                 }
               } catch (error) {
-                console.error("[wikilive][access] save:error", error);
+                console.warn("Failed to save page access", error);
               }
+              closePageAccessPanel();
             });
           }
 
           document.addEventListener("click", (event) => {
             if (pageAccessPanel && pageAccessPanel.classList.contains("is-open")) {
-              const clickedButton = pageAccessButton && pageAccessButton.contains(event.target);
-              const clickedInsidePanel = pageAccessPanel.contains(event.target);
-              if (!clickedInsidePanel && !clickedButton) {
+              if (!pageAccessPanel.contains(event.target) && !pageAccessButton.contains(event.target)) {
                 closePageAccessPanel();
               }
             }

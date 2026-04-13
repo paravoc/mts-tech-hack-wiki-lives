@@ -19,6 +19,7 @@ struct CommentThreadDraft {
     std::string targetId;
     std::string targetType;
     std::string targetPreview;
+    models::CommentAnchor anchor;
 };
 
 struct CommentReplyDraft {

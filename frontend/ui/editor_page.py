@@ -1,14 +1,15 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from textwrap import dedent
 
 import streamlit.components.v1 as components
 
-from ui.comments import comments_markup, comments_styles
+from ui.comments import comments_markup, comments_script, comments_styles
 from ui.cursors import cursor_root_variables
 from ui.loading_page import document_header_markup, loading_screen_markup
-from ui.mws_blocks import mws_blocks_markup, mws_blocks_styles
-from ui.time_machine import time_machine_markup, time_machine_styles
+from ui.mws_blocks import mws_blocks_markup, mws_blocks_script, mws_blocks_styles
+from ui.pages_script import pages_script
+from ui.time_machine import time_machine_markup, time_machine_script, time_machine_styles
 
 
 _EMPTY_HINT = "Начните вводить содержимое или нажмите / чтобы использовать команды"
@@ -184,7 +185,17 @@ def _minimal_client_script() -> str:
         """
             }
 
+
             const bodyEditor = document.getElementById("bodyEditor");
+            if (bodyEditor) {
+              bodyEditor.setAttribute("contenteditable", "true");
+              bodyEditor.dataset.debugEditable = "true";
+              console.log("[wikilive][editor] bodyEditor ready", {
+                contenteditable: bodyEditor.getAttribute("contenteditable"),
+                isContentEditable: bodyEditor.isContentEditable
+              });
+            }
+
             if (bodyEditor && window.Quill) {
               const initialHtml = bodyEditor.innerHTML;
               bodyEditor.innerHTML = "";
@@ -2199,7 +2210,7 @@ __MWS_BLOCKS_STYLES__
                 </aside>
                 <div class="editor-shell">
                   <h1 class="title-editor" id="titleEditor" contenteditable="true" spellcheck="false">Новая страница</h1>
-                  <div class="body-editor" id="bodyEditor" spellcheck="false">
+                  <div class="body-editor" id="bodyEditor" contenteditable="true" spellcheck="false">
                     <p class="body-placeholder">__EMPTY_HINT__</p>
                   </div>
                 </div>
@@ -2250,7 +2261,7 @@ __MWS_BLOCKS_STYLES__
 
           <script src="https://cdn.quilljs.com/1.3.7/quill.min.js"></script>
           <script>
-            window.WIKILIVE_MINIMAL_MODE = true;
+            window.WIKILIVE_MINIMAL_MODE = false;
             if (!window.WIKILIVE_MINIMAL_MODE) {
             const loadingScreen = document.getElementById("loadingScreen");
             const editorScreen = document.getElementById("editorScreen");
@@ -4820,8 +4831,20 @@ __TIME_MACHINE_SCRIPT__
     html = html.replace("__COMMENTS_MARKUP__", comments_markup())
     html = html.replace("__TIME_MACHINE_MARKUP__", time_machine_markup())
     html = html.replace("__MWS_BLOCKS_MARKUP__", mws_blocks_markup())
-    html = html.replace("__MWS_BLOCKS_SCRIPT__", _minimal_client_script())
+    html = html.replace(
+        "__MWS_BLOCKS_SCRIPT__",
+        comments_script() + "\n" + pages_script() + "\n" + mws_blocks_script(),
+    )
     html = html.replace("__COMMENTS_SCRIPT__", "")
-    html = html.replace("__TIME_MACHINE_SCRIPT__", "")
+    html = html.replace(
+        "__TIME_MACHINE_SCRIPT__",
+        time_machine_script()
+        + "\n"
+        + "if (window.initializeCommentsSystem) { window.initializeCommentsSystem(); }"
+        + "\n"
+        + "if (window.initializeTimeMachine) { window.initializeTimeMachine(); }"
+        + "\n"
+        + "}",
+    )
 
     components.html(html, height=780, scrolling=False)

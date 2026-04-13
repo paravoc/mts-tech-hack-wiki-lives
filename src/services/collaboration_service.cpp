@@ -61,6 +61,15 @@ json commentThreadToJson(const models::CommentThread& thread) {
         {"targetType", thread.targetType},
         {"selectionLabel", thread.selectionLabel},
         {"targetPreview", thread.targetPreview},
+        {"anchor", {
+            {"anchorId", thread.anchor.anchorId},
+            {"quote", thread.anchor.quote},
+            {"selector", thread.anchor.selector},
+            {"blockId", thread.anchor.blockId},
+            {"blockType", thread.anchor.blockType},
+            {"startOffset", thread.anchor.startOffset},
+            {"endOffset", thread.anchor.endOffset},
+        }},
         {"createdAt", thread.createdAt},
         {"updatedAt", thread.updatedAt},
         {"resolved", thread.resolved},
@@ -92,9 +101,14 @@ bool isSameVersionSnapshot(
     const std::vector<models::CommentThread>& threads,
     const std::string& commentAccessMode) {
     return version.title == page.title &&
+           version.projectId == page.projectId &&
            version.description == page.description &&
            version.content == page.content &&
            version.sharedWith == page.sharedWith &&
+           version.access.publicAccess == page.access.publicAccess &&
+           version.access.userIds == page.access.userIds &&
+           version.access.groupIds == page.access.groupIds &&
+           version.access.roles == page.access.roles &&
            version.commentAccessMode == commentAccessMode &&
            commentThreadSnapshotToJson(version.threadSnapshot) == commentThreadSnapshotToJson(threads);
 }
@@ -163,6 +177,7 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
     models::PageVersion version{
         .versionId = nextId("ver"),
         .pageId = page.pageId,
+        .projectId = page.projectId,
         .title = page.title,
         .description = page.description,
         .content = page.content,
@@ -170,6 +185,7 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
         .label = label,
         .author = author.empty() ? "system" : author,
         .sharedWith = page.sharedWith,
+        .access = page.access,
         .threadSnapshot = threads.value(),
         .commentAccessMode = accessMode.value(),
         .threadCount = threads->size(),
@@ -223,6 +239,8 @@ utils::Expected<models::Page> CollaborationService::restoreVersion(
             .content = version->content,
             .sharedWith = version->sharedWith,
             .sharedWithProvided = true,
+            .access = version->access,
+            .accessProvided = true,
         });
     if (!restored) {
         return std::unexpected(restored.error());
@@ -347,6 +365,7 @@ utils::Expected<models::CommentThread> CollaborationService::createThread(
         .targetType = validDraft->targetType,
         .selectionLabel = validDraft->selectionLabel,
         .targetPreview = validDraft->targetPreview,
+        .anchor = validDraft->anchor,
         .createdAt = timestamp,
         .updatedAt = timestamp,
         .resolved = false,

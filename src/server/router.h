@@ -14,6 +14,9 @@
 #include "src/services/render_service.h"
 #include "src/storage/local_user_storage.h"
 #include "src/utils/errors.h"
+#include "src/services/project_service.h"
+#include "src/security/access_evaluator.h"
+
 
 namespace wikilive::server {
 
@@ -35,27 +38,42 @@ public:
     Router(
         services::PageService& pageService,
         services::RenderService& renderService,
+        services::ProjectService* projectService,
         ai::AiService* aiService,
-        services::CollaborationService* collaborationService = nullptr,
-        WebSocketManager* webSocketManager = nullptr,
-        std::vector<MwsTablePreset> tablePresets = {});
+        services::CollaborationService* collaborationService,
+        WebSocketManager* webSocketManager,
+        std::vector<MwsTablePreset> tablePresets);
+
+        RouteResponse listProjects();
+        RouteResponse listProjectsForActor(const std::string& actorId);
+        RouteResponse listWorkspace(const std::string& actorId);
+        RouteResponse createProject(const std::string& payload);
+        RouteResponse getProject(const std::string& projectId, const std::string& actorId = {});
+        RouteResponse setProjectAccess(const std::string& projectId, const std::string& payload);
+
+
     Router(
         services::PageService& pageService,
         services::RenderService& renderService,
-        api::MwsClient* mwsClient = nullptr,
-        ai::AiService* aiService = nullptr,
-        services::CollaborationService* collaborationService = nullptr,
-        WebSocketManager* webSocketManager = nullptr,
-        std::vector<MwsTablePreset> tablePresets = {},
-        std::unique_ptr<storage::LocalUserStorage> userStorage = nullptr,
-        services::AuthService* authService = nullptr);
+        api::MwsClient* mwsClient,
+        services::ProjectService* projectService,
+        ai::AiService* aiService,
+        services::CollaborationService* collaborationService,
+        WebSocketManager* webSocketManager,
+        std::vector<MwsTablePreset> tablePresets,
+        std::unique_ptr<storage::LocalUserStorage> userStorage,
+        services::AuthService* authService);
 
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();
-    [[nodiscard]] RouteResponse getPage(const std::string& pageId);
+    [[nodiscard]] RouteResponse listPagesForActor(const std::string& actorId);
+    [[nodiscard]] RouteResponse listPagesForProject(const std::string& projectId, const std::string& actorId = {});
+    [[nodiscard]] RouteResponse getPage(const std::string& pageId, const std::string& actorId = {});
     [[nodiscard]] RouteResponse createPage(const std::string& payload);
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
+    [[nodiscard]] RouteResponse getPageAccess(const std::string& pageId);
+    [[nodiscard]] RouteResponse setPageAccess(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse listVersions(const std::string& pageId);
     [[nodiscard]] RouteResponse getVersion(const std::string& pageId, const std::string& versionId);
     [[nodiscard]] RouteResponse createVersion(const std::string& pageId, const std::string& payload);
@@ -110,8 +128,9 @@ public:
     [[nodiscard]] RouteResponse updateMwsGrid(const std::string& payload);
     [[nodiscard]] RouteResponse uploadAttachment(const std::string& payload);
     [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
-
+ 
 private:
+    services::ProjectService* projectService_ = nullptr;
     [[nodiscard]] RouteResponse ok(const std::string& dataJson) const;
     [[nodiscard]] RouteResponse fail(const utils::Error& error) const;
     [[nodiscard]] RouteResponse created(const std::string& dataJson) const;
@@ -125,6 +144,7 @@ private:
         const std::string& key,
         bool required = false) const;
     [[nodiscard]] std::string aiSuggestInsertResultToJson(const ai::AiSuggestInsertResult& result) const;
+
 
     services::PageService& pageService_;
     services::RenderService& renderService_;

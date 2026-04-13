@@ -16,6 +16,16 @@ struct CommentMessage {
     std::vector<std::string> likedBy;
 };
 
+struct CommentAnchor {
+    std::string anchorId;
+    std::string quote;
+    std::string selector;
+    std::string blockId;
+    std::string blockType;
+    int startOffset = -1;
+    int endOffset = -1;
+};
+
 struct CommentThread {
     std::string threadId;
     std::string pageId;
@@ -23,6 +33,7 @@ struct CommentThread {
     std::string targetType;
     std::string selectionLabel;
     std::string targetPreview;
+    CommentAnchor anchor;
     std::string createdAt;
     std::string updatedAt;
     bool resolved = false;

@@ -65,6 +65,7 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
     const auto timestamp = utils::formatIso(utils::now());
     models::Page page{
         .pageId = nextPageId(),
+        .projectId = draft.projectId,
         .title = validDraft->title,
         .description = validDraft->description,
         .content = validDraft->content,
@@ -73,6 +74,7 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
         .ownerId = validDraft->ownerId.empty() ? "viewer" : validDraft->ownerId,
         .ownerName = validDraft->ownerName.empty() ? "Гость" : validDraft->ownerName,
         .sharedWith = validDraft->sharedWith,
+        .access = validDraft->access,
     };
 
     const auto saveResult = storage_.savePage(page);
@@ -84,17 +86,23 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
 }
 
 utils::Expected<models::Page> PageService::updatePage(const std::string& pageId, const PageDraft& draft) {
-    const auto validDraft = validateDraft(draft);
-    if (!validDraft) {
-        return std::unexpected(validDraft.error());
-    }
-
     auto existingPage = storage_.getPage(pageId);
     if (!existingPage) {
         return std::unexpected(existingPage.error());
     }
 
+    auto adjustedDraft = draft;
+    if (adjustedDraft.projectId.empty()) {
+        adjustedDraft.projectId = existingPage->projectId;
+    }
+
+    const auto validDraft = validateDraft(adjustedDraft);
+    if (!validDraft) {
+        return std::unexpected(validDraft.error());
+    }
+
     auto page = existingPage.value();
+    page.projectId = validDraft->projectId;
     page.title = validDraft->title;
     page.description = validDraft->description;
     page.content = validDraft->content;
@@ -108,6 +116,29 @@ utils::Expected<models::Page> PageService::updatePage(const std::string& pageId,
     if (validDraft->sharedWithProvided) {
         page.sharedWith = validDraft->sharedWith;
     }
+    if (validDraft->accessProvided) {
+        page.access = validDraft->access;
+    }
+
+    const auto saveResult = storage_.savePage(page);
+    if (!saveResult) {
+        return std::unexpected(saveResult.error());
+    }
+
+    return page;
+}
+
+utils::Expected<models::Page> PageService::updateAccess(
+    const std::string& pageId,
+    const models::PageAccess& access) {
+    auto existingPage = storage_.getPage(pageId);
+    if (!existingPage) {
+        return std::unexpected(existingPage.error());
+    }
+
+    auto page = existingPage.value();
+    page.access = access;
+    page.updatedAt = utils::formatIso(utils::now());
 
     const auto saveResult = storage_.savePage(page);
     if (!saveResult) {
@@ -122,6 +153,14 @@ utils::VoidExpected PageService::deletePage(const std::string& pageId) {
 }
 
 utils::Expected<PageDraft> PageService::validateDraft(const PageDraft& draft) const {
+    if (draft.projectId.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "projectId must not be empty",
+            400,
+            false));
+    }
+
     if (draft.title.empty()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,

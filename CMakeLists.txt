@@ -116,7 +116,7 @@ add_library(wikilive_core STATIC
     src/utils/errors.cpp
     src/utils/string_utils.cpp
     src/utils/time_utils.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 
 target_include_directories(wikilive_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -130,7 +130,7 @@ target_link_libraries(wikilive_core PUBLIC
 
 add_executable(wikilive_backend
     src/main.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 
 target_link_libraries(wikilive_backend PRIVATE
     wikilive_core
@@ -159,32 +159,32 @@ target_compile_options(wikilive_core PRIVATE
 
 add_executable(wikilive_test_parser
     tests/test_parser.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_parser PRIVATE wikilive_core)
 
 add_executable(wikilive_test_cache
     tests/test_cache.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_cache PRIVATE wikilive_core)
 
 add_executable(wikilive_test_page_service
     tests/test_page_service.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_page_service PRIVATE wikilive_core)
 
 add_executable(wikilive_test_router
     tests/test_router.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_router PRIVATE wikilive_core)
 
 add_executable(wikilive_test_string_utils
     tests/test_string_utils.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_string_utils PRIVATE wikilive_core)
 
 add_executable(wikilive_test_ai_service
     tests/test_ai_service.cpp
-)
+ "src/models/project.h" "src/storage/project_storage.h" "src/storage/local_file_project_storage.h" "src/storage/local_file_project_storage.cpp" "src/services/project_service.h" "src/services/project_service.cpp" "src/security/access_evaluator.h" "src/security/access_evaluator.cpp")
 target_link_libraries(wikilive_test_ai_service PRIVATE wikilive_core)
 
 add_test(NAME wikilive_test_parser COMMAND wikilive_test_parser)

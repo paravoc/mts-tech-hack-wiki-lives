@@ -11,6 +11,7 @@
 namespace wikilive::services {
 
 struct PageDraft {
+    std::string projectId;
     std::string title;
     std::string description;
     std::string content;
@@ -18,6 +19,8 @@ struct PageDraft {
     std::string ownerName;
     std::vector<std::string> sharedWith;
     bool sharedWithProvided = false;
+    models::PageAccess access;
+    bool accessProvided = false;
 };
 
 class PageService {
@@ -28,6 +31,9 @@ public:
     [[nodiscard]] utils::Expected<models::Page> getPage(const std::string& pageId) const;
     [[nodiscard]] utils::Expected<models::Page> createPage(const PageDraft& draft);
     [[nodiscard]] utils::Expected<models::Page> updatePage(const std::string& pageId, const PageDraft& draft);
+    [[nodiscard]] utils::Expected<models::Page> updateAccess(
+        const std::string& pageId,
+        const models::PageAccess& access);
     [[nodiscard]] utils::VoidExpected deletePage(const std::string& pageId);
 
 private:

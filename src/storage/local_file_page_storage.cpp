@@ -10,9 +10,51 @@ namespace wikilive::storage {
 
 namespace {
 
+nlohmann::json accessToJson(const models::PageAccess& access) {
+    return {
+        {"public", access.publicAccess},
+        {"users", access.userIds},
+        {"groups", access.groupIds},
+        {"roles", access.roles},
+    };
+}
+
+models::PageAccess accessFromJson(const nlohmann::json& value) {
+    models::PageAccess access;
+    if (!value.is_object()) {
+        return access;
+    }
+    if (value.contains("public") && value["public"].is_boolean()) {
+        access.publicAccess = value["public"].get<bool>();
+    }
+    if (value.contains("users") && value["users"].is_array()) {
+        for (const auto& item : value["users"]) {
+            if (item.is_string()) {
+                access.userIds.push_back(item.get<std::string>());
+            }
+        }
+    }
+    if (value.contains("groups") && value["groups"].is_array()) {
+        for (const auto& item : value["groups"]) {
+            if (item.is_string()) {
+                access.groupIds.push_back(item.get<std::string>());
+            }
+        }
+    }
+    if (value.contains("roles") && value["roles"].is_array()) {
+        for (const auto& item : value["roles"]) {
+            if (item.is_string()) {
+                access.roles.push_back(item.get<std::string>());
+            }
+        }
+    }
+    return access;
+}
+
 nlohmann::json pageToJson(const models::Page& page) {
     return {
         {"pageId", page.pageId},
+        {"projectId", page.projectId},
         {"title", page.title},
         {"description", page.description},
         {"content", page.content},
@@ -21,12 +63,14 @@ nlohmann::json pageToJson(const models::Page& page) {
         {"ownerId", page.ownerId},
         {"ownerName", page.ownerName},
         {"sharedWith", page.sharedWith},
+        {"access", accessToJson(page.access)},
     };
 }
 
 models::Page pageFromJson(const nlohmann::json& value) {
     return {
         .pageId = value.value("pageId", std::string{}),
+        .projectId = value.value("projectId", std::string{}),
         .title = value.value("title", std::string{}),
         .description = value.value("description", std::string{}),
         .content = value.value("content", std::string{}),
@@ -35,7 +79,7 @@ models::Page pageFromJson(const nlohmann::json& value) {
         .ownerId = value.value("ownerId", std::string{}),
         .ownerName = value.value("ownerName", std::string{}),
         .sharedWith = value.value("sharedWith", std::vector<std::string>{}),
-        .renderedHtml = {},
+        .access = accessFromJson(value.value("access", nlohmann::json::object())),
     };
 }
 
@@ -192,7 +236,7 @@ utils::VoidExpected LocalFilePageStorage::persistPagesUnlocked(const PageMap& pa
                 true));
         }
 
-        stream << payload.dump(2);
+        stream << payload.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
         return {};
     } catch (const std::exception& exception) {
         return std::unexpected(utils::makeError(

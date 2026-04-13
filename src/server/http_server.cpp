@@ -195,7 +195,17 @@ utils::VoidExpected HttpServer::start(const int port) {
             response->end(data);
         });
 
-        app.get("/api/pages", [this](HttpResponse* response, HttpRequest* /*request*/) {
+        app.get("/api/pages", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            const std::string projectId(request->getQuery("projectId"));
+            if (!projectId.empty()) {
+                writeResponse(response, router_.listPagesForProject(projectId, actorId));
+                return;
+            }
+            if (!actorId.empty()) {
+                writeResponse(response, router_.listPagesForActor(actorId));
+                return;
+            }
             writeResponse(response, router_.listPages());
         });
 
@@ -311,7 +321,19 @@ utils::VoidExpected HttpServer::start(const int port) {
         });
 
         app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
-            writeResponse(response, router_.getPage(std::string(request->getParameter(0))));
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.getPage(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.get("/api/pages/:pageId/access", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.getPageAccess(std::string(request->getParameter(0))));
+        });
+
+        app.put("/api/pages/:pageId/access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setPageAccess(pageId, body));
+            });
         });
 
         app.get("/api/users", [this](HttpResponse* response, HttpRequest* /*request*/) {
@@ -320,6 +342,43 @@ utils::VoidExpected HttpServer::start(const int port) {
 
         app.get("/api/groups", [this](HttpResponse* response, HttpRequest* /*request*/) {
             writeResponse(response, router_.listGroups());
+        });
+
+        app.get("/api/workspace", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.listWorkspace(actorId));
+        });
+
+        app.get("/api/projects", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            if (!actorId.empty()) {
+                writeResponse(response, router_.listProjectsForActor(actorId));
+                return;
+            }
+            writeResponse(response, router_.listProjects());
+        });
+
+        app.post("/api/projects", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createProject(body));
+            });
+        });
+
+        app.get("/api/projects/:projectId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.getProject(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.get("/api/projects/:projectId/pages", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.listPagesForProject(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.put("/api/projects/:projectId/access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string projectId(request->getParameter(0));
+            handleRequestBody(response, request, [this, projectId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setProjectAccess(projectId, body));
+            });
         });
 
         app.post("/api/auth/login", [this](HttpResponse* response, HttpRequest* request) {
@@ -352,18 +411,26 @@ utils::VoidExpected HttpServer::start(const int port) {
         });
 
         app.get("/api/mws/insert-options", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableUrl(request->getQuery("tableUrl"));
+            const std::string tableId = tableUrl.empty()
+                ? std::string(request->getQuery("tableId"))
+                : tableUrl;
             writeResponse(
                 response,
                 router_.getMwsInsertOptions(
-                    std::string(request->getQuery("tableId")),
+                    tableId,
                     std::string(request->getQuery("viewId"))));
         });
 
         app.get("/api/mws/grid", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableUrl(request->getQuery("tableUrl"));
+            const std::string tableId = tableUrl.empty()
+                ? std::string(request->getQuery("tableId"))
+                : tableUrl;
             writeResponse(
                 response,
                 router_.getMwsGrid(
-                    std::string(request->getQuery("tableId")),
+                    tableId,
                     std::string(request->getQuery("viewId")),
                     std::string(request->getQuery("recordIds")),
                     std::string(request->getQuery("fieldNames"))));

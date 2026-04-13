@@ -1,7 +1,9 @@
 #include "src/core/application.h"
 
 #include <algorithm>
+#include <cctype>
 #include <filesystem>
+#include <unordered_set>
 #include <vector>
 
 #include "config/config_loader.h"
@@ -21,6 +23,7 @@
 #include "src/storage/in_memory_page_storage.h"
 #include "src/storage/local_collaboration_storage.h"
 #include "src/storage/local_file_page_storage.h"
+#include "src/storage/local_file_project_storage.h"
 #include "src/storage/local_user_storage.h"
 #include "src/storage/mws_page_storage.h"
 #include "src/utils/logger.h"
@@ -28,6 +31,64 @@
 namespace wikilive::core {
 
 namespace {
+
+std::string normalizeKey(std::string value) {
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+    return value;
+}
+
+void ensureDefaultProjects(
+    services::ProjectService& projectService,
+    const std::vector<models::User>& users) {
+    const auto projectsResult = projectService.listProjects();
+    if (!projectsResult) {
+        utils::Logger::instance().warn(
+            "Failed to read projects for bootstrap: " + projectsResult.error().message);
+        return;
+    }
+
+    std::unordered_set<std::string> existingOwners;
+    for (const auto& project : projectsResult.value()) {
+        if (!project.ownerId.empty()) {
+            existingOwners.insert(normalizeKey(project.ownerId));
+        }
+    }
+
+    for (const auto& user : users) {
+        const std::string ownerId = user.id.empty() ? user.email : user.id;
+        if (ownerId.empty()) {
+            continue;
+        }
+
+        const auto ownerKey = normalizeKey(ownerId);
+        const auto emailKey = normalizeKey(user.email);
+        if (existingOwners.find(ownerKey) != existingOwners.end() ||
+            (!emailKey.empty() && existingOwners.find(emailKey) != existingOwners.end())) {
+            continue;
+        }
+
+        models::ProjectDraft draft;
+        draft.name = user.name.empty() ? "Личный проект" : ("Проект " + user.name);
+        draft.description = "Личная рабочая область";
+        draft.ownerId = ownerId;
+        draft.ownerName = user.name.empty() ? ownerId : user.name;
+        draft.access.publicAccess = false;
+        draft.access.userIds.push_back(ownerId);
+        if (!user.email.empty() && user.email != ownerId) {
+            draft.access.userIds.push_back(user.email);
+        }
+
+        const auto created = projectService.createProject(draft);
+        if (!created) {
+            utils::Logger::instance().warn(
+                "Failed to create default project for " + ownerId + ": " + created.error().message);
+            continue;
+        }
+        existingOwners.insert(ownerKey);
+    }
+}
 
 std::vector<std::string> configCandidates(const char* envPath) {
     std::vector<std::string> candidates;
@@ -102,6 +163,7 @@ bool Application::initialize(const char* envPath) {
 
     const auto localPagesPath = (std::filesystem::current_path() / "data" / "wikilive_pages.json").string();
     const auto localUsersPath = (std::filesystem::current_path() / "data" / "wikilive_users.json").string();
+    const auto localProjectsPath = (std::filesystem::current_path() / "data" / "wikilive_projects.json").string();
 
     pageStorage_ = std::make_unique<storage::LocalFilePageStorage>(localPagesPath);
     if (!config_.wikiPagesTableId.empty() && !config_.wikiPagesViewId.empty()) {
@@ -115,6 +177,8 @@ bool Application::initialize(const char* envPath) {
         (std::filesystem::current_path() / "data" / "wikilive_collaboration.json").string());
     collaborationService_ = std::make_unique<services::CollaborationService>(*pageService_, *collaborationStorage_);
     renderService_ = std::make_unique<services::RenderService>(mwsClient_.get());
+    projectStorage_ = std::make_unique<storage::LocalFileProjectStorage>(localProjectsPath);
+    projectService_ = std::make_unique<services::ProjectService>(*projectStorage_);
     std::unique_ptr<ai::AiSuggestionValidator> aiSuggestionValidator;
     std::unique_ptr<ai::AiContextBuilder> aiContextBuilder;
     if (mwsClient_ != nullptr) {
@@ -149,18 +213,31 @@ bool Application::initialize(const char* envPath) {
     }
 
     auto userStorage = std::make_unique<storage::LocalUserStorage>(localUsersPath);
+    if (projectService_ != nullptr) {
+        const auto usersResult = userStorage->listUsers();
+        if (usersResult) {
+            ensureDefaultProjects(*projectService_, usersResult.value());
+        } else {
+            utils::Logger::instance().warn(
+                "Failed to load users for project bootstrap: " + usersResult.error().message);
+        }
+    }
     authService_ = std::make_unique<services::AuthService>(*userStorage);
+
+
 
     router_ = std::make_unique<server::Router>(
         *pageService_,
         *renderService_,
         mwsClient_.get(),
+        projectService_.get(),
         aiService_.get(),
         collaborationService_.get(),
         webSocketManager_.get(),
         std::move(tablePresets),
         std::move(userStorage),
         authService_.get());
+
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 
     initialized_ = true;
@@ -190,6 +267,8 @@ void Application::stop() {
     aiService_.reset();
     renderService_.reset();
     collaborationService_.reset();
+    projectService_.reset();
+    projectStorage_.reset();
     pageService_.reset();
     collaborationStorage_.reset();
     pageStorage_.reset();

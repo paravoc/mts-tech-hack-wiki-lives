@@ -11,6 +11,7 @@ void createsReadsUpdatesAndDeletesPage() {
     wikilive::services::PageService service(storage);
 
     const auto created = service.createPage({
+        .projectId = "project-1",
         .title = "Project status",
         .content = "Initial content",
     });
@@ -24,6 +25,7 @@ void createsReadsUpdatesAndDeletesPage() {
 
     wikilive::utils::sleepMs(1100);
     const auto updated = service.updatePage(created->pageId, {
+        .projectId = "project-1",
         .title = "Updated status",
         .content = "Updated content",
     });
@@ -46,6 +48,7 @@ void rejectsInvalidDraft() {
     wikilive::services::PageService service(storage);
 
     const auto created = service.createPage({
+        .projectId = "project-1",
         .title = "",
         .content = "Body",
     });
@@ -59,6 +62,7 @@ void sortsPagesByMostRecentlyUpdated() {
     wikilive::services::PageService service(storage);
 
     const auto first = service.createPage({
+        .projectId = "project-1",
         .title = "First",
         .content = "A",
     });
@@ -67,6 +71,7 @@ void sortsPagesByMostRecentlyUpdated() {
     wikilive::utils::sleepMs(1100);
 
     const auto second = service.createPage({
+        .projectId = "project-1",
         .title = "Second",
         .content = "B",
     });
@@ -75,6 +80,7 @@ void sortsPagesByMostRecentlyUpdated() {
     wikilive::utils::sleepMs(1100);
 
     const auto updatedFirst = service.updatePage(first->pageId, {
+        .projectId = "project-1",
         .title = "First updated",
         .content = "A2",
     });

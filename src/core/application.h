@@ -3,6 +3,8 @@
 #include <memory>
 
 #include "src/core/app_config.h"
+#include "src/storage/project_storage.h"
+#include "src/services/project_service.h"
 
 namespace wikilive::server {
 class HttpServer;
@@ -58,6 +60,8 @@ private:
     std::unique_ptr<server::WebSocketManager> webSocketManager_{};
     std::unique_ptr<server::Router> router_{};
     std::unique_ptr<server::HttpServer> httpServer_{};
+    std::unique_ptr<storage::ProjectStorage> projectStorage_;
+    std::unique_ptr<services::ProjectService> projectService_;
 };
 
 }  // namespace wikilive::core
