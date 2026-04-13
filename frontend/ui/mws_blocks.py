@@ -69,8 +69,13 @@ def mws_blocks_styles() -> str:
         .mws-live-cell__input:focus,.mws-live-cell__textarea:focus{border-color:#ff0032;box-shadow:0 0 0 3px rgba(255,0,50,.1)}
         .mws-live-cell__input.is-pending,.mws-live-cell__textarea.is-pending{background:#fff8f9;border-color:#ffc2cf}
         .mws-live-cell__image{display:flex;flex-direction:column;gap:8px}
-        .mws-live-cell__image img{width:100%;max-width:200px;max-height:140px;object-fit:cover;border-radius:14px;border:1px solid #e8edf5;background:#f8fafc}
+        .mws-live-cell__image img{width:100%;max-width:140px;max-height:96px;object-fit:cover;border-radius:14px;border:1px solid #e8edf5;background:#f8fafc}
         .mws-live-cell__caption{font-size:12px;color:#6c7485;word-break:break-word}
+        .mws-live-cell__attachments{display:flex;flex-direction:column;gap:6px}
+        .mws-live-cell__attachment{display:flex;align-items:center;gap:8px;font-size:11px;color:#4a5160}
+        .mws-live-cell__attachment-thumb{width:28px;height:28px;border-radius:8px;object-fit:cover;border:1px solid #e5e9f2;background:#f7f8fc}
+        .mws-live-cell__attachment-icon{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:#f3f5fa;color:#6c7485;font-weight:800}
+        .mws-live-cell__attachment-add{margin-top:6px;align-self:flex-start;border:0;border-radius:10px;background:#fff4f6;color:#ff0032;font-size:11px;font-weight:700;padding:6px 10px}
         .mws-live-block__persisted{display:flex;align-items:center;gap:10px;min-height:74px;padding:16px 18px}
         .mws-live-block__persisted-icon{width:38px;height:38px;border-radius:14px;background:#fff4f6;color:#ff0032;display:inline-flex;align-items:center;justify-content:center;font-weight:900}
         .mws-live-block__persisted-meta{display:flex;flex-direction:column;gap:5px}
@@ -420,6 +425,8 @@ _SCRIPT_CHUNKS = [
             if (selectedMwsBlock && selectedMwsBlock !== block) { selectedMwsBlock.classList.remove("is-selected"); }
             selectedMwsBlock = block;
             selectedMwsBlock.classList.add("is-selected");
+            if (typeof window.wikiliveEnsureCommentTarget === "function") { window.wikiliveEnsureCommentTarget(selectedMwsBlock); }
+            if (typeof window.wikiliveScheduleCommentAnchors === "function") { window.wikiliveScheduleCommentAnchors(); }
             if (typeof clearSelectedImageBlock === "function") { clearSelectedImageBlock(); }
           }
           function showMwsGhost(rect, label) {
@@ -522,6 +529,28 @@ _SCRIPT_CHUNKS = [
             if (!config) { return; }
             block.innerHTML = `<div class="mws-live-block__head"><button class="mws-live-block__drag" type="button" data-mws-drag="1" aria-label="Переместить блок">⋮⋮</button><div class="mws-live-block__meta"><div class="mws-live-block__title">${safeHtml(config.label || config.tableLabel || "Живая таблица MWS")}</div><div class="mws-live-block__subtitle"><span class="mws-live-block__chip">MWS live</span><span>${safeHtml(summarizeMwsConfig(config))}</span></div></div><button class="mws-live-block__refresh" type="button" data-mws-refresh="1">Повторить</button></div><div class="mws-live-block__body"><div class="mws-live-block__status is-error">${safeHtml(message || "Не удалось загрузить данные MWS")}</div></div>`;
           }
+          function normalizeAttachments(meta, rawValue) {
+            const metaAttachments = meta && Array.isArray(meta.attachments) ? meta.attachments : [];
+            const rawAttachments = Array.isArray(rawValue) ? rawValue : [];
+            const combined = metaAttachments.length ? metaAttachments : rawAttachments;
+            return combined.map((item) => {
+              if (!item) { return null; }
+              if (typeof item === "string") {
+                return { url: item, resourceUrl: item, name: item, mimeType: "", isImage: false };
+              }
+              const url = item.url || item.resourceUrl || "";
+              if (!url) { return null; }
+              const mimeType = item.mimeType || "";
+              const isImage = Boolean(item.isImage) || (mimeType && mimeType.indexOf("image/") === 0);
+              return {
+                url,
+                resourceUrl: item.resourceUrl || url,
+                name: item.name || item.fileName || item.title || url,
+                mimeType,
+                isImage
+              };
+            }).filter(Boolean);
+          }
           function renderMwsGrid(block, payload) {
             const config = parseMwsConfig(block);
             if (!config) { return; }
@@ -537,6 +566,19 @@ _SCRIPT_CHUNKS = [
                       const value = record.fields && Object.prototype.hasOwnProperty.call(record.fields, fieldName) ? record.fields[fieldName] : "";
                       const textValue = String(value ?? "");
                       const meta = fieldMeta[fieldName] || {};
+                      const attachments = normalizeAttachments(meta, value);
+                      const attachmentField = Boolean(meta.isAttachment) || attachments.length || /влож|attach|file/i.test(fieldName);
+                      if (attachmentField) {
+                        const attachmentList = attachments.map((attachment) => {
+                          const label = attachment.name || attachment.url;
+                          if (attachment.isImage) {
+                            return `<div class="mws-live-cell__attachment" data-mws-attachment-url="${safeAttr(attachment.url)}" data-mws-attachment-name="${safeAttr(label)}" data-mws-attachment-mime="${safeAttr(attachment.mimeType || "")}"><img class="mws-live-cell__attachment-thumb" src="${safeAttr(attachment.resourceUrl)}" alt="${safeAttr(label)}" /><span>${safeHtml(label)}</span></div>`;
+                          }
+                          return `<div class="mws-live-cell__attachment" data-mws-attachment-url="${safeAttr(attachment.url)}" data-mws-attachment-name="${safeAttr(label)}" data-mws-attachment-mime="${safeAttr(attachment.mimeType || "")}"><span class="mws-live-cell__attachment-icon">⇩</span><span>${safeHtml(label)}</span></div>`;
+                        }).join("");
+                        const emptyNote = attachments.length ? "" : '<div class="mws-live-cell__caption">Нет вложений</div>';
+                        return `<td class="mws-live-cell"><div class="mws-live-cell__attachments">${attachmentList}${emptyNote}<button class="mws-live-cell__attachment-add" type="button" data-mws-attachment-add="1" data-mws-record-id="${safeAttr(record.recordId || "")}" data-mws-field-name="${safeAttr(fieldName)}">Добавить URL</button></div></td>`;
+                      }
                       if (meta.isImage && meta.resourceUrl) {
                         return `<td class="mws-live-cell"><div class="mws-live-cell__image"><img src="${safeAttr(meta.resourceUrl)}" alt="${safeAttr(fieldName)}" /><div class="mws-live-cell__caption">${safeHtml(textValue || fieldName)}</div></div></td>`;
                       }
@@ -568,7 +610,7 @@ _SCRIPT_CHUNKS = [
           async function persistMwsCell(block, recordId, fieldName, value, input) {
             const config = parseMwsConfig(block);
             if (!config) { return; }
-            if (input) {
+            if (input && typeof value === "string") {
               input.classList.add("is-pending");
               if (input.tagName === "INPUT") { input.setAttribute("value", value); } else { input.textContent = value; }
             }
@@ -615,6 +657,7 @@ _SCRIPT_CHUNKS = [
             const blocks = Array.from(bodyEditor.querySelectorAll(".mws-live-block"));
             return Promise.all(blocks.map((block) => hydrateMwsBlock(block, { force: Boolean(force) })));
           };
+          window.wikiliveGetSelectedMwsBlock = function() { return selectedMwsBlock; };
           window.wikiliveOpenMwsBlockDialog = openMwsModal;
           slashItems.push({ icon: "MWS", label: "Живая таблица MWS", queries: ["mws", "таблица", "данные", "cells", "grid"], kind: "insert", value: "mws-grid" });
           if (mwsTableSelect) {
@@ -650,6 +693,25 @@ _SCRIPT_CHUNKS = [
           bodyEditor.addEventListener("click", (event) => {
             const block = event.target.closest(".mws-live-block");
             if (!block) { return; }
+            const addButton = event.target.closest("[data-mws-attachment-add]");
+            if (addButton) {
+              const recordId = addButton.dataset.mwsRecordId || "";
+              const fieldName = addButton.dataset.mwsFieldName || "";
+              const cell = addButton.closest(".mws-live-cell");
+              if (recordId && fieldName && cell) {
+                const existing = Array.from(cell.querySelectorAll("[data-mws-attachment-url]")).map((item) => ({
+                  url: item.dataset.mwsAttachmentUrl || "",
+                  name: item.dataset.mwsAttachmentName || item.dataset.mwsAttachmentUrl || "",
+                  mimeType: item.dataset.mwsAttachmentMime || ""
+                })).filter((item) => item.url);
+                const url = window.prompt("URL вложения");
+                if (!url) { return; }
+                const name = window.prompt("Название (необязательно)") || url;
+                const next = existing.concat([{ url, name }]);
+                persistMwsCell(block, recordId, fieldName, next, null);
+              }
+              return;
+            }
             selectMwsBlock(block);
             if (event.target.closest("[data-mws-refresh='1']")) { hydrateMwsBlock(block, { force: true }); }
           });

@@ -60,7 +60,21 @@ void applyFieldMeta(const nlohmann::json& value, nlohmann::json& meta) {
     }
 
     if (value.contains("url") && value["url"].is_string()) {
-        meta["resourceUrl"] = makeAbsoluteTablesUrl(value["url"].get<std::string>());
+        const auto url = value["url"].get<std::string>();
+        meta["resourceUrl"] = makeAbsoluteTablesUrl(url);
+        if (!meta.contains("attachments") || !meta["attachments"].is_array()) {
+            meta["attachments"] = nlohmann::json::array();
+        }
+        nlohmann::json attachment{
+            {"url", url},
+            {"resourceUrl", makeAbsoluteTablesUrl(url)},
+            {"name", value.value("name", value.value("fileName", std::string{}))},
+            {"mimeType", value.value("mimeType", std::string{})},
+        };
+        const auto mimeType = attachment.value("mimeType", std::string{});
+        attachment["isImage"] = mimeType.rfind("image/", 0) == 0;
+        meta["attachments"].push_back(attachment);
+        meta["isAttachment"] = true;
     }
 
     if (value.contains("mimeType") && value["mimeType"].is_string()) {
@@ -148,6 +162,8 @@ nlohmann::json buildMwsGridPayload(
                 {"resourceUrl", ""},
                 {"mimeType", ""},
                 {"isImage", false},
+                {"isAttachment", false},
+                {"attachments", nlohmann::json::array()},
             };
 
             if (const auto rawIt = record.rawFieldsJson.find(fieldName); rawIt != record.rawFieldsJson.end()) {

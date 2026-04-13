@@ -1757,7 +1757,7 @@ function getTargetPreview(target) {
     return "РќРµС‚ РІС‹Р±СЂР°РЅРЅРѕРіРѕ Р±Р»РѕРєР°";
   }
   if (target.classList.contains("mws-live-block")) {
-    return "table";
+    return target.dataset.mwsLabel || "Таблица MWS";
   }
   if (target.classList.contains("embedded-image-block")) {
     const img = target.querySelector("img");
@@ -1830,6 +1830,19 @@ function getCurrentSelectionRange() {
 }
 
 function buildSelectionCommentDraft() {
+  const selectedMwsBlock =
+    typeof window.wikiliveGetSelectedMwsBlock === "function" ? window.wikiliveGetSelectedMwsBlock() : null;
+  if (selectedMwsBlock instanceof HTMLElement) {
+    const rect = selectedMwsBlock.getBoundingClientRect();
+    if (rect.width && rect.height) {
+      return {
+        kind: "object",
+        target: selectedMwsBlock,
+        rect,
+        text: getTargetPreview(selectedMwsBlock)
+      };
+    }
+  }
   if (selectedImageBlock instanceof HTMLElement) {
     const rect = selectedImageBlock.getBoundingClientRect();
     if (rect.width && rect.height) {
@@ -3493,4 +3506,6 @@ function initializeCommentsSystem() {
 }
 
 window.initializeCommentsSystem = initializeCommentsSystem;
+window.wikiliveEnsureCommentTarget = ensureTargetId;
+window.wikiliveScheduleCommentAnchors = scheduleCommentAnchors;
 
