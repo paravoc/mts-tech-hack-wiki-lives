@@ -1,15 +1,18 @@
 #pragma once
 
 #include <cstddef>
+#include <memory>
 #include <string>
 #include <vector>
 
 #include "src/ai/ai_service.h"
 #include "src/api/mws_client.h"
 #include "src/server/websocket_manager.h"
+#include "src/services/auth_service.h"
 #include "src/services/collaboration_service.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
+#include "src/storage/local_user_storage.h"
 #include "src/utils/errors.h"
 
 namespace wikilive::server {
@@ -43,7 +46,9 @@ public:
         ai::AiService* aiService = nullptr,
         services::CollaborationService* collaborationService = nullptr,
         WebSocketManager* webSocketManager = nullptr,
-        std::vector<MwsTablePreset> tablePresets = {});
+        std::vector<MwsTablePreset> tablePresets = {},
+        std::unique_ptr<storage::LocalUserStorage> userStorage = nullptr,
+        services::AuthService* authService = nullptr);
 
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();
@@ -52,6 +57,7 @@ public:
     [[nodiscard]] RouteResponse updatePage(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse deletePage(const std::string& pageId);
     [[nodiscard]] RouteResponse listVersions(const std::string& pageId);
+    [[nodiscard]] RouteResponse getVersion(const std::string& pageId, const std::string& versionId);
     [[nodiscard]] RouteResponse createVersion(const std::string& pageId, const std::string& payload);
     [[nodiscard]] RouteResponse restoreVersion(const std::string& pageId, const std::string& versionId);
     [[nodiscard]] RouteResponse listComments(const std::string& pageId);
@@ -89,10 +95,19 @@ public:
         const std::string& payload);
     [[nodiscard]] RouteResponse getCommentAccess(const std::string& pageId);
     [[nodiscard]] RouteResponse setCommentAccess(const std::string& pageId, const std::string& payload);
+    [[nodiscard]] RouteResponse listUsers();
+    [[nodiscard]] RouteResponse listGroups();
+    [[nodiscard]] RouteResponse login(const std::string& payload);
     [[nodiscard]] RouteResponse renderContent(const std::string& payload);
     [[nodiscard]] RouteResponse getMwsInsertOptions(
         const std::string& tableId = {},
         const std::string& viewId = {});
+    [[nodiscard]] RouteResponse getMwsGrid(
+        const std::string& tableId = {},
+        const std::string& viewId = {},
+        const std::string& recordIdsCsv = {},
+        const std::string& fieldNamesCsv = {});
+    [[nodiscard]] RouteResponse updateMwsGrid(const std::string& payload);
     [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
 
 private:
@@ -117,6 +132,8 @@ private:
     services::CollaborationService* collaborationService_ = nullptr;
     WebSocketManager* webSocketManager_ = nullptr;
     std::vector<MwsTablePreset> tablePresets_{};
+    std::unique_ptr<storage::LocalUserStorage> userStorage_{};
+    services::AuthService* authService_ = nullptr;
 };
 
 }  // namespace wikilive::server

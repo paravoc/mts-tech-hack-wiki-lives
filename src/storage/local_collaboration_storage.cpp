@@ -30,8 +30,11 @@ json toJson(const wikilive::models::PageVersion& version) {
         {"createdAt", version.createdAt},
         {"label", version.label},
         {"author", version.author},
+        {"sharedWith", version.sharedWith},
         {"threadSnapshot", threads},
         {"commentAccessMode", version.commentAccessMode},
+        {"threadCount", version.threadCount},
+        {"commentCount", version.commentCount},
     };
 }
 
@@ -87,12 +90,29 @@ wikilive::models::PageVersion versionFromJson(const json& item) {
         .createdAt = item.value("createdAt", std::string{}),
         .label = item.value("label", std::string{}),
         .author = item.value("author", std::string{}),
+        .sharedWith = item.value("sharedWith", std::vector<std::string>{}),
         .commentAccessMode = item.value("commentAccessMode", std::string{"all_users"}),
     };
 
     if (item.contains("threadSnapshot") && item["threadSnapshot"].is_array()) {
         for (const auto& threadItem : item["threadSnapshot"]) {
             version.threadSnapshot.push_back(commentThreadFromJson(threadItem));
+        }
+    }
+
+    if (item.contains("threadCount")) {
+        version.threadCount = item.value("threadCount", static_cast<std::size_t>(0));
+    }
+    if (item.contains("commentCount")) {
+        version.commentCount = item.value("commentCount", static_cast<std::size_t>(0));
+    }
+
+    if (version.threadCount == 0 && !version.threadSnapshot.empty()) {
+        version.threadCount = version.threadSnapshot.size();
+    }
+    if (version.commentCount == 0 && !version.threadSnapshot.empty()) {
+        for (const auto& thread : version.threadSnapshot) {
+            version.commentCount += thread.messages.size();
         }
     }
 
@@ -164,9 +184,21 @@ utils::Expected<std::vector<models::PageVersion>> LocalCollaborationStorage::lis
     }
 
     std::vector<models::PageVersion> output;
-    for (const auto& version : state->versions) {
+    for (const auto& version : (*state)->versions) {
         if (version.pageId == pageId) {
-            output.push_back(version);
+            auto summary = version;
+            if (summary.threadCount == 0 && !summary.threadSnapshot.empty()) {
+                summary.threadCount = summary.threadSnapshot.size();
+            }
+            if (summary.commentCount == 0 && !summary.threadSnapshot.empty()) {
+                for (const auto& thread : summary.threadSnapshot) {
+                    summary.commentCount += thread.messages.size();
+                }
+            }
+
+            summary.content.clear();
+            summary.threadSnapshot.clear();
+            output.push_back(std::move(summary));
         }
     }
     return output;
@@ -181,10 +213,10 @@ utils::Expected<models::PageVersion> LocalCollaborationStorage::getVersion(
         return std::unexpected(state.error());
     }
 
-    const auto it = std::find_if(state->versions.begin(), state->versions.end(), [&](const models::PageVersion& version) {
+    const auto it = std::find_if((*state)->versions.begin(), (*state)->versions.end(), [&](const models::PageVersion& version) {
         return version.pageId == pageId && version.versionId == versionId;
     });
-    if (it == state->versions.end()) {
+    if (it == (*state)->versions.end()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             "Page version not found: " + versionId,
@@ -197,13 +229,13 @@ utils::Expected<models::PageVersion> LocalCollaborationStorage::getVersion(
 
 utils::VoidExpected LocalCollaborationStorage::appendVersion(const models::PageVersion& version) {
     std::scoped_lock lock(mutex_);
-    auto state = loadStateUnlocked();
+    auto state = loadMutableStateUnlocked();
     if (!state) {
         return std::unexpected(state.error());
     }
 
-    state->versions.push_back(version);
-    std::stable_sort(state->versions.begin(), state->versions.end(), [](const models::PageVersion& left, const models::PageVersion& right) {
+    (*state)->versions.push_back(version);
+    std::stable_sort((*state)->versions.begin(), (*state)->versions.end(), [](const models::PageVersion& left, const models::PageVersion& right) {
         if (left.pageId == right.pageId) {
             return left.createdAt > right.createdAt;
         }
@@ -211,9 +243,9 @@ utils::VoidExpected LocalCollaborationStorage::appendVersion(const models::PageV
     });
 
     std::vector<models::PageVersion> trimmed;
-    trimmed.reserve(state->versions.size());
+    trimmed.reserve((*state)->versions.size());
     std::unordered_map<std::string, std::size_t> perPageCount;
-    for (const auto& item : state->versions) {
+    for (const auto& item : (*state)->versions) {
         auto& count = perPageCount[item.pageId];
         if (count >= maxVersionsPerPage_) {
             continue;
@@ -221,8 +253,8 @@ utils::VoidExpected LocalCollaborationStorage::appendVersion(const models::PageV
         trimmed.push_back(item);
         ++count;
     }
-    state->versions = std::move(trimmed);
-    return persistStateUnlocked(*state);
+    (*state)->versions = std::move(trimmed);
+    return persistStateUnlocked(**state);
 }
 
 utils::Expected<std::vector<models::CommentThread>> LocalCollaborationStorage::listThreads(const std::string& pageId) const {
@@ -233,7 +265,7 @@ utils::Expected<std::vector<models::CommentThread>> LocalCollaborationStorage::l
     }
 
     std::vector<models::CommentThread> output;
-    for (const auto& thread : state->threads) {
+    for (const auto& thread : (*state)->threads) {
         if (thread.pageId == pageId) {
             output.push_back(thread);
         }
@@ -250,10 +282,10 @@ utils::Expected<models::CommentThread> LocalCollaborationStorage::getThread(
         return std::unexpected(state.error());
     }
 
-    const auto it = std::find_if(state->threads.begin(), state->threads.end(), [&](const models::CommentThread& thread) {
+    const auto it = std::find_if((*state)->threads.begin(), (*state)->threads.end(), [&](const models::CommentThread& thread) {
         return thread.pageId == pageId && thread.threadId == threadId;
     });
-    if (it == state->threads.end()) {
+    if (it == (*state)->threads.end()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             "Comment thread not found: " + threadId,
@@ -266,25 +298,25 @@ utils::Expected<models::CommentThread> LocalCollaborationStorage::getThread(
 
 utils::VoidExpected LocalCollaborationStorage::saveThread(const models::CommentThread& thread) {
     std::scoped_lock lock(mutex_);
-    auto state = loadStateUnlocked();
+    auto state = loadMutableStateUnlocked();
     if (!state) {
         return std::unexpected(state.error());
     }
 
-    const auto it = std::find_if(state->threads.begin(), state->threads.end(), [&](const models::CommentThread& current) {
+    const auto it = std::find_if((*state)->threads.begin(), (*state)->threads.end(), [&](const models::CommentThread& current) {
         return current.pageId == thread.pageId && current.threadId == thread.threadId;
     });
 
-    if (it == state->threads.end()) {
-        state->threads.push_back(thread);
+    if (it == (*state)->threads.end()) {
+        (*state)->threads.push_back(thread);
     } else {
         *it = thread;
     }
 
-    std::stable_sort(state->threads.begin(), state->threads.end(), [](const models::CommentThread& left, const models::CommentThread& right) {
+    std::stable_sort((*state)->threads.begin(), (*state)->threads.end(), [](const models::CommentThread& left, const models::CommentThread& right) {
         return left.updatedAt > right.updatedAt;
     });
-    return persistStateUnlocked(*state);
+    return persistStateUnlocked(**state);
 }
 
 utils::Expected<std::string> LocalCollaborationStorage::getCommentAccess(const std::string& pageId) const {
@@ -294,8 +326,8 @@ utils::Expected<std::string> LocalCollaborationStorage::getCommentAccess(const s
         return std::unexpected(state.error());
     }
 
-    const auto it = state->commentAccessByPage.find(pageId);
-    if (it == state->commentAccessByPage.end()) {
+    const auto it = (*state)->commentAccessByPage.find(pageId);
+    if (it == (*state)->commentAccessByPage.end()) {
         return std::string("all_users");
     }
     return it->second;
@@ -303,13 +335,13 @@ utils::Expected<std::string> LocalCollaborationStorage::getCommentAccess(const s
 
 utils::VoidExpected LocalCollaborationStorage::saveCommentAccess(const std::string& pageId, const std::string& accessMode) {
     std::scoped_lock lock(mutex_);
-    auto state = loadStateUnlocked();
+    auto state = loadMutableStateUnlocked();
     if (!state) {
         return std::unexpected(state.error());
     }
 
-    state->commentAccessByPage[pageId] = accessMode;
-    return persistStateUnlocked(*state);
+    (*state)->commentAccessByPage[pageId] = accessMode;
+    return persistStateUnlocked(**state);
 }
 
 utils::VoidExpected LocalCollaborationStorage::restoreCommentSnapshot(
@@ -317,58 +349,74 @@ utils::VoidExpected LocalCollaborationStorage::restoreCommentSnapshot(
     const std::vector<models::CommentThread>& threads,
     const std::string& accessMode) {
     std::scoped_lock lock(mutex_);
-    auto state = loadStateUnlocked();
+    auto state = loadMutableStateUnlocked();
     if (!state) {
         return std::unexpected(state.error());
     }
 
-    state->threads.erase(
-        std::remove_if(state->threads.begin(), state->threads.end(), [&](const models::CommentThread& item) {
+    (*state)->threads.erase(
+        std::remove_if((*state)->threads.begin(), (*state)->threads.end(), [&](const models::CommentThread& item) {
             return item.pageId == pageId;
         }),
-        state->threads.end());
+        (*state)->threads.end());
 
     for (const auto& thread : threads) {
-        state->threads.push_back(thread);
+        (*state)->threads.push_back(thread);
     }
 
-    std::stable_sort(state->threads.begin(), state->threads.end(), [](const models::CommentThread& left, const models::CommentThread& right) {
+    std::stable_sort((*state)->threads.begin(), (*state)->threads.end(), [](const models::CommentThread& left, const models::CommentThread& right) {
         return left.updatedAt > right.updatedAt;
     });
 
-    state->commentAccessByPage[pageId] = accessMode.empty() ? "all_users" : accessMode;
-    return persistStateUnlocked(*state);
+    (*state)->commentAccessByPage[pageId] = accessMode.empty() ? "all_users" : accessMode;
+    return persistStateUnlocked(**state);
 }
 
 utils::VoidExpected LocalCollaborationStorage::deletePageData(const std::string& pageId) {
     std::scoped_lock lock(mutex_);
-    auto state = loadStateUnlocked();
+    auto state = loadMutableStateUnlocked();
     if (!state) {
         return std::unexpected(state.error());
     }
 
-    state->versions.erase(
-        std::remove_if(state->versions.begin(), state->versions.end(), [&](const models::PageVersion& item) {
+    (*state)->versions.erase(
+        std::remove_if((*state)->versions.begin(), (*state)->versions.end(), [&](const models::PageVersion& item) {
             return item.pageId == pageId;
         }),
-        state->versions.end());
-    state->threads.erase(
-        std::remove_if(state->threads.begin(), state->threads.end(), [&](const models::CommentThread& item) {
+        (*state)->versions.end());
+    (*state)->threads.erase(
+        std::remove_if((*state)->threads.begin(), (*state)->threads.end(), [&](const models::CommentThread& item) {
             return item.pageId == pageId;
         }),
-        state->threads.end());
-    state->commentAccessByPage.erase(pageId);
+        (*state)->threads.end());
+    (*state)->commentAccessByPage.erase(pageId);
 
-    return persistStateUnlocked(*state);
+    return persistStateUnlocked(**state);
 }
 
-utils::Expected<LocalCollaborationStorage::State> LocalCollaborationStorage::loadStateUnlocked() const {
+utils::Expected<const LocalCollaborationStorage::State*> LocalCollaborationStorage::loadStateUnlocked() const {
     if (storagePath_.empty()) {
-        return State{};
+        if (!cacheLoaded_) {
+            cachedState_ = State{};
+            cacheLoaded_ = true;
+            cacheHasWriteTime_ = false;
+        }
+        return &*cachedState_;
     }
 
-    if (!std::filesystem::exists(storagePath_)) {
-        return State{};
+    const auto path = std::filesystem::path(storagePath_);
+    if (!std::filesystem::exists(path)) {
+        if (!cacheLoaded_) {
+            cachedState_ = State{};
+            cacheLoaded_ = true;
+        }
+        cacheHasWriteTime_ = false;
+        return &*cachedState_;
+    }
+
+    const auto currentWriteTime = std::filesystem::last_write_time(path);
+    if (cacheLoaded_ && cacheHasWriteTime_ && currentWriteTime == cachedWriteTime_ && cachedState_.has_value()) {
+        return &*cachedState_;
     }
 
     std::ifstream stream(storagePath_, std::ios::binary);
@@ -408,11 +456,26 @@ utils::Expected<LocalCollaborationStorage::State> LocalCollaborationStorage::loa
         }
     }
 
-    return state;
+    cachedState_ = std::move(state);
+    cachedWriteTime_ = currentWriteTime;
+    cacheLoaded_ = true;
+    cacheHasWriteTime_ = true;
+    return &*cachedState_;
+}
+
+utils::Expected<LocalCollaborationStorage::State*> LocalCollaborationStorage::loadMutableStateUnlocked() {
+    const auto state = static_cast<const LocalCollaborationStorage*>(this)->loadStateUnlocked();
+    if (!state) {
+        return std::unexpected(state.error());
+    }
+    return const_cast<State*>(state.value());
 }
 
 utils::VoidExpected LocalCollaborationStorage::persistStateUnlocked(const State& state) const {
     if (storagePath_.empty()) {
+        cachedState_ = state;
+        cacheLoaded_ = true;
+        cacheHasWriteTime_ = false;
         return {};
     }
 
@@ -447,6 +510,15 @@ utils::VoidExpected LocalCollaborationStorage::persistStateUnlocked(const State&
         }
 
         stream << root.dump(2);
+        stream.flush();
+        cachedState_ = state;
+        cacheLoaded_ = true;
+        if (std::filesystem::exists(path)) {
+            cachedWriteTime_ = std::filesystem::last_write_time(path);
+            cacheHasWriteTime_ = true;
+        } else {
+            cacheHasWriteTime_ = false;
+        }
         return {};
     } catch (const std::exception& exception) {
         return std::unexpected(utils::makeError(

@@ -99,6 +99,7 @@ add_library(wikilive_core STATIC
     src/server/router.cpp
     src/server/websocket_manager.cpp
     src/api/mws_client.cpp
+    src/services/auth_service.cpp
     src/services/collaboration_service.cpp
     src/services/page_service.cpp
     src/services/render_service.cpp
@@ -108,6 +109,7 @@ add_library(wikilive_core STATIC
     src/storage/hybrid_page_storage.cpp
     src/storage/local_collaboration_storage.cpp
     src/storage/local_file_page_storage.cpp
+    src/storage/local_user_storage.cpp
     src/storage/mws_page_storage.cpp
     src/storage/cache.cpp
     src/utils/logger.cpp

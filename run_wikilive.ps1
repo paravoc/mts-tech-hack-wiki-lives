@@ -16,7 +16,7 @@ function Write-Step {
 function Resolve-Python {
     try {
         $resolved = (& python -c "import sys; print(sys.executable)" 2>$null | Select-Object -First 1).Trim()
-        if ($resolved -and (Test-Path $resolved)) {
+        if ($resolved -and (Test-Path $resolved) -and ($resolved -notlike "*WindowsApps*")) {
             return $resolved
         }
     }
@@ -24,7 +24,7 @@ function Resolve-Python {
     }
 
     $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
-    if ($pythonCommand -and $pythonCommand.Source -and (Test-Path $pythonCommand.Source)) {
+    if ($pythonCommand -and $pythonCommand.Source -and (Test-Path $pythonCommand.Source) -and ($pythonCommand.Source -notlike "*WindowsApps*")) {
         return $pythonCommand.Source
     }
 
@@ -92,6 +92,75 @@ function Stop-Existing {
         ForEach-Object {
             try { Stop-Process -Id $_.ProcessId -Force } catch {}
         }
+}
+
+function Format-CmdArgument {
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return '""'
+    }
+
+    if ($Value.Contains('"') -or $Value.Contains(' ')) {
+        return '"' + $Value.Replace('"', '\"') + '"'
+    }
+
+    return $Value
+}
+
+function Start-DetachedProcess {
+    param(
+        [string]$Executable,
+        [string[]]$Arguments,
+        [string]$WorkingDirectory,
+        [string]$StdOutPath,
+        [string]$StdErrPath
+    )
+
+    $formattedArgs = @()
+    foreach ($argument in $Arguments) {
+        $formattedArgs += (Format-CmdArgument -Value $argument)
+    }
+
+    $commandLine = '"' + $Executable + '"'
+    if ($formattedArgs.Count -gt 0) {
+        $commandLine += " " + ($formattedArgs -join " ")
+    }
+    $commandLine += ' 1>> "' + $StdOutPath + '" 2>> "' + $StdErrPath + '"'
+
+    $result = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{
+        CommandLine = $commandLine
+        CurrentDirectory = $WorkingDirectory
+    }
+
+    if ($result.ReturnValue -ne 0 -or -not $result.ProcessId) {
+        throw "Failed to start detached process for $Executable (Win32_Process return code $($result.ReturnValue))."
+    }
+
+    return [int]$result.ProcessId
+}
+
+function Wait-HttpReady {
+    param(
+        [string]$Url,
+        [int]$TimeoutSeconds = 15
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 2
+            if ($response.StatusCode -ge 200 -and $response.StatusCode -lt 500) {
+                return $true
+            }
+        }
+        catch {
+        }
+
+        Start-Sleep -Milliseconds 400
+    }
+
+    return $false
 }
 
 function Invoke-CMakeCommand {
@@ -174,20 +243,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Step "Starting backend"
-$backendRunner = "& '$backendExe' 1>> '$backendOut' 2>> '$backendErr'"
-$backendProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $backendRunner -WorkingDirectory $projectRoot -PassThru
+$backendPid = Start-DetachedProcess `
+    -Executable $backendExe `
+    -Arguments @() `
+    -WorkingDirectory $projectRoot `
+    -StdOutPath $backendOut `
+    -StdErrPath $backendErr
 
-Start-Sleep -Milliseconds 800
+if (-not (Wait-HttpReady -Url "http://127.0.0.1:3000/health" -TimeoutSeconds 15)) {
+    throw "Backend did not become ready on http://127.0.0.1:3000/health. Check $backendOut and $backendErr."
+}
 
 Write-Step "Starting frontend"
-$frontendRunner = "& '$pythonExe' -m streamlit run 'frontend\app.py' --server.headless true --server.port 8501 1>> '$frontendOut' 2>> '$frontendErr'"
+$frontendRunner = "& '$pythonExe' -m streamlit run 'frontend\\app.py' --server.headless true --server.port 8501 1>> '$frontendOut' 2>> '$frontendErr'"
 $frontendProcess = Start-Process -FilePath "powershell.exe" -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $frontendRunner -WorkingDirectory $projectRoot -PassThru
+
+if (-not (Wait-HttpReady -Url "http://127.0.0.1:8501/" -TimeoutSeconds 20)) {
+    Write-Warning "Frontend did not respond on http://127.0.0.1:8501 yet. It may still be warming up; check $frontendOut and $frontendErr if needed."
+}
 
 Write-Step "Ready"
 Write-Host "Backend:  http://127.0.0.1:3000" -ForegroundColor Green
 Write-Host "Frontend: http://127.0.0.1:8501" -ForegroundColor Green
-Write-Host "Backend launcher PID:  $($backendProcess.Id)"
-Write-Host "Frontend launcher PID: $($frontendProcess.Id)"
+Write-Host "Backend PID:  $backendPid"
+Write-Host "Frontend PID: $($frontendProcess.Id)"
 Write-Host ""
 Write-Host "Logs:"
 Write-Host "  $backendOut"

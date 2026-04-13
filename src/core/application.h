@@ -19,6 +19,7 @@ class AiService;
 }
 
 namespace wikilive::services {
+class AuthService;
 class CollaborationService;
 class PageService;
 class RenderService;
@@ -50,6 +51,7 @@ private:
     std::unique_ptr<storage::PageStorage> pageStorage_{};
     std::unique_ptr<storage::LocalCollaborationStorage> collaborationStorage_{};
     std::unique_ptr<services::PageService> pageService_{}; 
+    std::unique_ptr<services::AuthService> authService_{};
     std::unique_ptr<services::CollaborationService> collaborationService_{};
     std::unique_ptr<services::RenderService> renderService_{};
     std::unique_ptr<ai::AiService> aiService_{};

@@ -48,6 +48,11 @@ public:
         const std::string& fieldName);
     [[nodiscard]] utils::Expected<std::string> createRecord(const std::string& payload);
     [[nodiscard]] utils::Expected<std::string> updateRecord(const std::string& recordId, const std::string& payload);
+    [[nodiscard]] utils::Expected<std::string> updateRecordForTable(
+        const std::string& tableId,
+        const std::string& viewId,
+        const std::string& recordId,
+        const std::string& payload);
     [[nodiscard]] utils::VoidExpected deleteRecord(const std::string& recordId);
 
 private:
@@ -61,6 +66,11 @@ private:
         const std::string& fieldName) const;
     [[nodiscard]] utils::Expected<std::string> createRecordOnce(const std::string& payload) const;
     [[nodiscard]] utils::Expected<std::string> updateRecordOnce(const std::string& recordId, const std::string& payload) const;
+    [[nodiscard]] utils::Expected<std::string> updateRecordOnceForTable(
+        const std::string& tableId,
+        const std::string& viewId,
+        const std::string& recordId,
+        const std::string& payload) const;
     [[nodiscard]] utils::VoidExpected deleteRecordOnce(const std::string& recordId) const;
     [[nodiscard]] bool hasConfiguration() const;
     [[nodiscard]] utils::Error missingConfigurationError() const;

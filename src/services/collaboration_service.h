@@ -32,6 +32,9 @@ public:
     CollaborationService(PageService& pageService, storage::LocalCollaborationStorage& storage);
 
     [[nodiscard]] utils::Expected<std::vector<models::PageVersion>> listVersions(const std::string& pageId) const;
+    [[nodiscard]] utils::Expected<models::PageVersion> getVersion(
+        const std::string& pageId,
+        const std::string& versionId) const;
     [[nodiscard]] utils::Expected<models::PageVersion> captureVersion(
         const models::Page& page,
         const std::string& label,

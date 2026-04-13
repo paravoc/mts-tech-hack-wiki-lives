@@ -17,6 +17,7 @@ struct PageDraft {
     std::string ownerId;
     std::string ownerName;
     std::vector<std::string> sharedWith;
+    bool sharedWithProvided = false;
 };
 
 class PageService {

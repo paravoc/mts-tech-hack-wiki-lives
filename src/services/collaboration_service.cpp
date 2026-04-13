@@ -94,8 +94,17 @@ bool isSameVersionSnapshot(
     return version.title == page.title &&
            version.description == page.description &&
            version.content == page.content &&
+           version.sharedWith == page.sharedWith &&
            version.commentAccessMode == commentAccessMode &&
            commentThreadSnapshotToJson(version.threadSnapshot) == commentThreadSnapshotToJson(threads);
+}
+
+std::size_t countThreadMessages(const std::vector<models::CommentThread>& threads) {
+    std::size_t total = 0;
+    for (const auto& thread : threads) {
+        total += thread.messages.size();
+    }
+    return total;
 }
 
 }  // namespace
@@ -112,6 +121,17 @@ utils::Expected<std::vector<models::PageVersion>> CollaborationService::listVers
     }
 
     return storage_.listVersions(pageId);
+}
+
+utils::Expected<models::PageVersion> CollaborationService::getVersion(
+    const std::string& pageId,
+    const std::string& versionId) const {
+    const auto pageExists = ensurePageExists(pageId);
+    if (!pageExists) {
+        return std::unexpected(pageExists.error());
+    }
+
+    return storage_.getVersion(pageId, versionId);
 }
 
 utils::Expected<models::PageVersion> CollaborationService::captureVersion(
@@ -149,8 +169,11 @@ utils::Expected<models::PageVersion> CollaborationService::captureVersion(
         .createdAt = utils::formatIso(utils::now()),
         .label = label,
         .author = author.empty() ? "system" : author,
+        .sharedWith = page.sharedWith,
         .threadSnapshot = threads.value(),
         .commentAccessMode = accessMode.value(),
+        .threadCount = threads->size(),
+        .commentCount = countThreadMessages(threads.value()),
     };
 
     const auto appendResult = storage_.appendVersion(version);
@@ -198,6 +221,8 @@ utils::Expected<models::Page> CollaborationService::restoreVersion(
             .title = version->title,
             .description = version->description,
             .content = version->content,
+            .sharedWith = version->sharedWith,
+            .sharedWithProvided = true,
         });
     if (!restored) {
         return std::unexpected(restored.error());

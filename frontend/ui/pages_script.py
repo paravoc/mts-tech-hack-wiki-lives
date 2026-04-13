@@ -553,6 +553,13 @@ def pages_script() -> str:
               : `<p class="body-placeholder">${emptyHint}</p>`;
             updateDocumentHeader(page || {});
             renderOutline();
+            commentLastSavedSnapshot = typeof window.wikiliveBuildVersionSnapshot === "function"
+              ? window.wikiliveBuildVersionSnapshot({
+                  title: (page && page.title) || "",
+                  description: (page && page.description) || "",
+                  content: (page && page.content) || ""
+                })
+              : null;
           } finally {
             window.setTimeout(() => {
               commentApplyingDocument = false;
@@ -581,17 +588,24 @@ def pages_script() -> str:
 
           commentSaveInFlight = true;
           try {
+            const documentState = serializeEditorDocument();
+            const nextSnapshot = typeof window.wikiliveBuildVersionSnapshot === "function"
+              ? window.wikiliveBuildVersionSnapshot(documentState)
+              : null;
+            const pendingLabel = commentPendingVersionLabel || label || "Изменение текста";
             const payload = {
-              ...serializeEditorDocument(),
+              ...documentState,
               ownerId: normalizeActorId(currentCommentActorId || "viewer"),
               ownerName: getCurrentCommentActor().name || "Гость",
-              versionLabel: commentPendingVersionLabel || label || "Изменение текста",
+              versionLabel: typeof window.wikiliveInferDocumentVersionLabel === "function" && typeof isGenericVersionLabel === "function" && isGenericVersionLabel(pendingLabel)
+                ? window.wikiliveInferDocumentVersionLabel(commentLastSavedSnapshot, nextSnapshot, pendingLabel)
+                : pendingLabel,
               versionAuthor: commentPendingVersionAuthor || author || "editor",
             };
             const response = await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
               method: "PUT",
               body: JSON.stringify(payload),
-              timeoutMs: 20000
+              timeoutMs: 30000
             });
             const savedPage = response.item || {
               pageId: commentPageId,
@@ -601,6 +615,7 @@ def pages_script() -> str:
             upsertCommentPage(savedPage);
             updateDocumentHeader(savedPage);
             renderPagesSwitcher();
+            commentLastSavedSnapshot = nextSnapshot;
             commentPendingVersionLabel = "";
             commentPendingVersionAuthor = "";
             if (window.refreshTimeMachinePanel) {
@@ -636,7 +651,7 @@ def pages_script() -> str:
               commentPendingVersionLabel || label || "Изменение текста",
               commentPendingVersionAuthor || author || "editor"
             );
-          }, 900);
+          }, 1800);
         };
 
         async function refreshCurrentPageFromServer(force = false) {
@@ -769,7 +784,7 @@ def pages_script() -> str:
               versionLabel: "Создана страница",
               versionAuthor: actor.id || "viewer",
             }),
-            timeoutMs: 20000
+            timeoutMs: 30000
           });
           if (workspaceToken !== commentWorkspaceToken) {
             return null;
@@ -1001,13 +1016,29 @@ def pages_script() -> str:
         const pageAccessList = document.getElementById("pageAccessList");
         const pageAccessSave = document.getElementById("pageAccessSave");
 
-        const pageAccessUsers = [
-          { id: "ivan", name: "???? ??????", role: "?????", team: "WikiLive" },
-          { id: "sergei", name: "?????? ??????", role: "????????", team: "WikiLive" },
-          { id: "anton", name: "????? ????????", role: "PM", team: "Release" },
-          { id: "anna", name: "???? ??????", role: "Designer", team: "Design" },
-          { id: "maxim", name: "?????? ??????", role: "Backend", team: "Platform" },
-        ];
+        let pageAccessUsers = [];
+        let pageAccessGroups = [];
+
+        async function loadPageAccessDirectory() {
+          try {
+            const [usersResponse, groupsResponse] = await Promise.all([
+              commentApiRequest("/api/users", { timeoutMs: 8000 }),
+              commentApiRequest("/api/groups", { timeoutMs: 8000 })
+            ]);
+            pageAccessUsers = Array.isArray(usersResponse.users) ? usersResponse.users : [];
+            pageAccessGroups = Array.isArray(groupsResponse.groups) ? groupsResponse.groups : [];
+          } catch (error) {
+            console.warn("Failed to load access directory, using fallback", error);
+            pageAccessUsers = [
+              { id: "ivan", name: "Иван Иванов", role: "Автор", team: "WikiLive" },
+              { id: "sergei", name: "Сергей Иванов", role: "Редактор", team: "WikiLive" },
+              { id: "anton", name: "Антон Серганов", role: "PM", team: "Release" },
+              { id: "daria", name: "Дарья Смирнова", role: "Designer", team: "Design" },
+              { id: "maxim", name: "Максим Карпов", role: "Backend", team: "Platform" },
+            ];
+            pageAccessGroups = [];
+          }
+        }
 
         function getCurrentPage() {
           return (commentPages || []).find((page) => page.pageId === commentPageId) || null;
@@ -1019,12 +1050,24 @@ def pages_script() -> str:
           }
           const page = getCurrentPage();
           if (!page) {
-            pageAccessList.innerHTML = '<div class="page-access-item">???????? ?? ???????</div>';
+            pageAccessList.innerHTML = '<div class="page-access-item">Нет активной страницы</div>';
             return;
           }
           const ownerId = normalizeActorId(page.ownerId || "viewer");
           const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
-          pageAccessList.innerHTML = pageAccessUsers.map((user) => {
+          const groupItems = (pageAccessGroups || []).map((group) => {
+            return `
+              <label class="page-access-item">
+                <input type="checkbox" data-group="${escapeHtml(group.id)}" />
+                <span>
+                  <div>${escapeHtml(group.name)}</div>
+                  <div class="page-access-item__meta">Группа • ${escapeHtml(group.id)}</div>
+                </span>
+              </label>
+            `;
+          }).join("");
+
+          const userItems = pageAccessUsers.map((user) => {
             const normalized = normalizeActorId(user.id);
             const isOwner = normalized === ownerId;
             const isChecked = isOwner || sharedWith.includes(normalized) || sharedWith.includes("*");
@@ -1033,11 +1076,13 @@ def pages_script() -> str:
                 <input type="checkbox" value="${normalized}" ${isChecked ? "checked" : ""} ${isOwner ? "disabled" : ""} />
                 <span>
                   <div>${escapeHtml(user.name)}</div>
-                  <div class="page-access-item__meta">${escapeHtml(user.role)} ? ${escapeHtml(user.team)}</div>
+                  <div class="page-access-item__meta">${escapeHtml(user.role || "Участник")} • ${escapeHtml(user.team || "WikiLive")}</div>
                 </span>
               </label>
             `;
           }).join("");
+
+          pageAccessList.innerHTML = groupItems + userItems;
         }
 
         function openPageAccessPanel() {
@@ -1059,7 +1104,7 @@ function initializePagesWorkspace() {
           const docHeaderTitleButton = document.getElementById("docHeaderTitleButton");
 
           ensurePagesWorkspaceStyles();
-          renderPagesSwitcher();
+          loadPageAccessDirectory().finally(() => renderPagesSwitcher());
           renderPagePresence();
 
           if (pagesTrigger) {
@@ -1089,23 +1134,41 @@ function initializePagesWorkspace() {
                 return;
               }
               const ownerId = normalizeActorId(page.ownerId || "viewer");
-              const selected = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"]'))
+              const selectedUsers = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][value]'))
                 .filter((input) => input.checked)
                 .map((input) => normalizeActorId(input.value))
                 .filter((value) => value && value !== ownerId);
+              const selectedGroups = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][data-group]'))
+                .filter((input) => input.checked)
+                .map((input) => input.dataset.group || "");
+
+              const groupMembers = (pageAccessGroups || [])
+                .filter((group) => selectedGroups.includes(group.id))
+                .flatMap((group) => group.members || []);
+
+              const selected = Array.from(new Set([...selectedUsers, ...groupMembers]))
+                .filter((value) => value && value !== ownerId);
+              const previousShared = Array.isArray(page.sharedWith) ? page.sharedWith.map((value) => normalizeActorId(value)) : [];
+              const addedAccess = selected.filter((value) => !previousShared.includes(value));
+              const removedAccess = previousShared.filter((value) => !selected.includes(value));
+              const accessVersionLabel = addedAccess.length && !removedAccess.length
+                ? "Добавлены участники к странице"
+                : (!addedAccess.length && removedAccess.length
+                  ? "Закрыт доступ к странице"
+                  : "Обновление доступа");
               const payload = {
                 ...serializeEditorDocument(),
                 ownerId: page.ownerId || normalizeActorId(currentCommentActorId || "viewer"),
-                ownerName: page.ownerName || getCurrentCommentActor().name || "?????",
+                ownerName: page.ownerName || getCurrentCommentActor().name || "Автор",
                 sharedWith: selected,
-                versionLabel: "???????? ??????",
+                versionLabel: accessVersionLabel,
                 versionAuthor: getCurrentCommentActor().id || "viewer",
               };
               try {
                 const response = await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`, {
                   method: "PUT",
                   body: JSON.stringify(payload),
-                  timeoutMs: 20000,
+                  timeoutMs: 30000,
                 });
                 const updated = response.item || response;
                 if (updated && updated.pageId) {
@@ -1141,7 +1204,7 @@ function initializePagesWorkspace() {
               if (ownerId !== actorId && !isCommentAdmin(actorId)) {
                 return;
               }
-              if (!window.confirm("??????? ?????????")) {
+              if (!window.confirm("Удалить страницу?")) {
                 return;
               }
               try {

@@ -15,11 +15,13 @@
 #include "src/server/router.h"
 #include "src/server/websocket_manager.h"
 #include "src/services/collaboration_service.h"
+#include "src/services/auth_service.h"
 #include "src/services/page_service.h"
 #include "src/services/render_service.h"
 #include "src/storage/in_memory_page_storage.h"
 #include "src/storage/local_collaboration_storage.h"
 #include "src/storage/local_file_page_storage.h"
+#include "src/storage/local_user_storage.h"
 #include "src/storage/mws_page_storage.h"
 #include "src/utils/logger.h"
 
@@ -99,6 +101,7 @@ bool Application::initialize(const char* envPath) {
     }
 
     const auto localPagesPath = (std::filesystem::current_path() / "data" / "wikilive_pages.json").string();
+    const auto localUsersPath = (std::filesystem::current_path() / "data" / "wikilive_users.json").string();
 
     pageStorage_ = std::make_unique<storage::LocalFilePageStorage>(localPagesPath);
     if (!config_.wikiPagesTableId.empty() && !config_.wikiPagesViewId.empty()) {
@@ -145,6 +148,9 @@ bool Application::initialize(const char* envPath) {
         });
     }
 
+    auto userStorage = std::make_unique<storage::LocalUserStorage>(localUsersPath);
+    authService_ = std::make_unique<services::AuthService>(*userStorage);
+
     router_ = std::make_unique<server::Router>(
         *pageService_,
         *renderService_,
@@ -152,7 +158,9 @@ bool Application::initialize(const char* envPath) {
         aiService_.get(),
         collaborationService_.get(),
         webSocketManager_.get(),
-        std::move(tablePresets));
+        std::move(tablePresets),
+        std::move(userStorage),
+        authService_.get());
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 
     initialized_ = true;

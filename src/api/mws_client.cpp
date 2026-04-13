@@ -525,7 +525,7 @@ utils::Expected<std::vector<MwsRecord>> MwsClient::getRecordsForTable(
     const std::string& viewId,
     const std::vector<std::string>& recordIds) {
     const auto resolvedTableId = tableId.empty() ? tableId_ : tableId;
-    const auto resolvedViewId = tableId.empty() ? viewId_ : viewId;
+    const auto resolvedViewId = viewId.empty() ? viewId_ : viewId;
     const bool usesConfiguredTable = resolvedTableId == tableId_ && resolvedViewId == viewId_;
 
     auto result = retryPolicy_.run(
@@ -576,6 +576,22 @@ utils::Expected<std::string> MwsClient::updateRecord(const std::string& recordId
     return retryPolicy_.run(
         [this, &recordId, &payload]() {
             return updateRecordOnce(recordId, payload);
+        },
+        options_.retryAttempts,
+        options_.retryBaseDelayMs);
+}
+
+utils::Expected<std::string> MwsClient::updateRecordForTable(
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::string& recordId,
+    const std::string& payload) {
+    const auto resolvedTableId = tableId.empty() ? tableId_ : tableId;
+    const auto resolvedViewId = viewId.empty() ? viewId_ : viewId;
+
+    return retryPolicy_.run(
+        [this, &resolvedTableId, &resolvedViewId, &recordId, &payload]() {
+            return updateRecordOnceForTable(resolvedTableId, resolvedViewId, recordId, payload);
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);
@@ -768,6 +784,26 @@ utils::Expected<std::string> MwsClient::updateRecordOnce(const std::string& reco
         return std::unexpected(missingConfigurationError());
     }
 
+    return updateRecordOnceForTable(tableId_, viewId_, recordId, payload);
+}
+
+utils::Expected<std::string> MwsClient::updateRecordOnceForTable(
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::string& recordId,
+    const std::string& payload) const {
+    if (token_.empty()) {
+        return std::unexpected(utils::makeError(
+            utils::ErrorCode::InvalidConfig,
+            "MWS client is missing MWS_TOKEN in .env.",
+            500,
+            false));
+    }
+
+    if (tableId.empty()) {
+        return std::unexpected(missingConfigurationError());
+    }
+
     if (recordId.empty()) {
         return std::unexpected(utils::makeError(
             utils::ErrorCode::InvalidRequest,
@@ -784,8 +820,8 @@ utils::Expected<std::string> MwsClient::updateRecordOnce(const std::string& reco
             false));
     }
 
-    const auto query = appendViewParameter("fieldKey=name", viewId_);
-    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId_) + "/records?" + query;
+    const auto query = appendViewParameter("fieldKey=name", viewId);
+    const auto path = "/fusion/v1/datasheets/" + urlEncode(tableId) + "/records?" + query;
     const auto response = executeRequest("PATCH", toWide(path), token_, options_.requestTimeoutMs, payload);
     if (!response) {
         return std::unexpected(response.error());

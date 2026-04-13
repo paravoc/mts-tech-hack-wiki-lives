@@ -72,6 +72,7 @@ utils::Expected<models::Page> PageService::createPage(const PageDraft& draft) {
         .updatedAt = timestamp,
         .ownerId = validDraft->ownerId.empty() ? "viewer" : validDraft->ownerId,
         .ownerName = validDraft->ownerName.empty() ? "Гость" : validDraft->ownerName,
+        .sharedWith = validDraft->sharedWith,
     };
 
     const auto saveResult = storage_.savePage(page);
@@ -104,7 +105,9 @@ utils::Expected<models::Page> PageService::updatePage(const std::string& pageId,
     if (!validDraft->ownerName.empty()) {
         page.ownerName = validDraft->ownerName;
     }
-    page.sharedWith = validDraft->sharedWith;
+    if (validDraft->sharedWithProvided) {
+        page.sharedWith = validDraft->sharedWith;
+    }
 
     const auto saveResult = storage_.savePage(page);
     if (!saveResult) {

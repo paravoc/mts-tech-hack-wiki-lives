@@ -70,6 +70,106 @@ void applyFieldMeta(const nlohmann::json& value, nlohmann::json& meta) {
     }
 }
 
+std::vector<std::string> parseCsvList(const std::string& value) {
+    std::vector<std::string> items;
+    for (const auto& rawItem : wikilive::utils::split(value, ',')) {
+        const auto item = wikilive::utils::trim(rawItem);
+        if (!item.empty()) {
+            items.push_back(item);
+        }
+    }
+    return items;
+}
+
+std::vector<std::string> resolveRequestedFieldNames(
+    const std::vector<std::string>& requestedFields,
+    const std::unordered_set<std::string>& discoveredFields) {
+    if (!requestedFields.empty()) {
+        return requestedFields;
+    }
+
+    std::vector<std::string> sortedFieldNames(discoveredFields.begin(), discoveredFields.end());
+    std::sort(sortedFieldNames.begin(), sortedFieldNames.end());
+    return sortedFieldNames;
+}
+
+nlohmann::json buildMwsGridPayload(
+    const std::string& resolvedTableId,
+    const std::string& resolvedViewId,
+    const std::vector<wikilive::server::MwsTablePreset>& tablePresets,
+    const std::vector<wikilive::api::MwsRecord>& records,
+    const std::vector<std::string>& requestedFields) {
+    std::string activeLabel = "Пользовательская таблица";
+    std::string activeRole = "data";
+    for (const auto& preset : tablePresets) {
+        if (preset.tableId == resolvedTableId && preset.viewId == resolvedViewId) {
+            activeLabel = preset.label;
+            activeRole = preset.role;
+            break;
+        }
+    }
+
+    std::unordered_set<std::string> discoveredFields;
+    for (const auto& record : records) {
+        for (const auto& [fieldName, _] : record.fields) {
+            discoveredFields.insert(fieldName);
+        }
+    }
+
+    const auto fieldNames = resolveRequestedFieldNames(requestedFields, discoveredFields);
+    const std::unordered_set<std::string> fieldFilter(fieldNames.begin(), fieldNames.end());
+
+    nlohmann::json payload = {
+        {"tableId", resolvedTableId},
+        {"viewId", resolvedViewId},
+        {"activeTable", {
+            {"tableId", resolvedTableId},
+            {"viewId", resolvedViewId},
+            {"label", activeLabel},
+            {"role", activeRole},
+        }},
+        {"records", nlohmann::json::array()},
+        {"fieldNames", fieldNames},
+    };
+
+    for (const auto& record : records) {
+        nlohmann::json fieldsJson = nlohmann::json::object();
+        nlohmann::json fieldMetaJson = nlohmann::json::object();
+
+        for (const auto& fieldName : fieldNames) {
+            const auto fieldIt = record.fields.find(fieldName);
+            if (fieldIt == record.fields.end()) {
+                continue;
+            }
+
+            fieldsJson[fieldName] = fieldIt->second;
+            nlohmann::json meta = {
+                {"value", fieldIt->second},
+                {"resourceUrl", ""},
+                {"mimeType", ""},
+                {"isImage", false},
+            };
+
+            if (const auto rawIt = record.rawFieldsJson.find(fieldName); rawIt != record.rawFieldsJson.end()) {
+                try {
+                    applyFieldMeta(nlohmann::json::parse(rawIt->second), meta);
+                } catch (...) {
+                }
+            }
+
+            fieldMetaJson[fieldName] = std::move(meta);
+        }
+
+        payload["records"].push_back({
+            {"recordId", record.recordId},
+            {"fields", std::move(fieldsJson)},
+            {"fieldMeta", std::move(fieldMetaJson)},
+        });
+    }
+
+    return payload;
+}
+
 std::string buildSuccessJson(const std::string& dataJson) {
     return "{\"success\":true,\"data\":" + dataJson + "}";
 }
@@ -100,25 +200,34 @@ std::string pageToJson(const wikilive::models::Page& page, const bool includeRen
     return json;
 }
 
-std::string pageVersionToJson(const wikilive::models::PageVersion& version) {
-    std::size_t messageCount = 0;
-    for (const auto& thread : version.threadSnapshot) {
-        messageCount += thread.messages.size();
+std::string pageVersionToJson(const wikilive::models::PageVersion& version, const bool includeContent = true) {
+    std::size_t threadCount = version.threadSnapshot.empty() ? version.threadCount : version.threadSnapshot.size();
+    std::size_t messageCount = version.threadSnapshot.empty() ? version.commentCount : 0;
+    if (!version.threadSnapshot.empty()) {
+        for (const auto& thread : version.threadSnapshot) {
+            messageCount += thread.messages.size();
+        }
     }
 
-    return nlohmann::json{
+    nlohmann::json payload{
         {"versionId", version.versionId},
         {"pageId", version.pageId},
         {"title", version.title},
         {"description", version.description},
-        {"content", version.content},
         {"createdAt", version.createdAt},
         {"label", version.label},
         {"author", version.author},
-        {"threadCount", version.threadSnapshot.size()},
+        {"sharedWith", version.sharedWith},
+        {"commentAccessMode", version.commentAccessMode},
+        {"threadCount", threadCount},
         {"commentCount", messageCount},
+    };
+
+    if (includeContent) {
+        payload["content"] = version.content;
     }
-        .dump();
+
+    return payload.dump();
 }
 
 std::string commentThreadToJson(const wikilive::models::CommentThread& thread) {
@@ -214,7 +323,8 @@ Router::Router(
           aiService,
           collaborationService,
           webSocketManager,
-          std::move(tablePresets)) {
+          std::move(tablePresets),
+          nullptr) {
 }
 
 Router::Router(
@@ -224,14 +334,18 @@ Router::Router(
     ai::AiService* aiService,
     services::CollaborationService* collaborationService,
     WebSocketManager* webSocketManager,
-    std::vector<MwsTablePreset> tablePresets)
+    std::vector<MwsTablePreset> tablePresets,
+    std::unique_ptr<storage::LocalUserStorage> userStorage,
+    services::AuthService* authService)
     : pageService_(pageService),
       renderService_(renderService),
       mwsClient_(mwsClient),
       aiService_(aiService),
       collaborationService_(collaborationService),
       webSocketManager_(webSocketManager),
-      tablePresets_(std::move(tablePresets)) {
+      tablePresets_(std::move(tablePresets)),
+      userStorage_(std::move(userStorage)),
+      authService_(authService) {
 }
 
 RouteResponse Router::handleHealth() const {
@@ -458,11 +572,34 @@ RouteResponse Router::listVersions(const std::string& pageId) {
                 items += ",";
             }
             first = false;
-            items += pageVersionToJson(version);
+            items += pageVersionToJson(version, false);
         }
         items += "]";
 
         return ok("{\"items\":" + items + "}");
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::getVersion(const std::string& pageId, const std::string& versionId) {
+    try {
+        if (collaborationService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Collaboration service is not configured",
+                503,
+                false));
+        }
+
+        const auto version = collaborationService_->getVersion(pageId, versionId);
+        if (!version) {
+            return fail(version.error());
+        }
+
+        return ok("{\"item\":" + pageVersionToJson(version.value(), true) + "}");
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -493,7 +630,7 @@ RouteResponse Router::createVersion(const std::string& pageId, const std::string
             return fail(version.error());
         }
 
-        return created("{\"item\":" + pageVersionToJson(version.value()) + "}");
+        return created("{\"item\":" + pageVersionToJson(version.value(), false) + "}");
     } catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
             utils::ErrorCode::InvalidRequest,
@@ -1052,35 +1189,19 @@ RouteResponse Router::getMwsInsertOptions(const std::string& tableId, const std:
         }
 
         const auto resolvedTableId = tableId.empty() ? mwsClient_->tableId() : tableId;
-        const auto resolvedViewId = tableId.empty() ? mwsClient_->viewId() : viewId;
+        const auto resolvedViewId = viewId.empty() ? mwsClient_->viewId() : viewId;
         const auto records = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId);
         if (!records) {
             return fail(records.error());
         }
 
-        std::string activeLabel = "Пользовательская таблица";
-        std::string activeRole = "data";
-        for (const auto& preset : tablePresets_) {
-            if (preset.tableId == resolvedTableId && preset.viewId == resolvedViewId) {
-                activeLabel = preset.label;
-                activeRole = preset.role;
-                break;
-            }
-        }
-
-        nlohmann::json payload = {
-            {"tableId", resolvedTableId},
-            {"viewId", resolvedViewId},
-            {"activeTable", {
-                {"tableId", resolvedTableId},
-                {"viewId", resolvedViewId},
-                {"label", activeLabel},
-                {"role", activeRole},
-            }},
-            {"tablePresets", nlohmann::json::array()},
-            {"records", nlohmann::json::array()},
-            {"fieldNames", nlohmann::json::array()},
-        };
+        nlohmann::json payload = buildMwsGridPayload(
+            resolvedTableId,
+            resolvedViewId,
+            tablePresets_,
+            records.value(),
+            {});
+        payload["tablePresets"] = nlohmann::json::array();
 
         for (const auto& preset : tablePresets_) {
             payload["tablePresets"].push_back({
@@ -1092,41 +1213,150 @@ RouteResponse Router::getMwsInsertOptions(const std::string& tableId, const std:
             });
         }
 
-        std::unordered_set<std::string> fieldNames;
-        for (const auto& record : records.value()) {
-            nlohmann::json fieldsJson = nlohmann::json::object();
-            nlohmann::json fieldMetaJson = nlohmann::json::object();
-            for (const auto& [fieldName, fieldValue] : record.fields) {
-                fieldsJson[fieldName] = fieldValue;
-                fieldNames.insert(fieldName);
+        return ok(payload.dump());
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
 
-                nlohmann::json meta = {
-                    {"value", fieldValue},
-                    {"resourceUrl", ""},
-                    {"mimeType", ""},
-                    {"isImage", false},
-                };
-                if (const auto rawIt = record.rawFieldsJson.find(fieldName); rawIt != record.rawFieldsJson.end()) {
-                    try {
-                        applyFieldMeta(nlohmann::json::parse(rawIt->second), meta);
-                    } catch (...) {
-                    }
-                }
-                fieldMetaJson[fieldName] = std::move(meta);
-            }
-
-            payload["records"].push_back({
-                {"recordId", record.recordId},
-                {"fields", std::move(fieldsJson)},
-                {"fieldMeta", std::move(fieldMetaJson)},
-            });
+RouteResponse Router::getMwsGrid(
+    const std::string& tableId,
+    const std::string& viewId,
+    const std::string& recordIdsCsv,
+    const std::string& fieldNamesCsv) {
+    try {
+        if (mwsClient_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "MWS client is not configured",
+                503,
+                false));
         }
 
-        std::vector<std::string> sortedFieldNames(fieldNames.begin(), fieldNames.end());
-        std::sort(sortedFieldNames.begin(), sortedFieldNames.end());
-        payload["fieldNames"] = sortedFieldNames;
+        const auto resolvedTableId = tableId.empty() ? mwsClient_->tableId() : tableId;
+        const auto resolvedViewId = viewId.empty() ? mwsClient_->viewId() : viewId;
+        const auto recordIds = parseCsvList(recordIdsCsv);
+        const auto fieldNames = parseCsvList(fieldNamesCsv);
+        const auto records = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId, recordIds);
+        if (!records) {
+            return fail(records.error());
+        }
 
+        const auto payload = buildMwsGridPayload(
+            resolvedTableId,
+            resolvedViewId,
+            tablePresets_,
+            records.value(),
+            fieldNames);
         return ok(payload.dump());
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::updateMwsGrid(const std::string& payload) {
+    try {
+        if (mwsClient_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "MWS client is not configured",
+                503,
+                false));
+        }
+
+        if (payload.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "MWS grid payload must not be empty",
+                400,
+                false));
+        }
+
+        const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto resolvedTableId = parsed.value("tableId", mwsClient_->tableId());
+        const auto resolvedViewId = parsed.value("viewId", mwsClient_->viewId());
+        const auto fieldNames = parsed.contains("fieldNames") && parsed["fieldNames"].is_array()
+            ? parsed["fieldNames"].get<std::vector<std::string>>()
+            : std::vector<std::string>{};
+        const auto recordIds = parsed.contains("recordIds") && parsed["recordIds"].is_array()
+            ? parsed["recordIds"].get<std::vector<std::string>>()
+            : std::vector<std::string>{};
+
+        if (!parsed.contains("updates") || !parsed["updates"].is_array()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "MWS grid updates must be an array",
+                400,
+                false));
+        }
+
+        std::vector<std::string> touchedRecordIds;
+        for (const auto& update : parsed["updates"]) {
+            if (!update.is_object()) {
+                continue;
+            }
+
+            const auto recordId = update.value("recordId", std::string{});
+            if (recordId.empty()) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Each MWS grid update must include recordId",
+                    400,
+                    false));
+            }
+
+            if (!update.contains("fields") || !update["fields"].is_object()) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Each MWS grid update must include object field: fields",
+                    400,
+                    false));
+            }
+
+            nlohmann::json updatePayload = {
+                {"records", nlohmann::json::array({
+                    {
+                        {"recordId", recordId},
+                        {"fields", update["fields"]},
+                    },
+                })},
+            };
+
+            const auto result = mwsClient_->updateRecordForTable(
+                resolvedTableId,
+                resolvedViewId,
+                recordId,
+                updatePayload.dump());
+            if (!result) {
+                return fail(result.error());
+            }
+
+            touchedRecordIds.push_back(recordId);
+        }
+
+        const auto refreshedRecordIds = recordIds.empty() ? touchedRecordIds : recordIds;
+        const auto refreshed = mwsClient_->getRecordsForTable(resolvedTableId, resolvedViewId, refreshedRecordIds);
+        if (!refreshed) {
+            return fail(refreshed.error());
+        }
+
+        const auto responsePayload = buildMwsGridPayload(
+            resolvedTableId,
+            resolvedViewId,
+            tablePresets_,
+            refreshed.value(),
+            fieldNames);
+        return ok(responsePayload.dump());
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed MWS grid JSON payload: ") + exception.what(),
+            400,
+            false));
     } catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
     } catch (...) {
@@ -1251,13 +1481,149 @@ utils::Expected<services::PageDraft> Router::parsePagePayload(const std::string&
         return std::unexpected(ownerName.error());
     }
 
+    bool sharedWithProvided = false;
+    std::vector<std::string> sharedWith;
+    if (payload.find("\"sharedWith\"") != std::string::npos) {
+        try {
+            const auto parsedPayload = nlohmann::json::parse(payload, nullptr, true, true);
+            if (parsedPayload.contains("sharedWith")) {
+                sharedWithProvided = true;
+                if (!parsedPayload["sharedWith"].is_array()) {
+                    return std::unexpected(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Expected array field: sharedWith",
+                        400,
+                        false));
+                }
+                for (const auto& item : parsedPayload["sharedWith"]) {
+                    if (item.is_string()) {
+                        sharedWith.push_back(item.get<std::string>());
+                    }
+                }
+            }
+        } catch (const std::exception& exception) {
+            return std::unexpected(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                std::string("Failed to parse sharedWith: ") + exception.what(),
+                400,
+                false));
+        }
+    }
+
     return services::PageDraft{
         .title = title.value(),
         .description = description.value(),
         .content = content.value(),
         .ownerId = ownerId.value(),
         .ownerName = ownerName.value(),
+        .sharedWith = sharedWith,
+        .sharedWithProvided = sharedWithProvided,
     };
+}
+
+RouteResponse Router::listUsers() {
+    try {
+        nlohmann::json payload;
+        payload["users"] = nlohmann::json::array();
+        if (userStorage_ != nullptr) {
+            const auto users = userStorage_->listUsers();
+            if (!users) {
+                return fail(users.error());
+            }
+            for (const auto& user : users.value()) {
+                payload["users"].push_back({
+                    {"id", user.id},
+                    {"name", user.name},
+                    {"email", user.email},
+                    {"role", user.role},
+                    {"team", user.team},
+                    {"groups", user.groups},
+                });
+            }
+        }
+        return ok(payload.dump());
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::listGroups() {
+    try {
+        nlohmann::json payload;
+        payload["groups"] = nlohmann::json::array();
+        if (userStorage_ != nullptr) {
+            const auto groups = userStorage_->listGroups();
+            if (!groups) {
+                return fail(groups.error());
+            }
+            for (const auto& group : groups.value()) {
+                payload["groups"].push_back({
+                    {"id", group.id},
+                    {"name", group.name},
+                    {"members", group.members},
+                });
+            }
+        }
+        return ok(payload.dump());
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::login(const std::string& payload) {
+    try {
+        if (authService_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "Auth service is not configured",
+                503,
+                false));
+        }
+
+        if (payload.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Auth payload must not be empty",
+                400,
+                false));
+        }
+
+        const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto email = parsed.value("email", std::string{});
+        const auto password = parsed.value("password", std::string{});
+
+        const auto user = authService_->login(email, password);
+        if (!user) {
+            return fail(user.error());
+        }
+
+        const auto& info = user.value();
+        nlohmann::json response{
+            {"user", {
+                {"id", info.id},
+                {"name", info.name},
+                {"email", info.email},
+                {"role", info.role},
+                {"team", info.team},
+                {"groups", info.groups},
+            }},
+        };
+        return ok(response.dump());
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed auth payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
 }
 
 utils::Expected<std::string> Router::extractJsonString(

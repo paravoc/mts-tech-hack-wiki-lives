@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstddef>
+#include <filesystem>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -43,12 +45,17 @@ private:
         std::unordered_map<std::string, std::string> commentAccessByPage;
     };
 
-    [[nodiscard]] utils::Expected<State> loadStateUnlocked() const;
+    [[nodiscard]] utils::Expected<const State*> loadStateUnlocked() const;
+    [[nodiscard]] utils::Expected<State*> loadMutableStateUnlocked();
     [[nodiscard]] utils::VoidExpected persistStateUnlocked(const State& state) const;
 
     std::string storagePath_;
     std::size_t maxVersionsPerPage_ = 50;
     mutable std::mutex mutex_{};
+    mutable std::optional<State> cachedState_{};
+    mutable std::filesystem::file_time_type cachedWriteTime_{};
+    mutable bool cacheLoaded_ = false;
+    mutable bool cacheHasWriteTime_ = false;
 };
 
 }  // namespace wikilive::storage

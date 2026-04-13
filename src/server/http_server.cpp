@@ -143,6 +143,14 @@ utils::VoidExpected HttpServer::start(const int port) {
             writeResponse(response, router_.listVersions(std::string(request->getParameter(0))));
         });
 
+        app.get("/api/pages/:pageId/versions/:versionId", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(
+                response,
+                router_.getVersion(
+                    std::string(request->getParameter(0)),
+                    std::string(request->getParameter(1))));
+        });
+
         app.post("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
             const std::string pageId(request->getParameter(0));
             handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
@@ -246,6 +254,20 @@ utils::VoidExpected HttpServer::start(const int port) {
             writeResponse(response, router_.getPage(std::string(request->getParameter(0))));
         });
 
+        app.get("/api/users", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.listUsers());
+        });
+
+        app.get("/api/groups", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.listGroups());
+        });
+
+        app.post("/api/auth/login", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.login(body));
+            });
+        });
+
         app.post("/api/pages", [this](HttpResponse* response, HttpRequest* request) {
             handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
                 writeResponse(innerResponse, router_.createPage(body));
@@ -277,10 +299,33 @@ utils::VoidExpected HttpServer::start(const int port) {
                     std::string(request->getQuery("viewId"))));
         });
 
+        app.get("/api/mws/grid", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(
+                response,
+                router_.getMwsGrid(
+                    std::string(request->getQuery("tableId")),
+                    std::string(request->getQuery("viewId")),
+                    std::string(request->getQuery("recordIds")),
+                    std::string(request->getQuery("fieldNames"))));
+        });
+
+        app.post("/api/mws/grid/update", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.updateMwsGrid(body));
+            });
+        });
+
         app.post("/api/ai/suggest-insert", [this](HttpResponse* response, HttpRequest* request) {
             handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
                 writeResponse(innerResponse, router_.suggestInsert(body));
             });
+        });
+
+        app.any("/*", [](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, RouteResponse{
+                                      .statusCode = 404,
+                                      .body = R"({"success":false,"error":{"code":"NotFound","message":"Route not found","retryable":false}})",
+                                  });
         });
 
         app.listen("0.0.0.0", port, [this, port](auto* token) {

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <vector>
 
@@ -16,8 +17,11 @@ struct PageVersion {
     std::string createdAt;
     std::string label;
     std::string author;
+    std::vector<std::string> sharedWith;
     std::vector<CommentThread> threadSnapshot;
     std::string commentAccessMode;
+    std::size_t threadCount = 0;
+    std::size_t commentCount = 0;
 };
 
 }  // namespace wikilive::models

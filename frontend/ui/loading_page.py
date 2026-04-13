@@ -53,13 +53,13 @@ def _account_switcher_markup() -> str:
         </div>
         <div class="page-access-panel" id="pageAccessPanel">
           <div class="page-access-panel__head">
-            <div class="page-access-panel__title">?????? ? ????????</div>
-            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+            <div class="page-access-panel__title">Доступ к странице</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">×</button>
           </div>
-          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__subtitle">Укажите, у кого есть доступ</div>
           <div class="page-access-panel__list" id="pageAccessList"></div>
           <div class="page-access-panel__actions">
-            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">Сохранить</button>
           </div>
         </div>
         """
@@ -81,20 +81,20 @@ def _pages_switcher_markup() -> str:
             </div>
             <div class="pages-switcher__list" id="pagesList"></div>
             <div class="pages-switcher__footer">
-              <button class="pages-switcher__action" id="pageAccessButton" type="button">??????</button>
-              <button class="pages-switcher__action pages-switcher__action--danger" id="pageDeleteButton" type="button">???????</button>
+              <button class="pages-switcher__action" id="pageAccessButton" type="button">Доступ</button>
+              <button class="pages-switcher__action pages-switcher__action--danger" id="pageDeleteButton" type="button">Удалить</button>
             </div>
           </div>
         </div>
         <div class="page-access-panel" id="pageAccessPanel">
           <div class="page-access-panel__head">
-            <div class="page-access-panel__title">?????? ? ????????</div>
-            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+            <div class="page-access-panel__title">Доступ к странице</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">×</button>
           </div>
-          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__subtitle">Укажите, у кого есть доступ</div>
           <div class="page-access-panel__list" id="pageAccessList"></div>
           <div class="page-access-panel__actions">
-            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">Сохранить</button>
           </div>
         </div>
         """
@@ -110,13 +110,13 @@ def _presence_markup() -> str:
         </div>
         <div class="page-access-panel" id="pageAccessPanel">
           <div class="page-access-panel__head">
-            <div class="page-access-panel__title">?????? ? ????????</div>
-            <button class="page-access-panel__close" id="pageAccessClose" type="button">?</button>
+            <div class="page-access-panel__title">Доступ к странице</div>
+            <button class="page-access-panel__close" id="pageAccessClose" type="button">×</button>
           </div>
-          <div class="page-access-panel__subtitle">????????, ? ???? ???? ??????</div>
+          <div class="page-access-panel__subtitle">Укажите, у кого есть доступ</div>
           <div class="page-access-panel__list" id="pageAccessList"></div>
           <div class="page-access-panel__actions">
-            <button class="page-access-panel__save" id="pageAccessSave" type="button">?????????</button>
+            <button class="page-access-panel__save" id="pageAccessSave" type="button">Сохранить</button>
           </div>
         </div>
         """
