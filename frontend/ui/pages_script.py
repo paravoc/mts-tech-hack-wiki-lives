@@ -543,12 +543,35 @@ def pages_script() -> str:
         }
 
         function updatePresenceState(payload) {
-          if (!payload || payload.pageId !== commentPageId) {
-            return;
-          }
-          commentPresencePeople = Array.isArray(payload.people) ? payload.people : [];
-          renderPagePresence();
-        }
+  if (!payload || payload.pageId !== commentPageId) {
+    return;
+  }
+
+  const people = Array.isArray(payload.people) ? payload.people : [];
+  const uniquePeople = [];
+  const seen = new Set();
+
+  for (const person of people) {
+    const key = normalizeActorId(person.actorId || "");
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    uniquePeople.push({
+      actorId: key,
+      actorName: person.actorName || key,
+      actorShort:
+        person.actorShort ||
+        String(person.actorName || key || "?").charAt(0).toUpperCase(),
+      actorColor: person.actorColor || "#a6afbf",
+    });
+  }
+
+  commentPresencePeople = uniquePeople;
+  commentPresenceLoaded = true;
+  commentPresencePageId = payload.pageId || "";
+
+  renderPagePresence();
+}
 
         function applyEditorDocumentSafely(page) {
           commentApplyingDocument = true;
@@ -742,7 +765,9 @@ def pages_script() -> str:
           commentMenuOpenId = null;
           commentEditingId = null;
           commentPageId = page.pageId;
-          commentPresencePeople = [];
+          commentPresenceLoaded = false;
+commentPresencePageId = page.pageId || "";
+commentPresencePeople = [];
           if (persist) {
             window.localStorage.setItem(getActorPageStorageKey(), commentPageId);
           }
@@ -907,7 +932,9 @@ def pages_script() -> str:
           commentReplyTo = null;
           commentMenuOpenId = null;
           commentEditingId = null;
-          commentPresencePeople = [];
+          commentPresenceLoaded = false;
+commentPresencePageId = commentPageId || "";
+commentPresencePeople = [];
           commentThreads = new Map();
           if (persist) {
             window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
@@ -1004,8 +1031,10 @@ def pages_script() -> str:
             commentSocket = null;
             commentSocketPageId = "";
             commentSocketPresenceKey = "";
-            commentPresencePeople = [];
-            renderPagePresence();
+            commentPresenceLoaded = false;
+commentPresencePageId = "";
+commentPresencePeople = [];
+renderPagePresence();
             if (commentSocketReconnectTimer) {
               clearTimeout(commentSocketReconnectTimer);
             }
