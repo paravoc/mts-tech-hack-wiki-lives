@@ -1,4 +1,4 @@
-﻿console.error("TIME MACHINE SCRIPT VERSION 2 LOADED");
+﻿﻿console.error("TIME MACHINE SCRIPT VERSION 2 LOADED");
 const timeMachineTrigger = document.getElementById("timeMachineTrigger");
 const timeMachinePanel = document.getElementById("timeMachinePanel");
 const timeMachineClose = document.getElementById("timeMachineClose");
@@ -44,7 +44,7 @@ function tmEscape(value) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
+    .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
 }
 
@@ -379,6 +379,7 @@ function decorateTimeMachineVersions(items) {
     return { ...version, kind, previousVersionId: previousVersion ? previousVersion.versionId : "", summary };
   });
 }
+
 function buildTimeMachineDetailView(summaryVersion, currentDetail, previousDetail) {
   const snapshot = getTimeMachineSnapshot(currentDetail);
   const previousSnapshot = getTimeMachineSnapshot(previousDetail);
@@ -516,6 +517,7 @@ function renderTimeMachineList() {
     setTimeMachineErrorState("Ошибка отрисовки списка версий");
   }
 }
+
 function forceShowTimeMachineList() {
   if (!timeMachineList || !timeMachineScroll) return;
 
@@ -553,7 +555,6 @@ function forceShowTimeMachineList() {
     htmlLength: timeMachineList.innerHTML.length
   });
 }
-
 
 function renderTimeMachinePreview() {
   if (
@@ -720,24 +721,24 @@ async function loadTimeMachinePreview(versionId, force = false, options = {}) {
   const silent = Boolean(options.silent);
   const previewToken = ++timeMachinePreviewToken;
 
-// Если детали уже есть и это тихое обновление — не включаем спиннер заново
-if (silent && summaryVersion.detailView) {
-  return summaryVersion.detailView;
-}
+  if (silent && summaryVersion.detailView) {
+    return summaryVersion.detailView;
+  }
 
-setTimeMachinePreviewState("loading");
-renderTimeMachinePanel();
-clearTimeMachinePreviewWatchdog();
-timeMachinePreviewWatchdogId = window.setTimeout(() => {
-  if (previewToken !== timeMachinePreviewToken) return;
-  if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
-  if (timeMachinePreviewState !== "loading") return;
-  setTimeMachinePreviewState(
-    "error",
-    "Детали версии не загрузились за 3 секунды. Скорее всего открыт старый iframe. Нажмите Ctrl+F5."
-  );
+  setTimeMachinePreviewState("loading");
   renderTimeMachinePanel();
-}, TIME_MACHINE_WATCHDOG_MS);
+  clearTimeMachinePreviewWatchdog();
+  timeMachinePreviewWatchdogId = window.setTimeout(() => {
+    if (previewToken !== timeMachinePreviewToken) return;
+    if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
+    if (timeMachinePreviewState !== "loading") return;
+    setTimeMachinePreviewState(
+      "error",
+      "Детали версии не загрузились за 3 секунды. Скорее всего открыт старый iframe. Нажмите Ctrl+F5."
+    );
+    renderTimeMachinePanel();
+  }, TIME_MACHINE_WATCHDOG_MS);
+
   try {
     const previousSummary = summaryVersion.previousVersionId ? getTimeMachineSummaryById(summaryVersion.previousVersionId) : null;
     const [currentDetail, previousDetail] = await Promise.all([
@@ -749,7 +750,7 @@ timeMachinePreviewWatchdogId = window.setTimeout(() => {
     setTimeMachinePreviewState("ready");
     renderTimeMachinePanel();
     return summaryVersion.detailView;
-    } catch (error) {
+  } catch (error) {
     if (previewToken !== timeMachinePreviewToken) return null;
     console.warn("Failed to load time machine preview", error);
     console.error("TIME MACHINE PREVIEW ERROR:", error);
@@ -828,66 +829,70 @@ async function loadTimeMachineVersions(force = false, options = {}) {
         clearTimeMachineWatchdog();
 
         const rawItems = Array.isArray(payload?.items)
-  ? payload.items
-  : Array.isArray(payload)
-    ? payload
-    : [];
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : [];
 
-console.error("versions items =", rawItems);
+        console.error("versions items =", rawItems);
 
-const items = filterMeaningfulVersions(rawItems);
+        const items = filterMeaningfulVersions(rawItems);
 
-timeMachineVersions = decorateTimeMachineVersions(items);
-console.error("decorated versions =", timeMachineVersions);
+        timeMachineVersions = decorateTimeMachineVersions(items);
+        console.error("decorated versions =", timeMachineVersions);
 
-lastMeaningfulVersionSignature = items.length
-  ? buildMeaningfulVersionSignature(items[0])
-  : "";
+        lastMeaningfulVersionSignature = items.length
+          ? buildMeaningfulVersionSignature(items[0])
+          : "";
 
         syncTimeMachineSelection();
         console.error("selected version =", timeMachineSelectedVersionId);
 
-        timeMachineState = timeMachineVersions.length ? "list" : "empty";
-console.error("timeMachineState set to", timeMachineState);
+        if (!timeMachineVersions.length) {
+          timeMachineState = "empty";
+          renderTimeMachinePanel();
+          return timeMachineVersions;
+        }
 
-setTimeMachinePreviewState("idle");
+        timeMachineState = "list";
+        console.error("timeMachineState set to list");
+        renderTimeMachinePanel();
+        forceShowTimeMachineList();
+        console.error("versions render done");
 
-if (timeMachineVersions.length) {
-  forceShowTimeMachineList();
-} else {
-  renderTimeMachinePanel();
-}
-
-console.error("versions render done");
+        if (timeMachineSelectedVersionId) {
+          loadTimeMachinePreview(timeMachineSelectedVersionId, force, { silent: true }).catch((error) => {
+            console.error("silent preview preload failed", error);
+          });
+        }
 
         return timeMachineVersions;
       })
       .catch((error) => {
-        console.error("Failed to load time machine versions", error);
+        console.error("loadTimeMachineVersions error", error);
+        if (requestToken !== timeMachineRequestToken) {
+          return timeMachineVersions;
+        }
         clearTimeMachineWatchdog();
         setTimeMachineErrorState(formatTimeMachineRequestError(error));
         renderTimeMachinePanel();
-        return [];
+        throw error;
       })
       .finally(() => {
         console.error("loadTimeMachineVersions finally");
-        timeMachineLoadingPromise = null;
-        clearTimeMachineWatchdog();
-
-        if (timeMachineState === "loading") {
-          setTimeMachineErrorState("История зависла: состояние loading не сменилось.");
-          renderTimeMachinePanel();
+        if (requestToken === timeMachineRequestToken) {
+          timeMachineLoadingPromise = null;
         }
       });
 
-    return timeMachineLoadingPromise;
+    return await timeMachineLoadingPromise;
   } catch (error) {
-    console.error("loadTimeMachineVersions crashed before request", error);
-    clearTimeMachineWatchdog();
-    setTimeMachineErrorState(
-      error && error.message ? error.message : "Ошибка при запуске загрузки истории."
-    );
-    renderTimeMachinePanel();
+    console.error("loadTimeMachineVersions outer error", error);
+    if (requestToken === timeMachineRequestToken) {
+      clearTimeMachineWatchdog();
+      setTimeMachineErrorState(formatTimeMachineRequestError(error));
+      renderTimeMachinePanel();
+    }
     return [];
   }
 }
@@ -895,181 +900,213 @@ console.error("versions render done");
 async function restoreTimeMachineVersion() {
   const version = getCurrentTimeMachineVersion();
   if (!version || !commentPageId) return;
+
+  console.error("[wikilive][tm] restore:start", {
+    pageId: commentPageId,
+    versionId: version.versionId,
+    label: version.label
+  });
+
   try {
-    const restored = await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/versions/${encodeURIComponent(version.versionId)}/restore`, { method: "POST", timeoutMs: 30000 });
+    if (timeMachineRestore) {
+      timeMachineRestore.disabled = true;
+    }
+
+    const restored = await commentApiRequest(
+      `/api/pages/${encodeURIComponent(commentPageId)}/versions/${encodeURIComponent(version.versionId)}/restore`,
+      { method: "POST", timeoutMs: 30000 }
+    );
+
     const restoredPage = restored.item || restored;
-    if (typeof applyEditorDocument === "function") applyEditorDocument(restoredPage);
-    if (typeof renderOutline === "function") renderOutline();
-    if (typeof syncThreadsFromServer === "function") await syncThreadsFromServer();
-    if (typeof renderCommentsPanel === "function") renderCommentsPanel();
-    if (typeof scheduleCommentAnchors === "function") scheduleCommentAnchors();
+    console.error("[wikilive][tm] restore:response", restoredPage);
+
+    if (!restoredPage || !restoredPage.pageId) {
+      throw new Error("Backend не вернул восстановленную страницу");
+    }
+
+    if (typeof upsertCommentPage === "function") {
+      upsertCommentPage(restoredPage);
+    }
+
+    if (typeof syncCurrentPageSnapshot === "function") {
+      syncCurrentPageSnapshot({
+        pageId: restoredPage.pageId,
+        projectId: restoredPage.projectId || "",
+        title: restoredPage.title || "",
+        description: restoredPage.description || "",
+        content: restoredPage.content || "",
+        sharedWith: Array.isArray(restoredPage.sharedWith) ? restoredPage.sharedWith : [],
+        access: restoredPage.access || { public: false, users: [], groups: [], roles: [] },
+        updatedAt: restoredPage.updatedAt || ""
+      });
+    }
+
+    if (typeof applyEditorDocument === "function") {
+      applyEditorDocument(restoredPage);
+    }
+
+    if (typeof syncHeaderTitleFromEditor === "function") {
+      syncHeaderTitleFromEditor();
+    }
+
+    if (typeof renderPagesSwitcher === "function") {
+      renderPagesSwitcher();
+    }
+
+    if (typeof renderOutline === "function") {
+      renderOutline();
+    }
+
+    if (typeof renderPageAccessPanel === "function") {
+      renderPageAccessPanel();
+    }
+
+    if (typeof syncThreadsFromServer === "function") {
+      await syncThreadsFromServer();
+    }
+
+    if (typeof renderCommentsPanel === "function") {
+      renderCommentsPanel();
+    }
+
+    if (typeof scheduleCommentAnchors === "function") {
+      scheduleCommentAnchors();
+    }
+
     timeMachineVersionDetails.clear();
     await loadTimeMachineVersions(true);
+
+    console.error("[wikilive][tm] restore:done", {
+      pageId: restoredPage.pageId,
+      versionId: version.versionId
+    });
   } catch (error) {
-    console.warn("Failed to restore version", error);
-    setTimeMachinePreviewState("error", error && error.message ? error.message : "Не удалось восстановить версию.");
+    console.error("[wikilive][tm] restore:error", error);
+    setTimeMachinePreviewState(
+      "error",
+      error && error.message ? error.message : "Не удалось восстановить версию."
+    );
     renderTimeMachinePanel();
+  } finally {
+    if (timeMachineRestore) {
+      timeMachineRestore.disabled = false;
+    }
   }
 }
 
-async function clearTimeMachineHistory() {
-  if (!commentPageId) return;
+function clearTimeMachinePreviewSelection() {
+  timeMachineSelectedVersionId = "";
+  setTimeMachinePreviewState("idle");
+  renderTimeMachinePanel();
+}
 
-  const confirmed = window.confirm("Очистить всю историю изменений этой страницы?");
-  if (!confirmed) return;
+function selectTimeMachineVersion(versionId) {
+  if (!versionId || timeMachineSelectedVersionId === versionId) return;
+  timeMachineSelectedVersionId = versionId;
+  renderTimeMachinePanel();
+  loadTimeMachinePreview(versionId, false).catch((error) => {
+    console.error("Failed to select time machine version", error);
+  });
+}
 
-  try {
-    await commentApiRequest(
-      `/api/pages/${encodeURIComponent(commentPageId)}/versions`,
-      { method: "DELETE", timeoutMs: 30000 }
-    );
-
-    timeMachineVersions = [];
-    timeMachineSelectedVersionId = "";
-    timeMachineVersionDetails.clear();
-    timeMachineVersionDetailPromises.clear();
-    lastMeaningfulVersionSignature = "";
-    setTimeMachinePreviewState("idle");
-    timeMachineState = "empty";
-    renderTimeMachinePanel();
-  } catch (error) {
-    console.error("Failed to clear time machine history", error);
-    setTimeMachineErrorState(
-      error && error.message ? error.message : "Не удалось очистить историю."
-    );
-    renderTimeMachinePanel();
+function handleTimeMachineFilterClick(filterKey) {
+  const nextFilter = filterKey || "all";
+  if (timeMachineFilter === nextFilter) return;
+  timeMachineFilter = nextFilter;
+  syncTimeMachineSelection();
+  renderTimeMachinePanel();
+  if (timeMachineSelectedVersionId) {
+    loadTimeMachinePreview(timeMachineSelectedVersionId, false, { silent: true }).catch((error) => {
+      console.error("Failed to refresh filtered preview", error);
+    });
   }
 }
 
 function openTimeMachinePanel() {
-  console.error("openTimeMachinePanel called");
   if (!timeMachinePanel) return;
-
-  try {
-    hardResetTimeMachineState();
-    timeMachinePanel.classList.add("is-open");
-
-    if (typeof closeCommentsPanel === "function") closeCommentsPanel();
-    if (typeof commentsTopDropdown !== "undefined" && commentsTopDropdown) {
-      commentsTopDropdown.classList.remove("is-open");
-    }
-    if (typeof commentsAccessPopup !== "undefined" && commentsAccessPopup) {
-      commentsAccessPopup.classList.remove("is-open");
-    }
-
-    timeMachineState = "loading";
-    renderTimeMachinePanel();
-
-    console.error("openTimeMachinePanel: render ok, starting versions load");
-    loadTimeMachineVersions(true)
-  .then(() => {
-    if (timeMachineVersions.length) {
-      forceShowTimeMachineList();
-    }
-  })
-  .catch((error) => {
-    console.error("loadTimeMachineVersions failed from openTimeMachinePanel", error);
-  });
-  } catch (error) {
-    console.error("openTimeMachinePanel crashed", error);
-    setTimeMachineErrorState("Панель истории упала при открытии.");
-    renderTimeMachinePanel();
+  timeMachinePanel.classList.add("is-open");
+  if (timeMachineTrigger) {
+    timeMachineTrigger.classList.add("is-active");
   }
+  renderTimeMachinePanel();
+  loadTimeMachineVersions(true).catch((error) => {
+    console.error("Failed to open time machine panel", error);
+  });
 }
 
 function closeTimeMachinePanel() {
   if (!timeMachinePanel) return;
-  clearTimeMachineWatchdog();
-  clearTimeMachinePreviewWatchdog();
   timeMachinePanel.classList.remove("is-open");
-  timeMachinePreview.classList.remove("is-visible");
-}
-
-function initializeTimeMachine() {
-  console.error("initializeTimeMachine called");
-  if (!timeMachineTrigger || !timeMachinePanel) return;
-  if (timeMachineBuild) {
-    window.__wikiliveFrontendBuild = timeMachineBuild.textContent || "";
-    console.info("WikiLive frontend build:", window.__wikiliveFrontendBuild);
+  if (timeMachineTrigger) {
+    timeMachineTrigger.classList.remove("is-active");
   }
-  timeMachineTrigger.addEventListener("click", (event) => {
-    event.stopPropagation();
-    if (timeMachinePanel.classList.contains("is-open")) {
-      closeTimeMachinePanel();
-      return;
-    }
-    
-    openTimeMachinePanel();
-  });
-  timeMachineTrigger.addEventListener("click", () => {
-  timeMachineTrigger.classList.toggle("is-active");
-});
-  if (timeMachineClose) timeMachineClose.addEventListener("click", closeTimeMachinePanel);
-  if (timeMachineRetry) {
-    timeMachineRetry.addEventListener("click", () => {
-      hardResetTimeMachineState();
-      timeMachineState = "loading";
-      renderTimeMachinePanel();
-      loadTimeMachineVersions(true).catch(() => {});
-    });
-  }
-if (timeMachineRestore) {
-  timeMachineRestore.addEventListener("click", () =>
-    restoreTimeMachineVersion().catch((error) =>
-      console.warn("Failed to restore selected version", error)
-    )
-  );
-}
-
-if (timeMachineClear) {
-  timeMachineClear.addEventListener("click", () =>
-    clearTimeMachineHistory().catch((error) =>
-      console.error("clearTimeMachineHistory failed", error)
-    )
-  );
-}
-if (timeMachineFilters) {
-    timeMachineFilters.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-time-machine-filter]");
-      if (!button) return;
-      const nextFilter = button.dataset.timeMachineFilter || "all";
-      if (nextFilter === timeMachineFilter) return;
-      timeMachineFilter = nextFilter;
-      syncTimeMachineSelection();
-      renderTimeMachinePanel();
-      if (timeMachineSelectedVersionId) loadTimeMachinePreview(timeMachineSelectedVersionId).catch(() => {});
-    });
-  }
-  if (timeMachineList) {
-  timeMachineList.addEventListener("click", (event) => {
-    const item = event.target.closest("[data-time-machine-version]");
-    if (!item) return;
-
-    timeMachineSelectedVersionId = item.dataset.timeMachineVersion || "";
-    renderTimeMachinePanel();
-
-    loadTimeMachinePreview(timeMachineSelectedVersionId).catch((error) => {
-      console.error("loadTimeMachinePreview failed on click", error);
-    });
-  });
-}
-  document.addEventListener("click", (event) => {
-    if (timeMachinePanel.classList.contains("is-open") && !timeMachinePanel.contains(event.target) && !timeMachineTrigger.contains(event.target) && !timeMachinePreview.contains(event.target)) closeTimeMachinePanel();
-  });
-  document.addEventListener("wikilive:page-ready", () => {
-    if (timeMachinePanel.classList.contains("is-open")) loadTimeMachineVersions(true, { silent: true }).catch(() => {});
-  });
-  window.refreshTimeMachinePanel = () => {
-  if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) {
-    return Promise.resolve(timeMachineVersions);
-  }
-
-  // Пока панель истории открыта, не дёргаем автообновление от автосейва/MWS.
-  // Иначе список/preview постоянно перезапускаются и визуально получается вечная крутилка.
-  console.error("refreshTimeMachinePanel skipped while panel is open");
-  return Promise.resolve(timeMachineVersions);
-};
   renderTimeMachinePanel();
 }
 
-window.initializeTimeMachine = initializeTimeMachine;
+function toggleTimeMachinePanel() {
+  if (!timeMachinePanel) return;
+  if (timeMachinePanel.classList.contains("is-open")) {
+    closeTimeMachinePanel();
+  } else {
+    openTimeMachinePanel();
+  }
+}
+
+if (timeMachineTrigger) {
+  timeMachineTrigger.addEventListener("click", () => {
+    toggleTimeMachinePanel();
+  });
+}
+
+if (timeMachineClose) {
+  timeMachineClose.addEventListener("click", () => {
+    closeTimeMachinePanel();
+  });
+}
+
+if (timeMachineRetry) {
+  timeMachineRetry.addEventListener("click", () => {
+    loadTimeMachineVersions(true).catch((error) => {
+      console.error("Retry loadTimeMachineVersions failed", error);
+    });
+  });
+}
+
+if (timeMachineRestore) {
+  timeMachineRestore.addEventListener("click", () => {
+    restoreTimeMachineVersion();
+  });
+}
+
+if (timeMachineClear) {
+  timeMachineClear.addEventListener("click", () => {
+    clearTimeMachinePreviewSelection();
+  });
+}
+
+if (timeMachineFilters) {
+  timeMachineFilters.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-time-machine-filter]");
+    if (!button) return;
+    handleTimeMachineFilterClick(button.dataset.timeMachineFilter || "all");
+  });
+}
+
+if (timeMachineList) {
+  timeMachineList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-time-machine-version]");
+    if (!button) return;
+    selectTimeMachineVersion(button.dataset.timeMachineVersion || "");
+  });
+}
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && timeMachinePanel && timeMachinePanel.classList.contains("is-open")) {
+    closeTimeMachinePanel();
+  }
+});
+
+window.wikiliveRefreshTimeMachine = function wikiliveRefreshTimeMachine(options = {}) {
+  const force = Boolean(options.force);
+  return loadTimeMachineVersions(force, { silent: !force });
+};

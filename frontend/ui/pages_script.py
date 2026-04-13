@@ -779,33 +779,93 @@ def pages_script() -> str:
         };
 
         async function createPageForCurrentActor(workspaceToken = commentWorkspaceToken) {
-          const actor = getCurrentCommentActor();
-          const mwsContext = window.currentMwsContext || null;
+  const actor = getCurrentCommentActor();
+  const actorToken = normalizeActorId(
+    (actor && (actor.id || actor.email)) || currentCommentActorId || "viewer"
+  );
 
-          const created = await commentApiRequest("/api/pages", {
-            method: "POST",
-            body: JSON.stringify({
-              title: mwsContext ? `Страница по ${mwsContext.label || "MWS"}` : "Новая страница",
-              content: "",
-              ownerId: normalizeActorId(currentCommentActorId || "viewer"),
-              ownerName: actor.name || "Гость",
-              mwsScenarioId: mwsContext ? (mwsContext.tableId || "") : "",
-              mwsScenarioTitle: mwsContext ? (mwsContext.label || "") : "",
-              versionLabel: mwsContext ? "Создана страница из сценария MWS" : "Создана страница",
-              versionAuthor: actor.id || "viewer",
-            }),
-            timeoutMs: 30000
-          });
-          if (workspaceToken !== commentWorkspaceToken) {
-            return null;
-          }
-          const page = created.item || created;
-          upsertCommentPage(page);
-          renderPagesSwitcher();
-          await switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true, workspaceToken });
-          syncHeaderTitleFromEditor();
-          return page;
-        }
+  console.log("[wikilive][pages] createPageForCurrentActor:start", {
+    actor,
+    actorToken,
+    workspaceToken,
+    currentWorkspaceToken: commentWorkspaceToken
+  });
+
+  // 1. грузим workspace текущего пользователя
+  const workspace = await commentApiRequest(
+    `/api/workspace?actorId=${encodeURIComponent(actorToken)}`,
+    { timeoutMs: 15000 }
+  );
+
+  const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
+  const ownedProject =
+    projects.find((item) => normalizeActorId(item.ownerId || "") === actorToken) ||
+    projects.find((item) =>
+      Array.isArray(item.access && item.access.users) &&
+      item.access.users.some((userId) => normalizeActorId(userId || "") === actorToken)
+    ) ||
+    projects[0] ||
+    null;
+
+  console.log("[wikilive][pages] createPageForCurrentActor:workspace", {
+    projectsCount: projects.length,
+    ownedProject
+  });
+
+  if (!ownedProject || !ownedProject.projectId) {
+    throw new Error("Не удалось определить projectId для текущего пользователя");
+  }
+
+  // 2. создаём страницу уже с projectId
+  const payload = {
+    projectId: ownedProject.projectId,
+    title: "Новая страница",
+    description: "",
+    content: "",
+    ownerId: actor && actor.id ? actor.id : actorToken,
+    ownerName: actor && actor.name ? actor.name : "Гость",
+    sharedWith: [],
+    access: {
+      public: false,
+      users: [actor && actor.id ? actor.id : actorToken, actor && actor.email ? actor.email : actorToken],
+      groups: [],
+      roles: []
+    }
+  };
+
+  console.log("[wikilive][pages] createPageForCurrentActor:payload", payload);
+
+  const created = await commentApiRequest("/api/pages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    timeoutMs: 30000
+  });
+
+  console.log("[wikilive][pages] createPageForCurrentActor:response", created);
+
+  if (workspaceToken !== commentWorkspaceToken) {
+    return null;
+  }
+
+  const page = created.item || created;
+  upsertCommentPage(page);
+  renderPagesSwitcher();
+
+  if (typeof switchCommentPage === "function") {
+    await switchCommentPage(page.pageId, {
+      persist: true,
+      skipSave: true,
+      forceLoad: true,
+      workspaceToken
+    });
+  }
+
+  if (typeof syncHeaderTitleFromEditor === "function") {
+    syncHeaderTitleFromEditor();
+  }
+
+  return page;
+}
 
         async function ensureActorPage(forceCatalog = false, workspaceToken = commentWorkspaceToken) {
           await loadPagesCatalog(forceCatalog);
