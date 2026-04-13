@@ -44,13 +44,18 @@ def time_machine_styles() -> str:
           appearance: none;
           border: 0;
           background: transparent;
-          color: var(--tm-accent);
+          color: #8e97a8;
           font-size: 13px;
           font-weight: 600;
           display: inline-flex;
           align-items: center;
           gap: 6px;
           padding: 4px 2px;
+        }
+
+        .time-machine-top-trigger:hover,
+        .time-machine-top-trigger.is-active {
+          color: var(--tm-accent-strong);
         }
 
         .time-machine-top-trigger svg,

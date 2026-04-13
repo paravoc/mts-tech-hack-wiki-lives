@@ -37,13 +37,17 @@ def comments_styles() -> str:
           appearance: none;
           border: 0;
           background: transparent;
-          color: var(--comment-accent-strong);
+          color: #8e97a8;
           font-size: 13px;
           font-weight: 600;
           display: inline-flex;
           align-items: center;
           gap: 6px;
           padding: 4px 2px;
+        }
+        .comments-topbar__trigger:hover,
+        .comments-topbar__trigger.is-active {
+          color: var(--comment-accent-strong);
         }
 
         .comments-topbar__trigger svg,

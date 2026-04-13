@@ -690,8 +690,12 @@ function initializeTimeMachine() {
       closeTimeMachinePanel();
       return;
     }
+    
     openTimeMachinePanel();
   });
+  timeMachineTrigger.addEventListener("click", () => {
+  timeMachineTrigger.classList.toggle("is-active");
+});
   if (timeMachineClose) timeMachineClose.addEventListener("click", closeTimeMachinePanel);
   if (timeMachineRetry) {
     timeMachineRetry.addEventListener("click", () => {

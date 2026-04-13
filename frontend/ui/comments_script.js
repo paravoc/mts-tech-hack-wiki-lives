@@ -3371,6 +3371,9 @@ function initializeCommentsSystem() {
     commentsTopDropdown.classList.toggle("is-open");
     commentsAccessPopup.classList.remove("is-open");
   });
+  commentsTopTrigger.addEventListener("click", () => {
+  commentsTopTrigger.classList.toggle("is-active");
+  });
   commentsHistoryButton.addEventListener("click", (event) => {
     event.stopPropagation();
     commentsTopDropdown.classList.remove("is-open");

@@ -22,8 +22,8 @@ def mws_blocks_styles() -> str:
         .mws-modal__summary{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;color:#7d8797}
         .mws-modal__preview{border-radius:18px;border:1px solid #edf1f6;background:#ffffff;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
         .mws-modal__preview-title{font-size:12px;font-weight:800;color:#2b3340}
-        .mws-modal__preview-grid{border-radius:14px;border:1px solid #eef1f6;overflow:hidden}
-        .mws-modal__preview-table{width:100%;border-collapse:separate;border-spacing:0}
+        .mws-modal__preview-grid{border-radius:14px;border:1px solid #eef1f6;overflow-x:auto;overflow-y:hidden;max-width:100%}
+        .mws-modal__preview-table{width:max-content;min-width:100%;border-collapse:separate;border-spacing:0}        
         .mws-modal__preview-table th,.mws-modal__preview-table td{font-size:11px;padding:8px 10px;border-bottom:1px solid #eef1f6;text-align:left}
         .mws-modal__preview-table th{background:#f7f9fc;color:#6a7284;font-weight:700;text-transform:uppercase;letter-spacing:.03em}
         .mws-modal__preview-cell{cursor:pointer;transition:background .15s ease,color .15s ease}
@@ -84,6 +84,20 @@ def mws_blocks_styles() -> str:
         .mws-block-ghost{position:fixed;display:none;align-items:center;gap:10px;min-width:220px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.96);border:1px solid rgba(255,0,50,.22);box-shadow:0 18px 30px rgba(17,24,39,.14);pointer-events:none;z-index:48}
         .mws-block-ghost__icon{width:32px;height:32px;border-radius:12px;background:#fff4f6;color:#ff0032;display:inline-flex;align-items:center;justify-content:center;font-size:14px;font-weight:900;flex:none}
         .mws-block-ghost__label{font-size:13px;font-weight:700;color:#232833;word-break:break-word}
+        .mws-modal__preview-grid {
+    overflow-x: scroll !important;
+    overflow-y: hidden !important;
+    display: block !important;
+}
+
+.mws-modal__preview-table {
+    min-width: 1500px !important;
+}
+
+.mws-modal__preview-table th,
+.mws-modal__preview-table td {
+    white-space: nowrap !important;
+}
         @media (max-width:900px){.mws-modal__toolbar,.mws-modal__panes{grid-template-columns:1fr}.mws-live-block__table{min-width:420px}}
         """
     ).strip()

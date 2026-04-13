@@ -25,16 +25,17 @@ __CURSOR_ROOT_VARIABLES__
             font-family: Inter, "Segoe UI", Arial, sans-serif;
         }
 
-        html,
-        body,
-        .stApp,
-        [data-testid="stAppViewContainer"],
-        [data-testid="stAppViewBlockContainer"] {
-            background: #ffffff !important;
-            overflow: hidden !important;
-            height: 100vh !important;
-            cursor: var(--cursor-default) !important;
-        }
+       html,
+body,
+.stApp,
+[data-testid="stAppViewContainer"],
+[data-testid="stAppViewBlockContainer"] {
+    background: #ffffff !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    height: 100vh !important;
+    cursor: var(--cursor-default) !important;
+}
 
         a,
         button,
