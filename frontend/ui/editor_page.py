@@ -4840,7 +4840,7 @@ __TIME_MACHINE_SCRIPT__
         "__TIME_MACHINE_SCRIPT__",
         time_machine_script()
         + "\n"
-        + "if (window.initializeCommentsSystem) { try { window.initializeCommentsSystem(); } catch (err) { console.error(\\\"Comments init failed\\\", err); } }"
+        + "if (window.initializeCommentsSystem) { window.initializeCommentsSystem(); }"
         + "\n"
         + "if (window.initializeTimeMachine) { window.initializeTimeMachine(); }"
         + "\n"
