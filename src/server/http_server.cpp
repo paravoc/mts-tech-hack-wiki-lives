@@ -1,6 +1,8 @@
 #include "src/server/http_server.h"
 
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -48,6 +50,21 @@ void writeCommonHeaders(HttpResponse* response) {
     response->writeHeader("Access-Control-Allow-Origin", "*");
     response->writeHeader("Access-Control-Allow-Headers", "content-type");
     response->writeHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+}
+
+std::string_view contentTypeForPath(const std::string& path) {
+    const auto dotPos = path.find_last_of('.');
+    if (dotPos == std::string::npos) {
+        return "application/octet-stream";
+    }
+    const auto ext = path.substr(dotPos + 1);
+    if (ext == "png") return "image/png";
+    if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
+    if (ext == "gif") return "image/gif";
+    if (ext == "webp") return "image/webp";
+    if (ext == "svg") return "image/svg+xml";
+    if (ext == "pdf") return "application/pdf";
+    return "application/octet-stream";
 }
 
 void writeResponse(HttpResponse* response, const RouteResponse& routeResponse) {
@@ -133,6 +150,49 @@ utils::VoidExpected HttpServer::start(const int port) {
 
         app.get("/health", [this](HttpResponse* response, HttpRequest* /*request*/) {
             writeResponse(response, router_.handleHealth());
+        });
+
+        app.post("/api/uploads", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.uploadAttachment(body));
+            });
+        });
+
+        app.get("/uploads/*", [](HttpResponse* response, HttpRequest* request) {
+            const std::string url(request->getUrl());
+            const std::string prefix = "/uploads/";
+            if (url.rfind(prefix, 0) != 0) {
+                response->writeStatus("404 Not Found");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"not found"})");
+                return;
+            }
+            std::string relative = url.substr(prefix.size());
+            if (relative.find("..") != std::string::npos) {
+                response->writeStatus("400 Bad Request");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"invalid path"})");
+                return;
+            }
+            const auto filePath = std::filesystem::current_path() / "uploads" / relative;
+            if (!std::filesystem::exists(filePath)) {
+                response->writeStatus("404 Not Found");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"not found"})");
+                return;
+            }
+            std::ifstream file(filePath, std::ios::binary);
+            if (!file) {
+                response->writeStatus("500 Internal Server Error");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"read failed"})");
+                return;
+            }
+            std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            response->writeStatus("200 OK");
+            response->writeHeader("Content-Type", contentTypeForPath(relative));
+            response->writeHeader("Access-Control-Allow-Origin", "*");
+            response->end(data);
         });
 
         app.get("/api/pages", [this](HttpResponse* response, HttpRequest* /*request*/) {

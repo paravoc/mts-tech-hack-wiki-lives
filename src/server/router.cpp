@@ -1,7 +1,10 @@
 #include "src/server/router.h"
 
 #include <algorithm>
+#include <cctype>
 #include <exception>
+#include <filesystem>
+#include <fstream>
 #include <unordered_set>
 #include <vector>
 #include <utility>
@@ -93,6 +96,42 @@ std::vector<std::string> parseCsvList(const std::string& value) {
         }
     }
     return items;
+}
+
+std::vector<unsigned char> decodeBase64(const std::string& input, bool& ok) {
+    static const std::string kTable =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789+/";
+    std::vector<int> reverseTable(256, -1);
+    for (std::size_t i = 0; i < kTable.size(); ++i) {
+        reverseTable[static_cast<unsigned char>(kTable[i])] = static_cast<int>(i);
+    }
+
+    ok = true;
+    std::vector<unsigned char> output;
+    int val = 0;
+    int valb = -8;
+    for (unsigned char c : input) {
+        if (c == '=') {
+            break;
+        }
+        const int decoded = reverseTable[c];
+        if (decoded == -1) {
+            if (c == '\r' || c == '\n' || c == ' ' || c == '\t') {
+                continue;
+            }
+            ok = false;
+            return {};
+        }
+        val = (val << 6) + decoded;
+        valb += 6;
+        if (valb >= 0) {
+            output.push_back(static_cast<unsigned char>((val >> valb) & 0xFF));
+            valb -= 8;
+        }
+    }
+    return output;
 }
 
 std::vector<std::string> resolveRequestedFieldNames(
@@ -443,7 +482,6 @@ RouteResponse Router::createPage(const std::string& payload) {
         if (!versionAuthor) {
             return fail(versionAuthor.error());
         }
-
         const auto createdPage = pageService_.createPage(draft.value());
         if (!createdPage) {
             return fail(createdPage.error());
@@ -499,6 +537,14 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
         if (!versionAuthor) {
             return fail(versionAuthor.error());
         }
+        bool skipVersion = false;
+        try {
+            const auto parsedPayload = nlohmann::json::parse(payload);
+            if (parsedPayload.contains("skipVersion") && parsedPayload["skipVersion"].is_boolean()) {
+                skipVersion = parsedPayload["skipVersion"].get<bool>();
+            }
+        } catch (const nlohmann::json::exception&) {
+        }
 
         const auto updatedPage = pageService_.updatePage(pageId, draft.value());
         if (!updatedPage) {
@@ -510,7 +556,7 @@ RouteResponse Router::updatePage(const std::string& pageId, const std::string& p
             return fail(renderedPage.error());
         }
 
-        if (collaborationService_ != nullptr) {
+        if (collaborationService_ != nullptr && !skipVersion) {
             const auto versionResult = collaborationService_->captureVersion(
                 updatedPage.value(),
                 versionLabel.value().empty() ? "Saved changes" : versionLabel.value(),
@@ -1371,6 +1417,106 @@ RouteResponse Router::updateMwsGrid(const std::string& payload) {
         return fail(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             std::string("Malformed MWS grid JSON payload: ") + exception.what(),
+            400,
+            false));
+    } catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    } catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
+RouteResponse Router::uploadAttachment(const std::string& payload) {
+    try {
+        if (payload.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Upload payload must not be empty",
+                400,
+                false));
+        }
+
+        const auto parsed = nlohmann::json::parse(payload, nullptr, true, true);
+        const auto filenameRaw = parsed.value("filename", std::string{});
+        const auto dataUrl = parsed.value("dataUrl", std::string{});
+        const auto mimeType = parsed.value("mimeType", std::string{});
+        if (dataUrl.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Upload payload must include dataUrl",
+                400,
+                false));
+        }
+
+        std::string base64Data = dataUrl;
+        const auto marker = dataUrl.find("base64,");
+        if (marker != std::string::npos) {
+            base64Data = dataUrl.substr(marker + 7);
+        }
+
+        bool ok = false;
+        const auto decoded = decodeBase64(base64Data, ok);
+        if (!ok || decoded.empty()) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidRequest,
+                "Failed to decode base64 payload",
+                400,
+                false));
+        }
+
+        std::string safeName;
+        for (const char ch : filenameRaw) {
+            if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '.' || ch == '_' || ch == '-') {
+                safeName.push_back(ch);
+            }
+        }
+        if (safeName.empty()) {
+            safeName = "upload";
+        }
+
+        const auto now = utils::formatIso(utils::now());
+        std::string stem = safeName;
+        std::string extension;
+        const auto dotPos = safeName.find_last_of('.');
+        if (dotPos != std::string::npos && dotPos > 0) {
+            stem = safeName.substr(0, dotPos);
+            extension = safeName.substr(dotPos);
+        }
+        std::string finalName = stem + extension;
+        auto uploadsDir = std::filesystem::current_path() / "uploads";
+        std::filesystem::create_directories(uploadsDir);
+
+        std::filesystem::path outputPath = uploadsDir / finalName;
+        int attempt = 0;
+        while (std::filesystem::exists(outputPath)) {
+            ++attempt;
+            finalName = stem + "-" + std::to_string(attempt) + extension;
+            outputPath = uploadsDir / finalName;
+        }
+
+        std::ofstream output(outputPath, std::ios::binary);
+        if (!output) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InternalError,
+                "Unable to write uploaded file",
+                500,
+                false));
+        }
+        output.write(reinterpret_cast<const char*>(decoded.data()), static_cast<std::streamsize>(decoded.size()));
+        output.close();
+
+        const auto url = "/uploads/" + finalName;
+        const nlohmann::json response{
+            {"url", url},
+            {"name", filenameRaw.empty() ? finalName : filenameRaw},
+            {"mimeType", mimeType},
+            {"uploadedAt", now},
+        };
+        return created(response.dump());
+    } catch (const nlohmann::json::exception& exception) {
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            std::string("Malformed upload JSON payload: ") + exception.what(),
             400,
             false));
     } catch (const std::exception& exception) {

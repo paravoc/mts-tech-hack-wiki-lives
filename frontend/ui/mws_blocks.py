@@ -76,6 +76,7 @@ def mws_blocks_styles() -> str:
         .mws-live-cell__attachment-thumb{width:28px;height:28px;border-radius:8px;object-fit:cover;border:1px solid #e5e9f2;background:#f7f8fc}
         .mws-live-cell__attachment-icon{width:28px;height:28px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;background:#f3f5fa;color:#6c7485;font-weight:800}
         .mws-live-cell__attachment-add{margin-top:6px;align-self:flex-start;border:0;border-radius:10px;background:#fff4f6;color:#ff0032;font-size:11px;font-weight:700;padding:6px 10px}
+        .mws-live-cell__attachment-actions{display:flex;gap:6px;flex-wrap:wrap}
         .mws-live-block__persisted{display:flex;align-items:center;gap:10px;min-height:74px;padding:16px 18px}
         .mws-live-block__persisted-icon{width:38px;height:38px;border-radius:14px;background:#fff4f6;color:#ff0032;display:inline-flex;align-items:center;justify-content:center;font-weight:900}
         .mws-live-block__persisted-meta{display:flex;flex-direction:column;gap:5px}
@@ -112,20 +113,43 @@ def mws_blocks_markup() -> str:
             <button class="mws-modal__close" id="mwsModalClose" type="button" aria-label="Закрыть">&times;</button>
             <h2 class="mws-modal__title" id="mwsModalTitle">Живая таблица MWS</h2>
             <div class="mws-modal__subtitle">Выберите таблицу, строки и поля. Блок останется живым: его можно редактировать в документе, а изменения уйдут обратно в MWS.</div>
-            <div class="mws-modal__toolbar">
-              <div class="mws-modal__field"><label class="mws-modal__label" for="mwsTableSelect">Таблица</label><select class="mws-modal__select" id="mwsTableSelect"></select></div>
-              <div class="mws-modal__field"><label class="mws-modal__label" for="mwsRecordSearch">Поиск по строкам</label><input class="mws-modal__search" id="mwsRecordSearch" type="search" placeholder="Например, проект, клиент, задача" /></div>
-              <div class="mws-modal__field"><label class="mws-modal__label" for="mwsFieldSearch">Поиск по полям</label><input class="mws-modal__search" id="mwsFieldSearch" type="search" placeholder="Например, статус, ответственный, срок" /></div>
-            </div>
+           <div class="mws-modal__toolbar">
+  <div class="mws-modal__field">
+    <label class="mws-modal__label" for="mwsTableSelect">Таблица</label>
+    <select class="mws-modal__select" id="mwsTableSelect"></select>
+  </div>
+
+  <div class="mws-modal__field">
+    <label class="mws-modal__label" for="mwsCustomLink">Ссылка на таблицу MWS</label>
+    <input class="mws-modal__search" id="mwsCustomLink" type="text" placeholder="https://tables.mws.ru/..." />
+  </div>
+
+  <div class="mws-modal__field">
+    <label class="mws-modal__label" for="mwsCustomLabel">Название таблицы</label>
+    <input class="mws-modal__search" id="mwsCustomLabel" type="text" placeholder="Например, Сотрудники" />
+  </div>
+
+  <div class="mws-modal__field">
+    <label class="mws-modal__label">&nbsp;</label>
+    <button class="mws-modal__action" id="mwsCustomAdd" type="button">Добавить</button>
+  </div>
+
+  <div class="mws-modal__field">
+    <label class="mws-modal__label" for="mwsRecordSearch">Поиск по строкам</label>
+    <input class="mws-modal__search" id="mwsRecordSearch" type="search" placeholder="Например, проект, клиент, задача" />
+  </div>
+
+  <div class="mws-modal__field">
+    <label class="mws-modal__label" for="mwsFieldSearch">Поиск по полям</label>
+    <input class="mws-modal__search" id="mwsFieldSearch" type="search" placeholder="Например, статус, ответственный, срок" />
+  </div>
+</div>
             <div class="mws-modal__summary" id="mwsModalSummary"></div>
             <div class="mws-modal__preview" id="mwsModalPreview">
               <div class="mws-modal__preview-title">Предпросмотр</div>
               <div class="mws-modal__preview-empty">Выберите строки и поля — здесь появится мини-таблица.</div>
             </div>
-            <div class="mws-modal__panes">
-              <section class="mws-modal__pane"><div class="mws-modal__pane-head"><div class="mws-modal__pane-title">Строки / записи</div><div class="mws-modal__pane-meta" id="mwsRecordsMeta">0 выбрано</div></div><div class="mws-modal__list" id="mwsRecordList"></div></section>
-              <section class="mws-modal__pane"><div class="mws-modal__pane-head"><div class="mws-modal__pane-title">Колонки / поля</div><div class="mws-modal__pane-meta" id="mwsFieldsMeta">0 выбрано</div></div><div class="mws-modal__list" id="mwsFieldList"></div></section>
-            </div>
+
             <div class="mws-modal__actions">
               <button class="mws-modal__action" id="mwsModalCancel" type="button">Отменить</button>
               <button class="mws-modal__action mws-modal__action--primary" id="mwsModalInsert" type="button" disabled>Вставить живой блок</button>
@@ -144,6 +168,9 @@ _SCRIPT_CHUNKS = [
           if (!mwsModal) { return; }
           const mwsModalClose = document.getElementById("mwsModalClose");
           const mwsTableSelect = document.getElementById("mwsTableSelect");
+          const mwsCustomLink = document.getElementById("mwsCustomLink");
+const mwsCustomLabel = document.getElementById("mwsCustomLabel");
+const mwsCustomAdd = document.getElementById("mwsCustomAdd");
           const mwsRecordSearch = document.getElementById("mwsRecordSearch");
           const mwsFieldSearch = document.getElementById("mwsFieldSearch");
           const mwsModalSummary = document.getElementById("mwsModalSummary");
@@ -159,7 +186,29 @@ _SCRIPT_CHUNKS = [
           mwsGhost.innerHTML = '<span class="mws-block-ghost__icon">MWS</span><span class="mws-block-ghost__label"></span>';
           editorCanvas.appendChild(mwsGhost);
           const mwsGhostLabel = mwsGhost.querySelector(".mws-block-ghost__label");
-          const mwsState = { presets: [], tableLabel: "", tableId: "", viewId: "", recordSearch: "", fieldSearch: "", records: [], fieldNames: [], selectedRecords: new Set(), selectedFields: new Set(), loaded: false, loading: false, previewRows: [], previewCols: [] };
+          const mwsAttachmentInput = document.createElement("input");
+          mwsAttachmentInput.type = "file";
+          mwsAttachmentInput.style.display = "none";
+          document.body.appendChild(mwsAttachmentInput);
+const mwsState = {
+  presets: [],
+  tableLabel: "",
+  tableId: "",
+  viewId: "",
+  recordSearch: "",
+  fieldSearch: "",
+  records: [],
+  fieldNames: [],
+  selectedRecords: new Set(),
+  selectedFields: new Set(),
+  loaded: false,
+  loading: false,
+  previewRows: [],
+  previewCols: [],
+  customLink: "",
+  customLabel: ""
+};      
+window.currentMwsContext = window.currentMwsContext || null;
           const mwsCellSaveTimers = new Map();
           let selectedMwsBlock = null;
           let mwsInteraction = null;
@@ -223,6 +272,70 @@ _SCRIPT_CHUNKS = [
             return record.recordId || "Без названия";
           }
           function getPresetByKey(key) { return (mwsState.presets || []).find((preset) => preset.key === key) || null; }
+          function parseMwsLink(value) {
+  const raw = String(value || "").trim();
+  if (!raw) {
+    throw new Error("Вставьте ссылку на таблицу MWS");
+  }
+
+  let url;
+  try {
+    url = new URL(raw);
+  } catch (error) {
+    throw new Error("Ссылка должна быть полной, начиная с https://");
+  }
+
+  const tableId =
+    url.searchParams.get("tableId") ||
+    url.searchParams.get("table") ||
+    (() => {
+      const parts = url.pathname.split("/").filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : "";
+    })();
+
+  const viewId =
+    url.searchParams.get("viewId") ||
+    url.searchParams.get("view") ||
+    "";
+
+  if (!tableId) {
+    throw new Error("Не удалось определить tableId из ссылки");
+  }
+
+  return { tableId, viewId };
+}
+
+function addCustomMwsPresetFromLink() {
+  try {
+    const parsed = parseMwsLink(mwsState.customLink);
+    const label = String(mwsState.customLabel || "").trim() || `Таблица ${parsed.tableId.slice(0, 6)}`;
+
+    const existing = (mwsState.presets || []).find((preset) =>
+      preset.tableId === parsed.tableId && String(preset.viewId || "") === String(parsed.viewId || "")
+    );
+
+    if (!existing) {
+      mwsState.presets.unshift({
+        key: `custom-${parsed.tableId}-${parsed.viewId || "default"}`,
+        label,
+        role: "data",
+        tableId: parsed.tableId,
+        viewId: parsed.viewId || ""
+      });
+    }
+
+    mwsState.tableId = parsed.tableId;
+    mwsState.viewId = parsed.viewId || "";
+    mwsState.tableLabel = label;
+    mwsState.customLink = "";
+    mwsState.customLabel = "";
+
+    loadMwsDirectory(mwsState.tableId, mwsState.viewId);
+    renderMwsModal();
+  } catch (error) {
+    window.alert(error && error.message ? error.message : "Не удалось добавить таблицу по ссылке");
+  }
+}
         """
     ).strip(),
     dedent(
@@ -237,6 +350,8 @@ _SCRIPT_CHUNKS = [
               if (viewId) { params.set("viewId", viewId); }
               const query = params.toString();
               const payload = await commentApiRequest(`/api/mws/insert-options${query ? "?" + query : ""}`, { timeoutMs: 30000 });
+              console.log("MWS insert options payload", payload);
+              console.log("MWS presets", payload.tablePresets);
               mwsState.presets = Array.isArray(payload.tablePresets) ? payload.tablePresets : [];
               mwsState.tableId = payload.tableId || tableId || "";
               mwsState.viewId = payload.viewId || viewId || "";
@@ -383,6 +498,13 @@ _SCRIPT_CHUNKS = [
                 return `<option value="${safeAttr(preset.key)}" ${selected ? "selected" : ""}>${safeHtml(preset.label || preset.key || "MWS")}</option>`;
               }).join("");
             }
+            if (mwsCustomLink && mwsCustomLink.value !== mwsState.customLink) {
+  mwsCustomLink.value = mwsState.customLink || "";
+}
+
+if (mwsCustomLabel && mwsCustomLabel.value !== mwsState.customLabel) {
+  mwsCustomLabel.value = mwsState.customLabel || "";
+}
             if (mwsModalSummary) {
               const badges = [
                 `<span class="mws-modal__badge">${safeHtml(mwsState.tableLabel || "MWS")}</span>`,
@@ -591,7 +713,7 @@ _SCRIPT_CHUNKS = [
                           return `<div class="mws-live-cell__attachment" data-mws-attachment-url="${safeAttr(attachment.url)}" data-mws-attachment-name="${safeAttr(label)}" data-mws-attachment-mime="${safeAttr(attachment.mimeType || "")}"><span class="mws-live-cell__attachment-icon">⇩</span><span>${safeHtml(label)}</span></div>`;
                         }).join("");
                         const emptyNote = attachments.length ? "" : '<div class="mws-live-cell__caption">Нет вложений</div>';
-                        return `<td class="mws-live-cell"><div class="mws-live-cell__attachments">${attachmentList}${emptyNote}<button class="mws-live-cell__attachment-add" type="button" data-mws-attachment-add="1" data-mws-record-id="${safeAttr(record.recordId || "")}" data-mws-field-name="${safeAttr(fieldName)}">Добавить URL</button></div></td>`;
+                        return `<td class="mws-live-cell"><div class="mws-live-cell__attachments">${attachmentList}${emptyNote}<div class="mws-live-cell__attachment-actions"><button class="mws-live-cell__attachment-add" type="button" data-mws-attachment-add="1" data-mws-record-id="${safeAttr(record.recordId || "")}" data-mws-field-name="${safeAttr(fieldName)}">Добавить URL</button><button class="mws-live-cell__attachment-add" type="button" data-mws-attachment-upload="1" data-mws-record-id="${safeAttr(record.recordId || "")}" data-mws-field-name="${safeAttr(fieldName)}">Загрузить файл</button></div></div></td>`;
                       }
                       if (meta.isImage && meta.resourceUrl) {
                         return `<td class="mws-live-cell"><div class="mws-live-cell__image"><img src="${safeAttr(meta.resourceUrl)}" alt="${safeAttr(fieldName)}" /><div class="mws-live-cell__caption">${safeHtml(textValue || fieldName)}</div></div></td>`;
@@ -640,6 +762,15 @@ _SCRIPT_CHUNKS = [
               if (input) { input.classList.remove("is-pending"); }
             }
           }
+          function collectCellAttachments(cell) {
+            if (!cell) { return []; }
+            return Array.from(cell.querySelectorAll("[data-mws-attachment-url]")).map((item) => ({
+              url: item.dataset.mwsAttachmentUrl || "",
+              name: item.dataset.mwsAttachmentName || item.dataset.mwsAttachmentUrl || "",
+              mimeType: item.dataset.mwsAttachmentMime || "",
+              resourceUrl: item.dataset.mwsAttachmentUrl || ""
+            })).filter((item) => item.url);
+          }
           function queueMwsCellSave(block, recordId, fieldName, value, input) {
             const key = `${block.id}:${recordId}:${fieldName}`;
             if (mwsCellSaveTimers.has(key)) { clearTimeout(mwsCellSaveTimers.get(key)); }
@@ -655,6 +786,11 @@ _SCRIPT_CHUNKS = [
           function applyMwsSelectionFromModal() {
             const preset = getPresetByKey(mwsTableSelect ? mwsTableSelect.value : "") || { tableId: mwsState.tableId, viewId: mwsState.viewId, label: mwsState.tableLabel || "Живая таблица MWS" };
             const config = { blockId: nextMwsBlockId(), label: preset.label || mwsState.tableLabel || "Живая таблица MWS", tableLabel: preset.label || mwsState.tableLabel || "Живая таблица MWS", tableId: preset.tableId || mwsState.tableId, viewId: preset.viewId || mwsState.viewId, recordIds: Array.from(mwsState.selectedRecords), fieldNames: Array.from(mwsState.selectedFields) };
+            window.currentMwsContext = {
+              tableId: config.tableId || "",
+              viewId: config.viewId || "",
+              label: config.label || config.tableLabel || "Живая таблица MWS"
+            };
             const block = createMwsBlock(config);
             insertNodeWithTrailingParagraph(block);
             closeMwsModal();
@@ -684,6 +820,30 @@ _SCRIPT_CHUNKS = [
           }
           if (mwsRecordSearch) { mwsRecordSearch.addEventListener("input", () => { mwsState.recordSearch = mwsRecordSearch.value || ""; renderMwsModal(); }); }
           if (mwsFieldSearch) { mwsFieldSearch.addEventListener("input", () => { mwsState.fieldSearch = mwsFieldSearch.value || ""; renderMwsModal(); }); }
+          if (mwsCustomLink) {
+  mwsCustomLink.addEventListener("input", () => {
+    mwsState.customLink = mwsCustomLink.value || "";
+  });
+
+  mwsCustomLink.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      addCustomMwsPresetFromLink();
+    }
+  });
+}
+
+if (mwsCustomLabel) {
+  mwsCustomLabel.addEventListener("input", () => {
+    mwsState.customLabel = mwsCustomLabel.value || "";
+  });
+}
+
+if (mwsCustomAdd) {
+  mwsCustomAdd.addEventListener("click", () => {
+    addCustomMwsPresetFromLink();
+  });
+}
           if (mwsRecordList) {
             mwsRecordList.addEventListener("change", (event) => {
               const input = event.target.closest('input[type="checkbox"]');
@@ -713,16 +873,25 @@ _SCRIPT_CHUNKS = [
               const fieldName = addButton.dataset.mwsFieldName || "";
               const cell = addButton.closest(".mws-live-cell");
               if (recordId && fieldName && cell) {
-                const existing = Array.from(cell.querySelectorAll("[data-mws-attachment-url]")).map((item) => ({
-                  url: item.dataset.mwsAttachmentUrl || "",
-                  name: item.dataset.mwsAttachmentName || item.dataset.mwsAttachmentUrl || "",
-                  mimeType: item.dataset.mwsAttachmentMime || ""
-                })).filter((item) => item.url);
+                const existing = collectCellAttachments(cell);
                 const url = window.prompt("URL вложения");
                 if (!url) { return; }
                 const name = window.prompt("Название (необязательно)") || url;
                 const next = existing.concat([{ url, name }]);
                 persistMwsCell(block, recordId, fieldName, next, null);
+              }
+              return;
+            }
+            const uploadButton = event.target.closest("[data-mws-attachment-upload]");
+            if (uploadButton) {
+              const recordId = uploadButton.dataset.mwsRecordId || "";
+              const fieldName = uploadButton.dataset.mwsFieldName || "";
+              if (recordId && fieldName) {
+                mwsAttachmentInput.dataset.mwsRecordId = recordId;
+                mwsAttachmentInput.dataset.mwsFieldName = fieldName;
+                mwsAttachmentInput.dataset.mwsBlockId = block.id || "";
+                mwsAttachmentInput.value = "";
+                mwsAttachmentInput.click();
               }
               return;
             }
@@ -751,6 +920,47 @@ _SCRIPT_CHUNKS = [
               removed.remove();
               if (typeof scheduleCommentDocumentSave === "function" && typeof getCurrentCommentActor === "function") { scheduleCommentDocumentSave("Удален блок MWS", getCurrentCommentActor().id); }
             }
+          });
+          mwsAttachmentInput.addEventListener("change", async () => {
+            const file = mwsAttachmentInput.files && mwsAttachmentInput.files[0];
+            if (!file) { return; }
+            const recordId = mwsAttachmentInput.dataset.mwsRecordId || "";
+            const fieldName = mwsAttachmentInput.dataset.mwsFieldName || "";
+            const blockId = mwsAttachmentInput.dataset.mwsBlockId || "";
+            const block = blockId ? document.getElementById(blockId) : null;
+            if (!block || !recordId || !fieldName) { return; }
+            const cellButton = block.querySelector(`[data-mws-attachment-add][data-mws-record-id="${recordId}"][data-mws-field-name="${fieldName}"]`);
+            const cell = cellButton ? cellButton.closest(".mws-live-cell") : null;
+            const existing = collectCellAttachments(cell);
+            const reader = new FileReader();
+            reader.onload = async () => {
+              try {
+                const dataUrl = reader.result || "";
+                const uploadResponse = await commentApiRequest("/api/uploads", {
+                  method: "POST",
+                  timeoutMs: 45000,
+                  body: JSON.stringify({ filename: file.name, dataUrl, mimeType: file.type })
+                });
+                const url = uploadResponse && (uploadResponse.url || (uploadResponse.item && uploadResponse.item.url)) || "";
+                if (!url) {
+                  throw new Error("Upload failed");
+                }
+                const next = existing.concat([{
+                  url,
+                  name: file.name,
+                  mimeType: file.type || "",
+                  resourceUrl: url,
+                  isImage: (file.type || "").indexOf("image/") === 0
+                }]);
+                persistMwsCell(block, recordId, fieldName, next, null);
+              } catch (error) {
+                console.warn("Failed to upload attachment", error);
+                renderMwsBlockError(block, "Не удалось загрузить вложение");
+              } finally {
+                mwsAttachmentInput.value = "";
+              }
+            };
+            reader.readAsDataURL(file);
           });
           document.addEventListener("click", (event) => { if (!event.target.closest(".mws-live-block")) { clearSelectedMwsBlock(); } });
           document.addEventListener("wikilive:page-ready", () => { window.requestAnimationFrame(() => window.wikiliveHydrateMwsBlocks(true)); });

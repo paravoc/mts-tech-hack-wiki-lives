@@ -108,6 +108,7 @@ public:
         const std::string& recordIdsCsv = {},
         const std::string& fieldNamesCsv = {});
     [[nodiscard]] RouteResponse updateMwsGrid(const std::string& payload);
+    [[nodiscard]] RouteResponse uploadAttachment(const std::string& payload);
     [[nodiscard]] RouteResponse suggestInsert(const std::string& payload);
 
 private:

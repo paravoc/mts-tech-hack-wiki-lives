@@ -1,4 +1,5 @@
-﻿const timeMachineTrigger = document.getElementById("timeMachineTrigger");
+﻿console.error("TIME MACHINE SCRIPT VERSION 2 LOADED");
+const timeMachineTrigger = document.getElementById("timeMachineTrigger");
 const timeMachinePanel = document.getElementById("timeMachinePanel");
 const timeMachineClose = document.getElementById("timeMachineClose");
 const timeMachineFilters = document.getElementById("timeMachineFilters");
@@ -16,6 +17,7 @@ const timeMachinePreviewMeta = document.getElementById("timeMachinePreviewMeta")
 const timeMachinePreviewChips = document.getElementById("timeMachinePreviewChips");
 const timeMachinePreviewBody = document.getElementById("timeMachinePreviewBody");
 const timeMachineRestore = document.getElementById("timeMachineRestore");
+const timeMachineClear = document.getElementById("timeMachineClear");
 
 let timeMachineVersions = [];
 let timeMachineState = "idle";
@@ -29,9 +31,10 @@ let timeMachinePreviewError = "";
 let timeMachineErrorText = "";
 let timeMachineWatchdogId = 0;
 let timeMachinePreviewWatchdogId = 0;
+let lastMeaningfulVersionSignature = "";
 const timeMachineVersionDetails = new Map();
 const timeMachineVersionDetailPromises = new Map();
-const TIME_MACHINE_WATCHDOG_MS = 3000;
+const TIME_MACHINE_WATCHDOG_MS = 10000;
 
 function tmEscape(value) {
   if (typeof escapeHtml === "function") {
@@ -47,6 +50,39 @@ function tmEscape(value) {
 
 function tmText(value) {
   return String(value || "").replace(/\u200B/g, "").replace(/\s+/g, " ").trim();
+}
+
+function buildMeaningfulVersionSignature(version) {
+  if (!version) return "";
+
+  const title = tmText(version.title || "");
+  const description = tmText(version.description || "");
+  const content = tmText(version.content || "");
+  const sharedWith = Array.isArray(version.sharedWith)
+    ? [...version.sharedWith].map((item) => String(item || "").trim()).sort().join("|")
+    : "";
+  const commentAccessMode = tmText(version.commentAccessMode || "all_users");
+
+  return [title, description, content, sharedWith, commentAccessMode].join("::");
+}
+
+function filterMeaningfulVersions(items = []) {
+  let previousSignature = "";
+  const result = [];
+
+  for (const item of items) {
+    const signature = buildMeaningfulVersionSignature(item);
+    if (!signature) continue;
+
+    if (signature === previousSignature) {
+      continue;
+    }
+
+    result.push(item);
+    previousSignature = signature;
+  }
+
+  return result;
 }
 
 function formatVersionDate(value) {
@@ -431,19 +467,113 @@ function renderTimeMachineFilters() {
 }
 
 function renderTimeMachineList() {
-  timeMachineList.innerHTML = getFilteredTimeMachineVersions().map((version) => {
-    const author = getTimeMachineAuthor(version.author || "system");
-    const isActive = version.versionId === timeMachineSelectedVersionId;
-    const stats = [];
-    if (version.threadCount) stats.push(`<span class="time-machine-item__stat">${version.threadCount} ${pluralizeRu(version.threadCount, "ветка", "ветки", "веток")}</span>`);
-    if (version.commentCount) stats.push(`<span class="time-machine-item__stat">${version.commentCount} ${pluralizeRu(version.commentCount, "комментарий", "комментария", "комментариев")}</span>`);
-    return `<button class="time-machine-item${isActive ? " is-active" : ""}" data-time-machine-version="${version.versionId}" type="button"><div class="time-machine-item__top"><div class="time-machine-item__title">${tmEscape(version.label || "Действие")}</div><span class="time-machine-item__badge">${tmEscape(version.kind.badge)}</span></div><div class="time-machine-item__summary">${tmEscape(version.summary)}</div><div class="time-machine-item__meta"><span>${tmEscape(formatVersionDate(version.createdAt))}</span><span class="time-machine-item__author"><span class="time-machine-item__author-name">${tmEscape(author.name || version.author || "system")}</span><span class="time-machine-panel__info"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 2.3a5.7 5.7 0 1 1 0 11.4A5.7 5.7 0 0 1 8 2.3Zm.1 2.4a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9Zm-.9 3v3.7h1.8V7.7H7.2Z"></path></svg></span></span></div>${stats.length ? `<div class="time-machine-item__stats">${stats.join("")}</div>` : ""}</button>`;
-  }).join("");
+  if (!timeMachineList) return;
+
+  try {
+    const versions = getFilteredTimeMachineVersions();
+
+    timeMachineList.innerHTML = versions.map((version) => {
+      const author = getTimeMachineAuthor(version.author || "system");
+      const isActive = version.versionId === timeMachineSelectedVersionId;
+      const stats = [];
+
+      if (version.threadCount) {
+        stats.push(
+          `<span class="time-machine-item__stat">${version.threadCount} ${pluralizeRu(version.threadCount, "ветка", "ветки", "веток")}</span>`
+        );
+      }
+
+      if (version.commentCount) {
+        stats.push(
+          `<span class="time-machine-item__stat">${version.commentCount} ${pluralizeRu(version.commentCount, "комментарий", "комментария", "комментариев")}</span>`
+        );
+      }
+
+      return `
+        <button class="time-machine-item${isActive ? " is-active" : ""}" data-time-machine-version="${version.versionId}" type="button">
+          <div class="time-machine-item__top">
+            <div class="time-machine-item__title">${tmEscape(version.label || "Действие")}</div>
+            <span class="time-machine-item__badge">${tmEscape((version.kind && version.kind.badge) || "Версия")}</span>
+          </div>
+          <div class="time-machine-item__summary">${tmEscape(version.summary || "")}</div>
+          <div class="time-machine-item__meta">
+            <span>${tmEscape(formatVersionDate(version.createdAt))}</span>
+            <span class="time-machine-item__author">
+              <span class="time-machine-item__author-name">${tmEscape(author.name || version.author || "system")}</span>
+              <span class="time-machine-panel__info">
+                <svg viewBox="0 0 16 16" fill="currentColor">
+                  <path d="M8 2.3a5.7 5.7 0 1 1 0 11.4A5.7 5.7 0 0 1 8 2.3Zm.1 2.4a.95.95 0 1 0 0 1.9.95.95 0 0 0 0-1.9Zm-.9 3v3.7h1.8V7.7H7.2Z"></path>
+                </svg>
+              </span>
+            </span>
+          </div>
+          ${stats.length ? `<div class="time-machine-item__stats">${stats.join("")}</div>` : ""}
+        </button>
+      `;
+    }).join("");
+  } catch (error) {
+    console.error("renderTimeMachineList failed", error);
+    setTimeMachineErrorState("Ошибка отрисовки списка версий");
+  }
+}
+function forceShowTimeMachineList() {
+  if (!timeMachineList || !timeMachineScroll) return;
+
+  renderTimeMachineList();
+
+  timeMachineState = "list";
+
+  if (timeMachineLoading) {
+    timeMachineLoading.hidden = true;
+    timeMachineLoading.style.display = "none";
+  }
+
+  if (timeMachineError) {
+    timeMachineError.hidden = true;
+    timeMachineError.style.display = "none";
+  }
+
+  if (timeMachineEmpty) {
+    timeMachineEmpty.hidden = true;
+    timeMachineEmpty.style.display = "none";
+  }
+
+  timeMachineScroll.hidden = false;
+  timeMachineScroll.style.display = "";
+  timeMachineScroll.style.visibility = "visible";
+  timeMachineScroll.style.opacity = "1";
+
+  timeMachineList.hidden = false;
+  timeMachineList.style.display = "";
+  timeMachineList.style.visibility = "visible";
+  timeMachineList.style.opacity = "1";
+
+  console.error("forceShowTimeMachineList done", {
+    versions: timeMachineVersions.length,
+    htmlLength: timeMachineList.innerHTML.length
+  });
 }
 
+
 function renderTimeMachinePreview() {
+  if (
+    !timeMachinePreview ||
+    !timeMachinePreviewTitle ||
+    !timeMachinePreviewMeta ||
+    !timeMachinePreviewChips ||
+    !timeMachinePreviewBody ||
+    !timeMachineRestore
+  ) {
+    console.error("Time machine preview DOM is missing");
+    return;
+  }
+
   const currentVersion = getCurrentTimeMachineVersion();
-  const previewVisible = Boolean(currentVersion) && timeMachinePanel && timeMachinePanel.classList.contains("is-open");
+  const previewVisible =
+    Boolean(currentVersion) &&
+    timeMachinePanel &&
+    timeMachinePanel.classList.contains("is-open");
+
   timeMachinePreview.classList.toggle("is-visible", previewVisible);
   timeMachineRestore.disabled = !previewVisible || timeMachinePreviewState === "loading";
 
@@ -451,66 +581,107 @@ function renderTimeMachinePreview() {
     timeMachinePreviewTitle.textContent = "Предварительный просмотр";
     timeMachinePreviewMeta.textContent = "Версия не выбрана";
     timeMachinePreviewChips.innerHTML = "";
-    timeMachinePreviewBody.innerHTML = '<div class="time-machine-preview__empty">Выберите действие справа, чтобы увидеть, что именно изменилось.</div>';
+    timeMachinePreviewBody.innerHTML =
+      '<div class="time-machine-preview__empty">Выберите действие справа, чтобы увидеть, что именно изменилось.</div>';
     return;
   }
 
   if (timeMachinePreviewState === "loading") {
     timeMachinePreviewTitle.textContent = currentVersion.label || "Предварительный просмотр";
     timeMachinePreviewMeta.textContent = `${formatVersionDate(currentVersion.createdAt)} • загружаю детали версии`;
-    timeMachinePreviewChips.innerHTML = `<span class="time-machine-preview__chip">${tmEscape(currentVersion.kind.badge)}</span>`;
-    timeMachinePreviewBody.innerHTML = '<section class="time-machine-preview__section"><div class="time-machine-panel__state"><div class="time-machine-panel__spinner" aria-hidden="true"></div></div></section>';
+    timeMachinePreviewChips.innerHTML =
+      `<span class="time-machine-preview__chip">${tmEscape((currentVersion.kind && currentVersion.kind.badge) || "Версия")}</span>`;
+    timeMachinePreviewBody.innerHTML =
+      '<section class="time-machine-preview__section"><div class="time-machine-panel__state"><div class="time-machine-panel__spinner" aria-hidden="true"></div></div></section>';
     return;
   }
+
   if (timeMachinePreviewState === "error") {
     timeMachinePreviewTitle.textContent = currentVersion.label || "Предварительный просмотр";
     timeMachinePreviewMeta.textContent = `${formatVersionDate(currentVersion.createdAt)} • детали версии недоступны`;
-    timeMachinePreviewChips.innerHTML = `<span class="time-machine-preview__chip">${tmEscape(currentVersion.kind.badge)}</span>`;
-    timeMachinePreviewBody.innerHTML = `<section class="time-machine-preview__section"><div class="time-machine-preview__empty">${tmEscape(timeMachinePreviewError || "Не удалось загрузить детали версии.")}</div></section>`;
+    timeMachinePreviewChips.innerHTML =
+      `<span class="time-machine-preview__chip">${tmEscape((currentVersion.kind && currentVersion.kind.badge) || "Версия")}</span>`;
+    timeMachinePreviewBody.innerHTML =
+      `<section class="time-machine-preview__section"><div class="time-machine-preview__empty">${tmEscape(timeMachinePreviewError || "Не удалось загрузить детали версии.")}</div></section>`;
     return;
   }
 
   const detailView = currentVersion.detailView;
-  timeMachinePreviewTitle.textContent = detailView ? detailView.title : (currentVersion.label || "Предварительный просмотр");
-  timeMachinePreviewMeta.textContent = detailView ? detailView.meta : `${formatVersionDate(currentVersion.createdAt)} • ${resolveActorName(currentVersion.author || "system")}`;
-  timeMachinePreviewChips.innerHTML = detailView ? detailView.chips.map((chip) => `<span class="time-machine-preview__chip">${tmEscape(chip)}</span>`).join("") : `<span class="time-machine-preview__chip">${tmEscape(currentVersion.kind.badge)}</span>`;
+
+  timeMachinePreviewTitle.textContent =
+    detailView ? detailView.title : (currentVersion.label || "Предварительный просмотр");
+  timeMachinePreviewMeta.textContent =
+    detailView ? detailView.meta : `${formatVersionDate(currentVersion.createdAt)} • ${resolveActorName(currentVersion.author || "system")}`;
+  timeMachinePreviewChips.innerHTML = detailView
+    ? detailView.chips.map((chip) => `<span class="time-machine-preview__chip">${tmEscape(chip)}</span>`).join("")
+    : `<span class="time-machine-preview__chip">${tmEscape((currentVersion.kind && currentVersion.kind.badge) || "Версия")}</span>`;
+
   if (!detailView) {
-    timeMachinePreviewBody.innerHTML = '<div class="time-machine-preview__empty">Выберите действие справа, чтобы увидеть изменения.</div>';
+    timeMachinePreviewBody.innerHTML =
+      '<div class="time-machine-preview__empty">Выберите действие справа, чтобы увидеть изменения.</div>';
     return;
   }
+
   const sections = [
     buildPreviewSection("Ключевые действия", renderPreviewList(detailView.keyActions)),
     buildPreviewSection("Diff по абзацам", renderParagraphDiff(detailView))
   ];
-  if (detailView.metadataChanges.length) sections.push(buildPreviewSection("Метаданные и доступ", renderPreviewList(detailView.metadataChanges)));
+
+  if (detailView.metadataChanges.length) {
+    sections.push(buildPreviewSection("Метаданные и доступ", renderPreviewList(detailView.metadataChanges)));
+  }
+
   timeMachinePreviewBody.innerHTML = sections.join("");
 }
 
 function renderTimeMachinePanel() {
   if (!timeMachinePanel) return;
+
   renderTimeMachineFilters();
+
   const isOpen = timeMachinePanel.classList.contains("is-open");
   const filtered = getFilteredTimeMachineVersions();
-  timeMachineLoading.hidden = timeMachineState !== "loading";
-  timeMachineError.hidden = timeMachineState !== "error";
-  timeMachineEmpty.hidden = !(timeMachineState === "empty" && isOpen);
-  timeMachineScroll.hidden = timeMachineState !== "list";
+
+  if (timeMachineLoading) timeMachineLoading.hidden = true;
+  if (timeMachineError) timeMachineError.hidden = true;
+  if (timeMachineEmpty) timeMachineEmpty.hidden = true;
+  if (timeMachineScroll) timeMachineScroll.hidden = true;
+
   if (timeMachineErrorMessage) {
-    timeMachineErrorMessage.textContent = timeMachineErrorText || "Не удалось загрузить версии. Попробуйте еще раз";
+    timeMachineErrorMessage.textContent =
+      timeMachineErrorText || "Не удалось загрузить версии. Попробуйте еще раз";
   }
 
-  if (timeMachineState === "list") {
-    renderTimeMachineList();
-    if (!filtered.length) {
-      timeMachineScroll.hidden = true;
+  if (timeMachineState === "loading") {
+    if (timeMachineLoading) timeMachineLoading.hidden = false;
+  } else if (timeMachineState === "error") {
+    if (timeMachineError) timeMachineError.hidden = false;
+  } else if (timeMachineState === "empty") {
+    if (timeMachineEmpty) {
       timeMachineEmpty.hidden = false;
-      timeMachineEmpty.textContent = "По выбранному фильтру пока нет версий";
-    } else {
-      timeMachineEmpty.textContent = "История действий пока пуста";
+      if (isOpen) {
+        timeMachineEmpty.textContent = "История действий пока пуста";
+      }
     }
-  } else {
-    timeMachineList.innerHTML = "";
+    if (timeMachineList) timeMachineList.innerHTML = "";
+  } else if (timeMachineState === "list") {
+    renderTimeMachineList();
+
+    if (!filtered.length) {
+      if (timeMachineEmpty) {
+        timeMachineEmpty.hidden = false;
+        timeMachineEmpty.textContent = "По выбранному фильтру пока нет версий";
+      }
+      if (timeMachineScroll) timeMachineScroll.hidden = true;
+    } else {
+      if (timeMachineScroll) timeMachineScroll.hidden = false;
+      if (timeMachineEmpty) {
+        timeMachineEmpty.hidden = true;
+        timeMachineEmpty.textContent = "История действий пока пуста";
+      }
+    }
   }
+
   renderTimeMachinePreview();
 }
 
@@ -548,18 +719,25 @@ async function loadTimeMachinePreview(versionId, force = false, options = {}) {
   }
   const silent = Boolean(options.silent);
   const previewToken = ++timeMachinePreviewToken;
-  if (!silent || !summaryVersion.detailView) {
-    setTimeMachinePreviewState("loading");
-    renderTimeMachinePanel();
-    clearTimeMachinePreviewWatchdog();
-    timeMachinePreviewWatchdogId = window.setTimeout(() => {
-      if (previewToken !== timeMachinePreviewToken) return;
-      if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
-      if (timeMachinePreviewState !== "loading") return;
-      setTimeMachinePreviewState("error", "Детали версии не загрузились за 3 секунды. Скорее всего открыт старый iframe. Нажмите Ctrl+F5.");
-      renderTimeMachinePanel();
-    }, TIME_MACHINE_WATCHDOG_MS);
-  }
+
+// Если детали уже есть и это тихое обновление — не включаем спиннер заново
+if (silent && summaryVersion.detailView) {
+  return summaryVersion.detailView;
+}
+
+setTimeMachinePreviewState("loading");
+renderTimeMachinePanel();
+clearTimeMachinePreviewWatchdog();
+timeMachinePreviewWatchdogId = window.setTimeout(() => {
+  if (previewToken !== timeMachinePreviewToken) return;
+  if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
+  if (timeMachinePreviewState !== "loading") return;
+  setTimeMachinePreviewState(
+    "error",
+    "Детали версии не загрузились за 3 секунды. Скорее всего открыт старый iframe. Нажмите Ctrl+F5."
+  );
+  renderTimeMachinePanel();
+}, TIME_MACHINE_WATCHDOG_MS);
   try {
     const previousSummary = summaryVersion.previousVersionId ? getTimeMachineSummaryById(summaryVersion.previousVersionId) : null;
     const [currentDetail, previousDetail] = await Promise.all([
@@ -571,71 +749,147 @@ async function loadTimeMachinePreview(versionId, force = false, options = {}) {
     setTimeMachinePreviewState("ready");
     renderTimeMachinePanel();
     return summaryVersion.detailView;
-  } catch (error) {
+    } catch (error) {
     if (previewToken !== timeMachinePreviewToken) return null;
     console.warn("Failed to load time machine preview", error);
-    setTimeMachinePreviewState("error", error && error.message ? error.message : "Не удалось загрузить детали версии.");
+    console.error("TIME MACHINE PREVIEW ERROR:", error);
+    setTimeMachinePreviewState(
+      "error",
+      error && error.message ? error.message : "Не удалось загрузить детали версии."
+    );
     renderTimeMachinePanel();
     return null;
+  } finally {
+    clearTimeMachinePreviewWatchdog();
+
+    if (timeMachinePreviewState === "loading") {
+      setTimeMachinePreviewState("error", "Предпросмотр версии завис.");
+      renderTimeMachinePanel();
+    }
   }
 }
 
 async function loadTimeMachineVersions(force = false, options = {}) {
+  console.error("loadTimeMachineVersions called", { force, options });
+
   const requestToken = ++timeMachineRequestToken;
-  const silent = Boolean(options.silent);
-  if (!commentPageId && typeof ensureCommentPage === "function") {
-    try {
+  const silent = Boolean(options && options.silent);
+
+  try {
+    if (!commentPageId && typeof ensureCommentPage === "function") {
+      console.error("commentPageId empty, calling ensureCommentPage()");
       await ensureCommentPage();
-    } catch (error) {
-      clearTimeMachineWatchdog();
-      setTimeMachineErrorState(formatTimeMachineRequestError(error));
+      console.error("commentPageId after ensure =", commentPageId);
+    }
+
+    if (!commentPageId) {
+      console.error("No commentPageId");
+      setTimeMachineErrorState("Не удалось определить текущую страницу для истории изменений.");
+      renderTimeMachinePanel();
       return [];
     }
-  }
-  if (!commentPageId) {
-    setTimeMachineErrorState("Не удалось определить текущую страницу для истории изменений.");
+
+    if (timeMachineLoadingPromise && !force) {
+      console.error("Returning existing timeMachineLoadingPromise");
+      return timeMachineLoadingPromise;
+    }
+
+    if (!silent || !timeMachineVersions.length) {
+      timeMachineState = "loading";
+      timeMachineErrorText = "";
+      renderTimeMachinePanel();
+      clearTimeMachineWatchdog();
+
+      timeMachineWatchdogId = window.setTimeout(() => {
+        if (requestToken !== timeMachineRequestToken) return;
+        if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
+        if (timeMachineState !== "loading") return;
+
+        setTimeMachineErrorState(
+          "Список версий не загрузился за 10 секунд. Нажмите Ctrl+F5 или кнопку «Повторить»."
+        );
+      }, TIME_MACHINE_WATCHDOG_MS);
+    }
+
+    console.error("Starting commentApiRequest for versions");
+
+    timeMachineLoadingPromise = commentApiRequest(
+      `/api/pages/${encodeURIComponent(commentPageId)}/versions`,
+      { timeoutMs: 30000 }
+    )
+      .then((payload) => {
+        console.error("versions payload =", payload);
+
+        if (requestToken !== timeMachineRequestToken) {
+          console.error("Request token mismatch");
+          return timeMachineVersions;
+        }
+
+        clearTimeMachineWatchdog();
+
+        const rawItems = Array.isArray(payload?.items)
+  ? payload.items
+  : Array.isArray(payload)
+    ? payload
+    : [];
+
+console.error("versions items =", rawItems);
+
+const items = filterMeaningfulVersions(rawItems);
+
+timeMachineVersions = decorateTimeMachineVersions(items);
+console.error("decorated versions =", timeMachineVersions);
+
+lastMeaningfulVersionSignature = items.length
+  ? buildMeaningfulVersionSignature(items[0])
+  : "";
+
+        syncTimeMachineSelection();
+        console.error("selected version =", timeMachineSelectedVersionId);
+
+        timeMachineState = timeMachineVersions.length ? "list" : "empty";
+console.error("timeMachineState set to", timeMachineState);
+
+setTimeMachinePreviewState("idle");
+
+if (timeMachineVersions.length) {
+  forceShowTimeMachineList();
+} else {
+  renderTimeMachinePanel();
+}
+
+console.error("versions render done");
+
+        return timeMachineVersions;
+      })
+      .catch((error) => {
+        console.error("Failed to load time machine versions", error);
+        clearTimeMachineWatchdog();
+        setTimeMachineErrorState(formatTimeMachineRequestError(error));
+        renderTimeMachinePanel();
+        return [];
+      })
+      .finally(() => {
+        console.error("loadTimeMachineVersions finally");
+        timeMachineLoadingPromise = null;
+        clearTimeMachineWatchdog();
+
+        if (timeMachineState === "loading") {
+          setTimeMachineErrorState("История зависла: состояние loading не сменилось.");
+          renderTimeMachinePanel();
+        }
+      });
+
+    return timeMachineLoadingPromise;
+  } catch (error) {
+    console.error("loadTimeMachineVersions crashed before request", error);
+    clearTimeMachineWatchdog();
+    setTimeMachineErrorState(
+      error && error.message ? error.message : "Ошибка при запуске загрузки истории."
+    );
     renderTimeMachinePanel();
     return [];
   }
-  if (timeMachineLoadingPromise && !force) return timeMachineLoadingPromise;
-  if (!silent || !timeMachineVersions.length) {
-    timeMachineState = "loading";
-    timeMachineErrorText = "";
-    renderTimeMachinePanel();
-    clearTimeMachineWatchdog();
-    timeMachineWatchdogId = window.setTimeout(() => {
-      if (requestToken !== timeMachineRequestToken) return;
-      if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) return;
-      if (timeMachineState !== "loading") return;
-      setTimeMachineErrorState("Список версий не загрузился за 3 секунды. Похоже, браузер держит старый iframe. Нажмите Ctrl+F5 или кнопку «Повторить».");
-    }, TIME_MACHINE_WATCHDOG_MS);
-  }
-  timeMachineLoadingPromise = commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}/versions`, { timeoutMs: 30000 })
-    .then((payload) => {
-      if (requestToken !== timeMachineRequestToken) return timeMachineVersions;
-      clearTimeMachineWatchdog();
-      timeMachineVersions = decorateTimeMachineVersions(payload.items || []);
-      syncTimeMachineSelection();
-      timeMachineState = timeMachineVersions.length ? "list" : "empty";
-      renderTimeMachinePanel();
-      if (timeMachineSelectedVersionId) {
-        loadTimeMachinePreview(timeMachineSelectedVersionId, force, { silent }).catch(() => {});
-      } else {
-        setTimeMachinePreviewState("idle");
-        renderTimeMachinePanel();
-      }
-      return timeMachineVersions;
-    })
-    .catch((error) => {
-      console.warn("Failed to load time machine versions", error);
-      clearTimeMachineWatchdog();
-      setTimeMachineErrorState(formatTimeMachineRequestError(error));
-      return [];
-    })
-    .finally(() => {
-      timeMachineLoadingPromise = null;
-    });
-  return timeMachineLoadingPromise;
 }
 
 async function restoreTimeMachineVersion() {
@@ -658,16 +912,69 @@ async function restoreTimeMachineVersion() {
   }
 }
 
+async function clearTimeMachineHistory() {
+  if (!commentPageId) return;
+
+  const confirmed = window.confirm("Очистить всю историю изменений этой страницы?");
+  if (!confirmed) return;
+
+  try {
+    await commentApiRequest(
+      `/api/pages/${encodeURIComponent(commentPageId)}/versions`,
+      { method: "DELETE", timeoutMs: 30000 }
+    );
+
+    timeMachineVersions = [];
+    timeMachineSelectedVersionId = "";
+    timeMachineVersionDetails.clear();
+    timeMachineVersionDetailPromises.clear();
+    lastMeaningfulVersionSignature = "";
+    setTimeMachinePreviewState("idle");
+    timeMachineState = "empty";
+    renderTimeMachinePanel();
+  } catch (error) {
+    console.error("Failed to clear time machine history", error);
+    setTimeMachineErrorState(
+      error && error.message ? error.message : "Не удалось очистить историю."
+    );
+    renderTimeMachinePanel();
+  }
+}
+
 function openTimeMachinePanel() {
+  console.error("openTimeMachinePanel called");
   if (!timeMachinePanel) return;
-  hardResetTimeMachineState();
-  timeMachinePanel.classList.add("is-open");
-  if (typeof closeCommentsPanel === "function") closeCommentsPanel();
-  if (typeof commentsTopDropdown !== "undefined" && commentsTopDropdown) commentsTopDropdown.classList.remove("is-open");
-  if (typeof commentsAccessPopup !== "undefined" && commentsAccessPopup) commentsAccessPopup.classList.remove("is-open");
-  timeMachineState = "loading";
-  renderTimeMachinePanel();
-  loadTimeMachineVersions(true).catch(() => {});
+
+  try {
+    hardResetTimeMachineState();
+    timeMachinePanel.classList.add("is-open");
+
+    if (typeof closeCommentsPanel === "function") closeCommentsPanel();
+    if (typeof commentsTopDropdown !== "undefined" && commentsTopDropdown) {
+      commentsTopDropdown.classList.remove("is-open");
+    }
+    if (typeof commentsAccessPopup !== "undefined" && commentsAccessPopup) {
+      commentsAccessPopup.classList.remove("is-open");
+    }
+
+    timeMachineState = "loading";
+    renderTimeMachinePanel();
+
+    console.error("openTimeMachinePanel: render ok, starting versions load");
+    loadTimeMachineVersions(true)
+  .then(() => {
+    if (timeMachineVersions.length) {
+      forceShowTimeMachineList();
+    }
+  })
+  .catch((error) => {
+    console.error("loadTimeMachineVersions failed from openTimeMachinePanel", error);
+  });
+  } catch (error) {
+    console.error("openTimeMachinePanel crashed", error);
+    setTimeMachineErrorState("Панель истории упала при открытии.");
+    renderTimeMachinePanel();
+  }
 }
 
 function closeTimeMachinePanel() {
@@ -679,6 +986,7 @@ function closeTimeMachinePanel() {
 }
 
 function initializeTimeMachine() {
+  console.error("initializeTimeMachine called");
   if (!timeMachineTrigger || !timeMachinePanel) return;
   if (timeMachineBuild) {
     window.__wikiliveFrontendBuild = timeMachineBuild.textContent || "";
@@ -705,8 +1013,22 @@ function initializeTimeMachine() {
       loadTimeMachineVersions(true).catch(() => {});
     });
   }
-  if (timeMachineRestore) timeMachineRestore.addEventListener("click", () => restoreTimeMachineVersion().catch((error) => console.warn("Failed to restore selected version", error)));
-  if (timeMachineFilters) {
+if (timeMachineRestore) {
+  timeMachineRestore.addEventListener("click", () =>
+    restoreTimeMachineVersion().catch((error) =>
+      console.warn("Failed to restore selected version", error)
+    )
+  );
+}
+
+if (timeMachineClear) {
+  timeMachineClear.addEventListener("click", () =>
+    clearTimeMachineHistory().catch((error) =>
+      console.error("clearTimeMachineHistory failed", error)
+    )
+  );
+}
+if (timeMachineFilters) {
     timeMachineFilters.addEventListener("click", (event) => {
       const button = event.target.closest("[data-time-machine-filter]");
       if (!button) return;
@@ -719,14 +1041,18 @@ function initializeTimeMachine() {
     });
   }
   if (timeMachineList) {
-    timeMachineList.addEventListener("click", (event) => {
-      const item = event.target.closest("[data-time-machine-version]");
-      if (!item) return;
-      timeMachineSelectedVersionId = item.dataset.timeMachineVersion || "";
-      loadTimeMachinePreview(timeMachineSelectedVersionId).catch(() => {});
-      renderTimeMachinePanel();
+  timeMachineList.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-time-machine-version]");
+    if (!item) return;
+
+    timeMachineSelectedVersionId = item.dataset.timeMachineVersion || "";
+    renderTimeMachinePanel();
+
+    loadTimeMachinePreview(timeMachineSelectedVersionId).catch((error) => {
+      console.error("loadTimeMachinePreview failed on click", error);
     });
-  }
+  });
+}
   document.addEventListener("click", (event) => {
     if (timeMachinePanel.classList.contains("is-open") && !timeMachinePanel.contains(event.target) && !timeMachineTrigger.contains(event.target) && !timeMachinePreview.contains(event.target)) closeTimeMachinePanel();
   });
@@ -734,9 +1060,15 @@ function initializeTimeMachine() {
     if (timeMachinePanel.classList.contains("is-open")) loadTimeMachineVersions(true, { silent: true }).catch(() => {});
   });
   window.refreshTimeMachinePanel = () => {
-    if (!timeMachinePanel.classList.contains("is-open")) return Promise.resolve(timeMachineVersions);
-    return loadTimeMachineVersions(true, { silent: true });
-  };
+  if (!timeMachinePanel || !timeMachinePanel.classList.contains("is-open")) {
+    return Promise.resolve(timeMachineVersions);
+  }
+
+  // Пока панель истории открыта, не дёргаем автообновление от автосейва/MWS.
+  // Иначе список/preview постоянно перезапускаются и визуально получается вечная крутилка.
+  console.error("refreshTimeMachinePanel skipped while panel is open");
+  return Promise.resolve(timeMachineVersions);
+};
   renderTimeMachinePanel();
 }
 

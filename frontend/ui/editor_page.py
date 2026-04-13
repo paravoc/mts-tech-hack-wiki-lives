@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from textwrap import dedent
 
@@ -14,56 +14,57 @@ from ui.time_machine import time_machine_markup, time_machine_script, time_machi
 
 _EMPTY_HINT = "Начните вводить содержимое или нажмите / чтобы использовать команды"
 
+
 def _toolbar_markup() -> str:
     return dedent(
         """
         <div class="editor-toolbar" id="toolbar">
           <div class="toolbar-group">
-  <button class="toolbar-button toolbar-button--ghost" data-tip="Отменить" data-command="undo">&#8630;</button>
-  <button class="toolbar-button toolbar-button--ghost" data-tip="Повторить" data-command="redo">&#8631;</button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button" data-tip="Жирный" data-command="bold">B</button>
-        <button class="toolbar-button" data-tip="Курсив" data-command="italic"><em>T</em></button>
-        <button class="toolbar-button" data-tip="Зачеркнутый" data-command="strikeThrough"><span class="strike-label">T</span></button>
-        <button class="toolbar-button" data-tip="Подчеркнуть" data-command="underline"><span class="underline-label">U</span></button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button toolbar-button--compound" data-tip="Размер текста" data-menu="font-size" data-active-group="font-size">
-          <span>A</span><span class="toolbar-caret">&#9662;</span>
-        </button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button" data-tip="Обычный текст" data-block="p">T</button>
-        <button class="toolbar-button" data-tip="Заголовок 1" data-block="h1">H<span class="subscript">1</span></button>
-        <button class="toolbar-button" data-tip="Заголовок 2" data-block="h2">H<span class="subscript">2</span></button>
-        <button class="toolbar-button" data-tip="Заголовок 3" data-block="h3">H<span class="subscript">3</span></button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button" data-tip="Выровнять влево" data-command="justifyLeft">&#9776;</button>
-        <button class="toolbar-button" data-tip="Выровнять по центру" data-command="justifyCenter">&#8801;</button>
-        <button class="toolbar-button" data-tip="Выровнять вправо" data-command="justifyRight">&#9783;</button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button" data-tip="Маркированный список" data-command="insertUnorderedList">&#8226;&#8801;</button>
-        <button class="toolbar-button" data-tip="Нумерованный список" data-command="insertOrderedList">1&#8801;</button>
-      </div>
-      <div class="toolbar-sep"></div>
-      <div class="toolbar-group">
-        <button class="toolbar-button" data-tip="Вставить файл" data-upload="file">@</button>
-        <button class="toolbar-button" data-tip="Живая таблица MWS" data-insert="mws-grid">M</button>
-        <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
-          <span>L</span>
-        </button>
-        <button class="toolbar-button" data-tip="Ссылка">&lt;/&gt;</button>
-        <button class="toolbar-button" data-tip="Цитата" data-block="blockquote">``</button>
-        <button class="toolbar-button" data-tip="Изображение" data-upload="image">&#9633;</button>
-      </div>
+            <button class="toolbar-button toolbar-button--ghost" data-tip="Отменить" data-command="undo">&#8630;</button>
+            <button class="toolbar-button toolbar-button--ghost" data-tip="Повторить" data-command="redo">&#8631;</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button" data-tip="Жирный" data-command="bold">B</button>
+            <button class="toolbar-button" data-tip="Курсив" data-command="italic"><em>T</em></button>
+            <button class="toolbar-button" data-tip="Зачеркнутый" data-command="strikeThrough"><span class="strike-label">T</span></button>
+            <button class="toolbar-button" data-tip="Подчеркнуть" data-command="underline"><span class="underline-label">U</span></button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button toolbar-button--compound" data-tip="Размер текста" data-menu="font-size" data-active-group="font-size">
+              <span>A</span><span class="toolbar-caret">&#9662;</span>
+            </button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button" data-tip="Обычный текст" data-block="p">T</button>
+            <button class="toolbar-button" data-tip="Заголовок 1" data-block="h1">H<span class="subscript">1</span></button>
+            <button class="toolbar-button" data-tip="Заголовок 2" data-block="h2">H<span class="subscript">2</span></button>
+            <button class="toolbar-button" data-tip="Заголовок 3" data-block="h3">H<span class="subscript">3</span></button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button" data-tip="Выравнивание влево" data-command="justifyLeft">&#9776;</button>
+            <button class="toolbar-button" data-tip="Выравнивание по центру" data-command="justifyCenter">&#8801;</button>
+            <button class="toolbar-button" data-tip="Выравнивание вправо" data-command="justifyRight">&#9783;</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button" data-tip="Маркированный список" data-command="insertUnorderedList">&#8226;&#8801;</button>
+            <button class="toolbar-button" data-tip="Нумерованный список" data-command="insertOrderedList">1&#8801;</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button class="toolbar-button" data-tip="Вставить файл" data-upload="file">@</button>
+            <button class="toolbar-button" data-tip="Живая таблица MWS" data-insert="mws-grid">M</button>
+            <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
+              <span>L</span>
+            </button>
+            <button class="toolbar-button" data-tip="Код">&lt;/&gt;</button>
+            <button class="toolbar-button" data-tip="Цитата" data-block="blockquote">``</button>
+            <button class="toolbar-button" data-tip="Изображение" data-upload="image">&#9633;</button>
+          </div>
         </div>
         """
     ).strip()
@@ -76,47 +77,52 @@ def _selection_toolbar_markup() -> str:
           <div class="selection-toolbar" id="selectionToolbar">
             <div class="selection-toolbar__group">
               <button class="toolbar-button" data-tip="Жирный" data-command="bold">B</button>
-<button class="toolbar-button" data-tip="Курсив" data-command="italic"><em>T</em></button>
-<button class="toolbar-button" data-tip="Подчеркнуть" data-command="underline"><span class="underline-label">U</span></button>
-<button class="toolbar-button" data-tip="Зачеркнутый" data-command="strikeThrough"><span class="strike-label">T</span></button>
+              <button class="toolbar-button" data-tip="Курсив" data-command="italic"><em>T</em></button>
+              <button class="toolbar-button" data-tip="Подчеркнуть" data-command="underline"><span class="underline-label">U</span></button>
+              <button class="toolbar-button" data-tip="Зачеркнутый" data-command="strikeThrough"><span class="strike-label">T</span></button>
+            </div>
             <div class="selection-toolbar__group">
-<button class="toolbar-button toolbar-button--compound" data-tip="Размер текста" data-menu="font-size" data-active-group="font-size">                <span>A</span><span class="toolbar-caret">&#9662;</span>
+              <button class="toolbar-button toolbar-button--compound" data-tip="Размер текста" data-menu="font-size" data-active-group="font-size">
+                <span>A</span><span class="toolbar-caret">&#9662;</span>
               </button>
             </div>
             <div class="selection-toolbar__group">
-<button class="toolbar-button toolbar-button--compound" data-tip="Стиль текста" data-menu="text-style" data-active-group="text-style">                <span>T</span><span class="toolbar-caret">&#9662;</span>
+              <button class="toolbar-button toolbar-button--compound" data-tip="Стиль текста" data-menu="text-style" data-active-group="text-style">
+                <span>T</span><span class="toolbar-caret">&#9662;</span>
               </button>
             </div>
             <div class="selection-toolbar__group">
-<button class="toolbar-button toolbar-button--compound" data-tip="Выравнивание" data-menu="alignment" data-active-group="alignment">                <span>&#8801;</span><span class="toolbar-caret">&#9662;</span>
+              <button class="toolbar-button toolbar-button--compound" data-tip="Выравнивание" data-menu="alignment" data-active-group="alignment">
+                <span>&#8801;</span><span class="toolbar-caret">&#9662;</span>
               </button>
             </div>
             <div class="selection-toolbar__group">
-<button class="toolbar-button toolbar-button--compound" data-tip="Список" data-menu="list" data-active-group="list">                <span>1&#8801;</span><span class="toolbar-caret">&#9662;</span>
+              <button class="toolbar-button toolbar-button--compound" data-tip="Списки" data-menu="list" data-active-group="list">
+                <span>1&#8801;</span><span class="toolbar-caret">&#9662;</span>
               </button>
             </div>
             <div class="selection-toolbar__group">
-              <button class="toolbar-button" data-tip="Р’СЃС‚Р°РІРёС‚СЊ С„Р°Р№Р»" data-upload="file">@</button>
-            <button class="toolbar-button" data-tip="Р–РёРІР°СЏ С‚Р°Р±Р»РёС†Р° MWS" data-insert="mws-grid">M</button>
+              <button class="toolbar-button" data-tip="Вставить файл" data-upload="file">@</button>
+              <button class="toolbar-button" data-tip="Живая таблица MWS" data-insert="mws-grid">M</button>
             </div>
             <div class="selection-toolbar__group">
-              <button class="toolbar-button toolbar-button--compound" data-tip="РЎСЃС‹Р»РєР°" data-menu="link" data-active-group="link">
+              <button class="toolbar-button toolbar-button--compound" data-tip="Ссылка" data-menu="link" data-active-group="link">
                 <span>L</span>
               </button>
             </div>
             <div class="selection-toolbar__group">
-              <button class="toolbar-button" data-tip="РЎСЃС‹Р»РєР°">&lt;/&gt;</button>
+              <button class="toolbar-button" data-tip="Код">&lt;/&gt;</button>
             </div>
             <div class="selection-toolbar__group">
-              <button class="toolbar-button" data-tip="Р¦РёС‚Р°С‚Р°" data-block="blockquote">``</button>
+              <button class="toolbar-button" data-tip="Цитата" data-block="blockquote">``</button>
             </div>
           </div>
 
           <div class="floating-menu" id="floatingMenuTextStyle" data-menu-panel="text-style">
-           <button class="floating-menu__item" data-tip="Обычный текст" data-block="p">Обычный текст</button>
-<button class="floating-menu__item" data-tip="Заголовок 1" data-block="h1">Заголовок 1</button>
-<button class="floating-menu__item" data-tip="Заголовок 2" data-block="h2">Заголовок 2</button>
-<button class="floating-menu__item" data-tip="Заголовок 3" data-block="h3">Заголовок 3</button>
+            <button class="floating-menu__item" data-tip="Обычный текст" data-block="p">Обычный текст</button>
+            <button class="floating-menu__item" data-tip="Заголовок 1" data-block="h1">Заголовок 1</button>
+            <button class="floating-menu__item" data-tip="Заголовок 2" data-block="h2">Заголовок 2</button>
+            <button class="floating-menu__item" data-tip="Заголовок 3" data-block="h3">Заголовок 3</button>
           </div>
 
           <div class="floating-menu floating-menu--font-size" id="floatingMenuFontSize" data-menu-panel="font-size">
@@ -138,33 +144,34 @@ def _selection_toolbar_markup() -> str:
           </div>
 
           <div class="floating-menu" id="floatingMenuAlignment" data-menu-panel="alignment">
-<button class="floating-menu__item" data-tip="Выровнять влево" data-command="justifyLeft">По левому краю</button>
-<button class="floating-menu__item" data-tip="Выровнять по центру" data-command="justifyCenter">По центру</button>
-<button class="floating-menu__item" data-tip="Выровнять вправо" data-command="justifyRight">По правому краю</button>          </div>
+            <button class="floating-menu__item" data-tip="Выравнивание влево" data-command="justifyLeft">По левому краю</button>
+            <button class="floating-menu__item" data-tip="Выравнивание по центру" data-command="justifyCenter">По центру</button>
+            <button class="floating-menu__item" data-tip="Выравнивание вправо" data-command="justifyRight">По правому краю</button>
+          </div>
 
           <div class="floating-menu" id="floatingMenuList" data-menu-panel="list">
-<button class="floating-menu__item" data-tip="Маркированный список" data-command="insertUnorderedList">Маркированный список</button>
-<button class="floating-menu__item" data-tip="Нумерованный список" data-command="insertOrderedList">Нумерованный список</button>          </div>
+            <button class="floating-menu__item" data-tip="Маркированный список" data-command="insertUnorderedList">Маркированный список</button>
+            <button class="floating-menu__item" data-tip="Нумерованный список" data-command="insertOrderedList">Нумерованный список</button>
+          </div>
 
           <div class="floating-menu floating-menu--link" id="floatingMenuLink" data-menu-panel="link">
             <div class="link-menu">
               <div class="link-menu__field">
-               <label class="link-menu__label" for="linkTextInput">Выделенный текст</label>
-<input class="link-menu__input" id="linkTextInput" type="text" placeholder="Введите текст ссылки" />
-
+                <label class="link-menu__label" for="linkTextInput">Текст ссылки</label>
+                <input class="link-menu__input" id="linkTextInput" type="text" placeholder="Введите текст ссылки" />
               </div>
               <div class="link-menu__field">
                 <label class="link-menu__label" for="linkTargetInput">Ссылка или заголовок</label>
-<input class="link-menu__input" id="linkTargetInput" type="text" placeholder="https://site.ru или выберите заголовок" />
+                <input class="link-menu__input" id="linkTargetInput" type="text" placeholder="https://site.ru или выберите заголовок" />
               </div>
               <label class="link-menu__checkbox">
-  <input id="linkOpenInNewTab" type="checkbox" />
-  <span>Открывать в новой вкладке</span>
-</label>
+                <input id="linkOpenInNewTab" type="checkbox" />
+                <span>Открывать в новой вкладке</span>
+              </label>
               <div class="link-menu__headings" id="linkHeadingList"></div>
               <div class="link-menu__actions">
                 <button class="link-menu__button link-menu__button--primary" id="linkConfirmButton" type="button">Подтвердить</button>
-<button class="link-menu__button" id="linkCancelButton" type="button">Отменить</button>
+                <button class="link-menu__button" id="linkCancelButton" type="button">Отмена</button>
               </div>
             </div>
           </div>
@@ -734,22 +741,22 @@ __CURSOR_ROOT_VARIABLES__
             }
 
             .editor-shell {
-              width: 644px;
-              max-width: calc(100vw - 80px);
-              margin: 0 auto;
-              padding: 54px 0 180px;
-            }
+  width: 1200px;
+  max-width: calc(100vw - 80px);
+  margin: 0 auto;
+  padding: 54px 0 180px;
+}
 
             .outline-sidebar {
-              position: fixed;
-              top: 50%;
-              left: max(34px, calc(50vw - 470px));
-              transform: translateY(-50%);
-              display: flex;
-              align-items: flex-start;
-              gap: 10px;
-              z-index: 31;
-            }
+  position: fixed;
+  top: 50%;
+  left: max(20px, calc(50vw - 700px));
+  transform: translateY(-50%);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  z-index: 31;
+}
 
             .editor-top-shell {
               position: fixed;
@@ -823,6 +830,18 @@ __CURSOR_ROOT_VARIABLES__
               color: #9aa3b2;
             }
 
+            .outline-sidebar__section {
+              padding-bottom: 8px;
+              margin-bottom: 8px;
+              border-bottom: 1px solid #eef1f6;
+            }
+
+            .outline-sidebar__section:last-child {
+              padding-bottom: 0;
+              margin-bottom: 0;
+              border-bottom: 0;
+            }
+
             .outline-sidebar__list {
               display: flex;
               flex-direction: column;
@@ -880,6 +899,12 @@ __CURSOR_ROOT_VARIABLES__
               padding-left: 30px;
             }
 
+            .outline-sidebar__item--backlink .outline-sidebar__item-badge {
+              border-color: #ffd6e2;
+              background: #fff4f6;
+              color: #ff0032;
+            }
+
             .outline-sidebar__empty {
               padding: 0 10px;
               color: #a1a9b7;
@@ -900,7 +925,7 @@ __CURSOR_ROOT_VARIABLES__
             }
 
             .title-editor:empty::before {
-              content: "РќРѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р°";
+              content: "Новая страница";
               color: #242933;
             }
 
@@ -1955,13 +1980,19 @@ __MWS_BLOCKS_STYLES__
                   </div>
                   <div class="outline-sidebar__panel">
                     <div class="outline-sidebar__card">
-                      <div class="outline-sidebar__title">РќР°РІРёРіР°С†РёСЏ</div>
-                      <div class="outline-sidebar__list" id="outlineList"></div>
+                      <div class="outline-sidebar__section">
+                        <div class="outline-sidebar__title">Навигация</div>
+                        <div class="outline-sidebar__list" id="outlineList"></div>
+                      </div>
+                      <div class="outline-sidebar__section">
+                        <div class="outline-sidebar__title">Обратные ссылки</div>
+                        <div class="outline-sidebar__list" id="backlinksList"></div>
+                      </div>
                     </div>
                   </div>
                 </aside>
                 <div class="editor-shell">
-                  <h1 class="title-editor" id="titleEditor" contenteditable="true" spellcheck="false">РќРѕРІР°СЏ СЃС‚СЂР°РЅРёС†Р°</h1>
+                  <h1 class="title-editor" id="titleEditor" contenteditable="true" spellcheck="false">Новая страница</h1>
                   <div class="body-editor" id="bodyEditor" contenteditable="true" spellcheck="false">
                     <p class="body-placeholder">__EMPTY_HINT__</p>
                   </div>
@@ -1989,22 +2020,22 @@ __MWS_BLOCKS_STYLES__
             <div class="upload-modal" id="uploadModal" aria-hidden="true">
               <div class="upload-modal__backdrop" data-upload-close="1"></div>
               <div class="upload-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="uploadModalTitle">
-                <button class="upload-modal__close" id="uploadModalClose" type="button" aria-label="Р—Р°РєСЂС‹С‚СЊ">&times;</button>
-                <h2 class="upload-modal__title" id="uploadModalTitle">Р’СЃС‚Р°РІРёС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёРµ</h2>
+                <button class="upload-modal__close" id="uploadModalClose" type="button" aria-label="Закрыть">&times;</button>
+                <h2 class="upload-modal__title" id="uploadModalTitle">Вставить изображение</h2>
                 <div class="upload-modal__alert" id="uploadModalAlert"></div>
                 <div class="upload-modal__field">
-                  <label class="upload-modal__label" id="uploadModalLabel" for="uploadModalInput">Р¤Р°Р№Р» РёР·РѕР±СЂР°Р¶РµРЅРёСЏ</label>
+                  <label class="upload-modal__label" id="uploadModalLabel" for="uploadModalInput">Файл изображения</label>
                   <div class="upload-dropzone" id="uploadDropzone">
                     <input class="upload-dropzone__input" id="uploadModalInput" type="file" />
-                    <button class="upload-dropzone__button" id="uploadBrowseButton" type="button">Р’С‹Р±РµСЂРёС‚Рµ С„Р°Р№Р»</button>
-                    <span class="upload-dropzone__text" id="uploadDropzoneText">РёР»Рё РїРµСЂРµРјРµСЃС‚РёС‚Рµ РµРіРѕ СЃСЋРґР°</span>
+                    <button class="upload-dropzone__button" id="uploadBrowseButton" type="button">Выберите файл</button>
+                    <span class="upload-dropzone__text" id="uploadDropzoneText">или переместите его сюда</span>
                   </div>
-                  <div class="upload-modal__hint" id="uploadModalHint">Р¤РѕСЂРјР°С‚ С„Р°Р№Р»Р°: JPG, PNG, GIF. РќРµ Р±РѕР»РµРµ 5 РњР‘</div>
+                  <div class="upload-modal__hint" id="uploadModalHint">Формат файла: JPG, PNG, GIF. Не более 5 МБ</div>
                 </div>
                 <div class="upload-preview" id="uploadPreview"></div>
                 <div class="upload-modal__actions">
-                  <button class="upload-modal__action" id="uploadCancelButton" type="button">РћС‚РјРµРЅРёС‚СЊ</button>
-                  <button class="upload-modal__action upload-modal__action--primary" id="uploadConfirmButton" type="button" disabled>РџРѕРґС‚РІРµСЂРґРёС‚СЊ</button>
+                  <button class="upload-modal__action" id="uploadCancelButton" type="button">Отменить</button>
+                  <button class="upload-modal__action upload-modal__action--primary" id="uploadConfirmButton" type="button" disabled>Подтвердить</button>
                 </div>
               </div>
             </div>
@@ -2105,16 +2136,16 @@ __MWS_BLOCKS_STYLES__
             editorCanvas.appendChild(imageDropIndicator);
 
             const slashItems = [
-              { icon: "T", label: "РћР±С‹С‡РЅС‹Р№ С‚РµРєСЃС‚", queries: ["С‚РµРєСЃС‚", "text"], kind: "block", value: "p" },
-              { icon: "H1", label: "Р—Р°РіРѕР»РѕРІРѕРє 1", queries: ["Р·Р°РіРѕР»", "Р·Р°РіРѕР»РѕРІРѕРє", "h1"], kind: "block", value: "h1" },
-              { icon: "H2", label: "Р—Р°РіРѕР»РѕРІРѕРє 2", queries: ["Р·Р°РіРѕР»", "Р·Р°РіРѕР»РѕРІРѕРє", "h2"], kind: "block", value: "h2" },
-              { icon: "H3", label: "Р—Р°РіРѕР»РѕРІРѕРє 3", queries: ["Р·Р°РіРѕР»", "Р·Р°РіРѕР»РѕРІРѕРє", "h3"], kind: "block", value: "h3" },
-              { icon: "вЂў", label: "РњР°СЂРєРёСЂРѕРІР°РЅРЅС‹Р№ СЃРїРёСЃРѕРє", queries: ["СЃРїРёСЃРѕРє", "РјР°СЂРє"], kind: "list", value: "ul" },
-              { icon: "1", label: "РќСѓРјРµСЂРѕРІР°РЅРЅС‹Р№ СЃРїРёСЃРѕРє", queries: ["СЃРїРёСЃРѕРє", "РЅРѕРјРµСЂ"], kind: "list", value: "ol" },
-              { icon: "вњ“", label: "Р§РµРєР»РёСЃС‚", queries: ["С‡РµРє", "todo"], kind: "list", value: "ul" },
-              { icon: "</>", label: "РљРѕРґ", queries: ["РєРѕРґ"], kind: "block", value: "pre" },
-              { icon: "``", label: "Р¦РёС‚Р°С‚Р°", queries: ["С†РёС‚Р°С‚Р°"], kind: "block", value: "blockquote" },
-              { icon: "в–Ј", label: "РР·РѕР±СЂР°Р¶РµРЅРёРµ", queries: ["РёР·РѕР±СЂР°Р¶РµРЅРёРµ", "С„РѕС‚Рѕ"], kind: "stub", value: "image" }
+              { icon: "T", label: "Обычный текст", queries: ["текст", "text"], kind: "block", value: "p" },
+              { icon: "H1", label: "Заголовок 1", queries: ["загол", "заголовок", "h1"], kind: "block", value: "h1" },
+              { icon: "H2", label: "Заголовок 2", queries: ["загол", "заголовок", "h2"], kind: "block", value: "h2" },
+              { icon: "H3", label: "Заголовок 3", queries: ["загол", "заголовок", "h3"], kind: "block", value: "h3" },
+              { icon: "•", label: "Маркированный список", queries: ["список", "марк"], kind: "list", value: "ul" },
+              { icon: "1", label: "Нумерованный список", queries: ["список", "номер"], kind: "list", value: "ol" },
+              { icon: "✓", label: "Чеклист", queries: ["чек", "todo"], kind: "list", value: "ul" },
+              { icon: "</>", label: "Код", queries: ["код"], kind: "block", value: "pre" },
+              { icon: "``", label: "Цитата", queries: ["цитата"], kind: "block", value: "blockquote" },
+              { icon: "▣", label: "Изображение", queries: ["изображение", "фото"], kind: "stub", value: "image" }
             ];
 
             function setLoadingState() {
@@ -2401,7 +2432,7 @@ __MWS_BLOCKS_STYLES__
                 const target = document.querySelector(href);
                 if (target) {
                   target.scrollIntoView({ behavior: "smooth", block: "center" });
-                  showTooltip("РџРµСЂРµС…РѕРґ Рє Р·Р°РіРѕР»РѕРІРєСѓ");
+                  showTooltip("Переход к заголовку");
                 }
                 return;
               }
@@ -2470,7 +2501,7 @@ __MWS_BLOCKS_STYLES__
 
               const items = getOutlineItems();
               if (!items.length) {
-                outlineList.innerHTML = '<div class="outline-sidebar__empty">РџРѕРєР° РЅРµС‚ Р·Р°РіРѕР»РѕРІРєРѕРІ РґР»СЏ РЅР°РІРёРіР°С†РёРё</div>';
+                outlineList.innerHTML = '<div class="outline-sidebar__empty">Пока нет заголовков для навигации</div>';
                 return;
               }
 
@@ -2518,7 +2549,7 @@ __MWS_BLOCKS_STYLES__
               }
               const headings = ensureHeadingAnchors();
               if (!headings.length) {
-                linkHeadingList.innerHTML = '<div class="link-menu__empty">РќРµС‚ Р·Р°РіРѕР»РѕРІРєРѕРІ РІ С‚РµРєСѓС‰РµРј С‚РµРєСЃС‚Рµ</div>';
+                linkHeadingList.innerHTML = '<div class="link-menu__empty">Нет заголовков в текущем тексте</div>';
                 return;
               }
               linkHeadingList.innerHTML = headings.map((item) => `
@@ -2614,18 +2645,18 @@ __MWS_BLOCKS_STYLES__
               hideFloatingMenus();
               updateActiveToolbarButtons();
               updateSelectionToolbar();
-              showTooltip("РЎСЃС‹Р»РєР°");
+              showTooltip("Ссылка");
             }
 
             function getUploadConfig(mode) {
               if (mode === "file") {
                 return {
                   mode: "file",
-                  title: "Р’СЃС‚Р°РІРёС‚СЊ С„Р°Р№Р»",
-                  label: "Р¤Р°Р№Р»",
-                  browse: "Р’С‹Р±РµСЂРёС‚Рµ С„Р°Р№Р»С‹",
-                  trail: "РёР»Рё РїРµСЂРµРјРµСЃС‚РёС‚Рµ РёС… СЃСЋРґР°",
-                  hint: "Р¤РѕСЂРјР°С‚ С„Р°Р№Р»Р°: TXT, CSV, XLS, XLSX. РќРµ Р±РѕР»РµРµ 2 РњР‘",
+                  title: "Вставить файл",
+                  label: "Файл",
+                  browse: "Выберите файлы",
+                  trail: "или переместите их сюда",
+                  hint: "Формат файла: TXT, CSV, XLS, XLSX. Не более 2 МБ",
                   maxBytes: 2 * 1024 * 1024,
                   accept: ".txt,.csv,.xls,.xlsx,text/plain,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                   formats: ["txt", "csv", "xls", "xlsx"]
@@ -2634,11 +2665,11 @@ __MWS_BLOCKS_STYLES__
 
               return {
                 mode: "image",
-                title: "Р’СЃС‚Р°РІРёС‚СЊ РёР·РѕР±СЂР°Р¶РµРЅРёРµ",
-                label: "Р¤Р°Р№Р» РёР·РѕР±СЂР°Р¶РµРЅРёСЏ",
-                browse: "Р’С‹Р±РµСЂРёС‚Рµ С„Р°Р№Р»",
-                trail: "РёР»Рё РїРµСЂРµРјРµСЃС‚РёС‚Рµ РµРіРѕ СЃСЋРґР°",
-                hint: "Р¤РѕСЂРјР°С‚ С„Р°Р№Р»Р°: JPG, PNG, GIF. РќРµ Р±РѕР»РµРµ 5 РњР‘",
+                title: "Вставить изображение",
+                label: "Файл изображения",
+                browse: "Выберите файл",
+                trail: "или переместите его сюда",
+                hint: "Формат файла: JPG, PNG, GIF. Не более 5 МБ",
                 maxBytes: 5 * 1024 * 1024,
                 accept: ".jpg,.jpeg,.png,.gif,image/jpeg,image/png,image/gif",
                 formats: ["jpg", "jpeg", "png", "gif"]
@@ -2647,15 +2678,15 @@ __MWS_BLOCKS_STYLES__
 
             function formatFileSize(bytes) {
               if (!bytes) {
-                return "0 Р‘";
+                return "0 Б";
               }
               if (bytes >= 1024 * 1024) {
-                return (bytes / (1024 * 1024)).toFixed(1).replace(".0", "") + " РњР‘";
+                return (bytes / (1024 * 1024)).toFixed(1).replace(".0", "") + " МБ";
               }
               if (bytes >= 1024) {
-                return Math.round(bytes / 1024) + " РљР‘";
+                return Math.round(bytes / 1024) + " КБ";
               }
-              return bytes + " Р‘";
+              return bytes + " Б";
             }
 
             function resetUploadState() {
@@ -2690,8 +2721,8 @@ __MWS_BLOCKS_STYLES__
               const errorHtml = uploadState.error === "load"
                 ? `
                     <div class="upload-preview__error is-visible">
-                      <div class="upload-preview__error-title">РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё</div>
-                      <button class="upload-preview__retry" id="uploadRetryButton" type="button">РџРѕРІС‚РѕСЂРёС‚СЊ</button>
+                      <div class="upload-preview__error-title">Ошибка загрузки</div>
+                      <button class="upload-preview__retry" id="uploadRetryButton" type="button">Повторить</button>
                     </div>
                   `
                 : "";
@@ -2702,7 +2733,7 @@ __MWS_BLOCKS_STYLES__
                     ${thumbContent}
                     ${errorHtml}
                   </div>
-                  <button class="upload-preview__remove" id="uploadRemoveButton" type="button" aria-label="РЈРґР°Р»РёС‚СЊ">&times;</button>
+                  <button class="upload-preview__remove" id="uploadRemoveButton" type="button" aria-label="Удалить">&times;</button>
                   <div class="upload-preview__name-row">
                     <span>${name}</span>
                     <span class="upload-preview__size">${size}</span>
@@ -2736,12 +2767,12 @@ __MWS_BLOCKS_STYLES__
               let alertMessage = "";
               if (uploadState && uploadState.error === "format") {
                 alertMessage = uploadMode === "image"
-                  ? "Р”Р»СЏ Р·Р°РіСЂСѓР·РєРё РґРѕСЃС‚СѓРїРЅС‹ С„Р°Р№Р»С‹ РІ С„РѕСЂРјР°С‚Р°С… JPG, PNG, GIF"
-                  : "Р”Р»СЏ Р·Р°РіСЂСѓР·РєРё РґРѕСЃС‚СѓРїРЅС‹ С„Р°Р№Р»С‹ РІ С„РѕСЂРјР°С‚Р°С… TXT, CSV, XLS, XLSX";
+                  ? "Для загрузки доступны файлы в форматах JPG, PNG, GIF"
+                  : "Для загрузки доступны файлы в форматах TXT, CSV, XLS, XLSX";
               } else if (uploadState && uploadState.error === "size") {
                 alertMessage = uploadMode === "image"
-                  ? "Р”Р»СЏ Р·Р°РіСЂСѓР·РєРё РґРѕСЃС‚СѓРїРЅС‹ С„Р°Р№Р»С‹ РЅРµ Р±РѕР»РµРµ 5 РњР‘"
-                  : "Р”Р»СЏ Р·Р°РіСЂСѓР·РєРё РґРѕСЃС‚СѓРїРЅС‹ С„Р°Р№Р»С‹ РЅРµ Р±РѕР»РµРµ 2 РњР‘";
+                  ? "Для загрузки доступны файлы не более 5 МБ"
+                  : "Для загрузки доступны файлы не более 2 МБ";
               }
               setUploadAlert(alertMessage);
 
@@ -2847,12 +2878,12 @@ __MWS_BLOCKS_STYLES__
                 !type.startsWith("image/") &&
                 (!extension || !imageConfig.formats.includes(extension))
               ) {
-                showTooltip("РўРѕР»СЊРєРѕ JPG, PNG, GIF");
+                showTooltip("Только JPG, PNG, GIF");
                 return;
               }
 
               if (file.size > imageConfig.maxBytes) {
-                showTooltip("РќРµ Р±РѕР»РµРµ 5 РњР‘");
+                showTooltip("Не более 5 МБ");
                 return;
               }
 
@@ -2869,7 +2900,7 @@ __MWS_BLOCKS_STYLES__
               updateActiveToolbarButtons();
               updateSelectionToolbar();
               updateBlockHandleFromSelection();
-              showTooltip("РР·РѕР±СЂР°Р¶РµРЅРёРµ");
+              showTooltip("Изображение");
             }
 
             function insertNodeWithTrailingParagraph(node) {
@@ -3424,7 +3455,7 @@ __MWS_BLOCKS_STYLES__
                 updateActiveToolbarButtons();
                 updateSelectionToolbar();
                 updateBlockHandleFromSelection();
-                showTooltip(uploadMode === "image" ? "РР·РѕР±СЂР°Р¶РµРЅРёРµ" : "Р¤Р°Р№Р»");
+                showTooltip(uploadMode === "image" ? "Изображение" : "Файл");
               } catch (error) {
                 if (uploadState) {
                   uploadState.error = "load";
@@ -4215,7 +4246,7 @@ __MWS_BLOCKS_STYLES__
               try {
                 await insertImageFile(file);
               } catch (error) {
-                showTooltip("РћС€РёР±РєР° РІСЃС‚Р°РІРєРё");
+                showTooltip("Ошибка вставки");
               }
             });
             bodyEditor.addEventListener("dragstart", (event) => {
@@ -4591,4 +4622,3 @@ __TIME_MACHINE_SCRIPT__
     html = html.replace("__TIME_MACHINE_SCRIPT__", time_machine_script() + "\n            window.initializeTimeMachine && window.initializeTimeMachine();")
 
     components.html(html, height=780, scrolling=False)
-

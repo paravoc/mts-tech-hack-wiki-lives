@@ -18,7 +18,7 @@ def _frontend_build_label() -> str:
         for candidate in candidates
         if candidate.exists()
     )
-    return datetime.fromtimestamp(latest_timestamp).strftime("UI build %Y-%m-%d %H:%M:%S")
+    return datetime.fromtimestamp(latest_timestamp).strftime("UI build v2 %Y-%m-%d %H:%M:%S")
 
 
 def time_machine_styles() -> str:
@@ -639,8 +639,9 @@ def time_machine_markup() -> str:
             </div>
           </div>
           <div class="time-machine-preview__actions">
-            <button class="time-machine-preview__action" id="timeMachineRestore" type="button">Восстановить версию</button>
-          </div>
+  <button class="time-machine-preview__action time-machine-preview__action--danger" id="timeMachineClear" type="button">Очистить</button>
+  <button class="time-machine-preview__action" id="timeMachineRestore" type="button">Восстановить версию</button>
+</div>
         </div>
         """
     ).strip()

@@ -411,15 +411,18 @@ def pages_script() -> str:
         }
 
         function getCurrentPageSnapshot() {
-          return {
-            pageId: commentPageId,
-            title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Новая страница",
-            description: typeof getDocumentDescriptionText === "function" ? getDocumentDescriptionText() : "",
-            content: bodyEditor.innerHTML || "",
-            ownerId: normalizeActorId(currentCommentActorId || "viewer"),
-            ownerName: getCurrentCommentActor().name || "Гость",
-          };
-        }
+  const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId) || {};
+  return {
+    pageId: commentPageId,
+    title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Новая страница",
+    description: typeof getDocumentDescriptionText === "function" ? getDocumentDescriptionText() : "",
+    content: bodyEditor.innerHTML || "",
+    ownerId: normalizeActorId(currentCommentActorId || "viewer"),
+    ownerName: getCurrentCommentActor().name || "Гость",
+    mwsScenarioId: currentPage.mwsScenarioId || "",
+    mwsScenarioTitle: currentPage.mwsScenarioTitle || "",
+  };
+}
 
         function getOwnedPagesForActor(actorId = currentCommentActorId) {
           return (commentPages || []).filter((page) => normalizeActorId(page.ownerId || "viewer") === normalizeActorId(actorId || "viewer"));
@@ -500,12 +503,15 @@ def pages_script() -> str:
           }
 
           const renderPageItem = (page, isSharedView) => {
-            const isActive = page.pageId === commentPageId;
-            const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
-            const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
-            const meta = isSharedView
-              ? `Автор: ${ownerName}`
-              : (headingCount ? `${headingCount} заголовков` : "Без разделов");
+  const isActive = page.pageId === commentPageId;
+  const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
+  const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
+  const scenarioMeta = page.mwsScenarioTitle ? `MWS: ${page.mwsScenarioTitle}` : "";
+  const meta = scenarioMeta || (
+    isSharedView
+      ? `Автор: ${ownerName}`
+      : (headingCount ? `${headingCount} заголовков` : "Без разделов")
+  );
             return `
               <button class="pages-switcher__item${isActive ? " is-active" : ""}" data-page-id="${page.pageId}" type="button">
                 <span class="pages-switcher__item-title">${escapeHtml(page.title || "Без названия")}</span>
@@ -774,14 +780,18 @@ def pages_script() -> str:
 
         async function createPageForCurrentActor(workspaceToken = commentWorkspaceToken) {
           const actor = getCurrentCommentActor();
+          const mwsContext = window.currentMwsContext || null;
+
           const created = await commentApiRequest("/api/pages", {
             method: "POST",
             body: JSON.stringify({
-              title: "Новая страница",
+              title: mwsContext ? `Страница по ${mwsContext.label || "MWS"}` : "Новая страница",
               content: "",
               ownerId: normalizeActorId(currentCommentActorId || "viewer"),
               ownerName: actor.name || "Гость",
-              versionLabel: "Создана страница",
+              mwsScenarioId: mwsContext ? (mwsContext.tableId || "") : "",
+              mwsScenarioTitle: mwsContext ? (mwsContext.label || "") : "",
+              versionLabel: mwsContext ? "Создана страница из сценария MWS" : "Создана страница",
               versionAuthor: actor.id || "viewer",
             }),
             timeoutMs: 30000
