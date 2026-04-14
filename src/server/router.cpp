@@ -2869,6 +2869,11 @@ RouteResponse Router::uploadAttachment(const std::string& payload) {
         const auto filenameRaw = parsed.value("filename", std::string{});
         const auto dataUrl = parsed.value("dataUrl", std::string{});
         const auto mimeType = parsed.value("mimeType", std::string{});
+        const auto tableId = parsed.value("tableId", std::string{});
+        const auto viewId = parsed.value("viewId", std::string{});
+        const auto recordId = parsed.value("recordId", std::string{});
+        const auto fieldName = parsed.value("fieldName", std::string{});
+
         if (dataUrl.empty()) {
             return fail(utils::makeError(
                 utils::ErrorCode::InvalidRequest,
@@ -2883,9 +2888,9 @@ RouteResponse Router::uploadAttachment(const std::string& payload) {
             base64Data = dataUrl.substr(marker + 7);
         }
 
-        bool ok = false;
-        const auto decoded = decodeBase64(base64Data, ok);
-        if (!ok || decoded.empty()) {
+        bool decodeOk = false;
+        const auto decoded = decodeBase64(base64Data, decodeOk);
+        if (!decodeOk || decoded.empty()) {
             return fail(utils::makeError(
                 utils::ErrorCode::InvalidRequest,
                 "Failed to decode base64 payload",
@@ -2893,6 +2898,73 @@ RouteResponse Router::uploadAttachment(const std::string& payload) {
                 false));
         }
 
+        // ===== MWS direct upload path =====
+        if (!tableId.empty() && !recordId.empty() && !fieldName.empty()) {
+            if (mwsClient_ == nullptr) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidConfig,
+                    "MWS client is not configured",
+                    503,
+                    false));
+            }
+
+            const auto fieldsMeta = mwsClient_->getFieldsForTable(tableId, viewId);
+            if (!fieldsMeta) {
+                return fail(fieldsMeta.error());
+            }
+
+            std::string fieldId;
+            std::string fieldType;
+            for (const auto& field : fieldsMeta.value()) {
+                if (field.name == fieldName) {
+                    fieldId = field.id;
+                    fieldType = field.type;
+                    break;
+                }
+            }
+
+            if (fieldId.empty()) {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Не найдено MWS поле для вложения: " + fieldName,
+                    400,
+                    false));
+            }
+
+            if (fieldType != "Attachment") {
+                return fail(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Поле \"" + fieldName + "\" не является Attachment",
+                    400,
+                    false));
+            }
+
+            const auto uploaded = mwsClient_->uploadAttachmentForField(
+                tableId,
+                recordId,
+                fieldId,
+                filenameRaw,
+                mimeType,
+                decoded);
+
+            if (!uploaded) {
+                return fail(uploaded.error());
+            }
+
+            nlohmann::json item = {
+                {"token", uploaded->token},
+                {"url", uploaded->url},
+                {"resourceUrl", uploaded->url},
+                {"name", uploaded->name},
+                {"mimeType", uploaded->mimeType},
+                {"size", uploaded->size},
+                {"isImage", uploaded->isImage},
+            };
+
+            return ok(item.dump());
+        }
+
+        // ===== fallback: local upload path =====
         std::string safeName;
         for (const char ch : filenameRaw) {
             if (std::isalnum(static_cast<unsigned char>(ch)) || ch == '.' || ch == '_' || ch == '-') {
@@ -2903,7 +2975,6 @@ RouteResponse Router::uploadAttachment(const std::string& payload) {
             safeName = "upload";
         }
 
-        const auto now = utils::formatIso(utils::now());
         std::string stem = safeName;
         std::string extension;
         const auto dotPos = safeName.find_last_of('.');
@@ -2935,26 +3006,33 @@ RouteResponse Router::uploadAttachment(const std::string& payload) {
         output.close();
 
         const auto url = "/uploads/" + finalName;
-        const nlohmann::json response{
+        const auto absoluteUrl = makeAbsoluteTablesUrl(url);
+
+        nlohmann::json item = {
             {"url", url},
-            {"name", filenameRaw.empty() ? finalName : filenameRaw},
+            {"resourceUrl", absoluteUrl},
+            {"name", finalName},
             {"mimeType", mimeType},
-            {"uploadedAt", now},
+            {"size", decoded.size()},
+            {"isImage", mimeType.rfind("image/", 0) == 0},
         };
-        return created(response.dump());
-    } catch (const nlohmann::json::exception& exception) {
+
+        return ok(item.dump());
+    }
+    catch (const nlohmann::json::exception& exception) {
         return fail(utils::makeError(
             utils::ErrorCode::InvalidRequest,
             std::string("Malformed upload JSON payload: ") + exception.what(),
             400,
             false));
-    } catch (const std::exception& exception) {
+    }
+    catch (const std::exception& exception) {
         return unexpectedExceptionResponse(exception);
-    } catch (...) {
+    }
+    catch (...) {
         return unknownExceptionResponse();
     }
 }
-
 RouteResponse Router::suggestInsert(const std::string& payload) {
     try {
         if (aiService_ == nullptr) {

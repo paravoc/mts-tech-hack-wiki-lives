@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <cstddef>
 #include <nlohmann/json.hpp>
 
 #include "src/api/retry_policy.h"
@@ -39,6 +40,16 @@ struct MwsFieldMeta {
     nlohmann::json property;
 };
 
+struct MwsUploadedAttachment {
+    std::string token;
+    std::string name;
+    std::string url;
+    std::string mimeType;
+    std::string bucket;
+    std::size_t size = 0;
+    bool isImage = false;
+};
+
 struct MwsClientOptions {
     int requestTimeoutMs = 10000;
     int retryAttempts = 3;
@@ -47,6 +58,14 @@ struct MwsClientOptions {
 
 class MwsClient {
 public:
+
+    [[nodiscard]] utils::Expected<MwsUploadedAttachment> uploadAttachmentForField(
+        const std::string& tableId,
+        const std::string& recordId,
+        const std::string& fieldId,
+        const std::string& filename,
+        const std::string& mimeType,
+        const std::vector<unsigned char>& bytes);
     MwsClient(std::string token, std::string tableId, std::string viewId, MwsClientOptions options = {});
 
     [[nodiscard]] const std::string& tableId() const;

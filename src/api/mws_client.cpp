@@ -8,6 +8,7 @@
 #include <sstream>
 #include <string_view>
 #include <utility>
+#include <cctype>
 
 namespace {
 
@@ -289,6 +290,36 @@ wikilive::utils::Expected<std::string> executeRequest(
     }
 
     return responseBody;
+}
+
+std::string sanitizeFilename(const std::string& value) {
+    std::string result;
+    for (const unsigned char ch : value) {
+        if (std::isalnum(ch) || ch == '.' || ch == '_' || ch == '-') {
+            result.push_back(static_cast<char>(ch));
+        }
+    }
+    return result.empty() ? std::string("upload.bin") : result;
+}
+
+std::string buildMultipartBody(
+    const std::string& boundary,
+    const std::string& filename,
+    const std::string& mimeType,
+    const std::vector<unsigned char>& bytes) {
+    const auto safeFilename = sanitizeFilename(filename);
+    const auto safeMimeType = mimeType.empty() ? std::string("application/octet-stream") : mimeType;
+
+    std::string body;
+    body.reserve(bytes.size() + 512);
+
+    body += "--" + boundary + "\r\n";
+    body += "Content-Disposition: form-data; name=\"file\"; filename=\"" + safeFilename + "\"\r\n";
+    body += "Content-Type: " + safeMimeType + "\r\n\r\n";
+    body.append(reinterpret_cast<const char*>(bytes.data()), bytes.size());
+    body += "\r\n--" + boundary + "--\r\n";
+
+    return body;
 }
 
 wikilive::utils::Expected<json> parseResponseJson(const std::string& responseBody) {
@@ -660,6 +691,101 @@ utils::Expected<std::vector<MwsFieldMeta>> MwsClient::getFieldsForTable(
             }
 
             return parseFields(response.value());
+        },
+        options_.retryAttempts,
+        options_.retryBaseDelayMs);
+}
+
+
+utils::Expected<MwsUploadedAttachment> MwsClient::uploadAttachmentForField(
+    const std::string& tableId,
+    const std::string& recordId,
+    const std::string& fieldId,
+    const std::string& filename,
+    const std::string& mimeType,
+    const std::vector<unsigned char>& bytes) {
+    return retryPolicy_.run(
+        [this, &tableId, &recordId, &fieldId, &filename, &mimeType, &bytes]() -> utils::Expected<MwsUploadedAttachment> {
+            if (token_.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidConfig,
+                    "MWS client is missing MWS_TOKEN in .env.",
+                    500,
+                    false));
+            }
+
+            if (tableId.empty() || recordId.empty() || fieldId.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "tableId, recordId and fieldId must not be empty for MWS attachment upload",
+                    400,
+                    false));
+            }
+
+            if (bytes.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "Attachment content must not be empty",
+                    400,
+                    false));
+            }
+
+            const std::string boundary = "----WikiLiveMwsBoundary7MA4YWxkTrZu0gW";
+            const std::string body = buildMultipartBody(boundary, filename, mimeType, bytes);
+
+            const auto path =
+                "/fusion/v1/datasheets/" + urlEncode(tableId) +
+                "/attachments?recordId=" + urlEncode(recordId) +
+                "&fieldId=" + urlEncode(fieldId);
+
+            const auto response = executeRequest(
+                "POST",
+                toWide(path),
+                token_,
+                options_.requestTimeoutMs,
+                body,
+                "multipart/form-data; boundary=" + boundary);
+
+            if (!response) {
+                return std::unexpected(response.error());
+            }
+
+            const auto parsed = parseResponseJson(response.value());
+            if (!parsed) {
+                return std::unexpected(parsed.error());
+            }
+
+            if (!parsed->contains("data") || !(*parsed)["data"].is_object()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::MwsApiError,
+                    "MWS attachment upload response does not contain data object",
+                    502,
+                    false));
+            }
+
+            const auto& data = (*parsed)["data"];
+            MwsUploadedAttachment result;
+            result.token = data.value("token", std::string{});
+            result.name = data.value("name", filename);
+            result.mimeType = data.value("mimeType", mimeType);
+            result.bucket = data.value("bucket", std::string{});
+            result.size = data.contains("size") && data["size"].is_number_unsigned()
+                ? static_cast<std::size_t>(data["size"].get<unsigned long long>())
+                : static_cast<std::size_t>(bytes.size());
+
+            const auto rawUrl = data.value("url", std::string{});
+            result.url = makeAbsoluteTablesUrl(rawUrl);
+            result.isImage = result.mimeType.rfind("image/", 0) == 0;
+
+            if (result.token.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::MwsApiError,
+                    "MWS attachment upload did not return token",
+                    502,
+                    false));
+            }
+
+            return result;
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);

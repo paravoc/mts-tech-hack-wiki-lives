@@ -936,23 +936,37 @@ if (mwsCustomAdd) {
             reader.onload = async () => {
               try {
                 const dataUrl = reader.result || "";
-                const uploadResponse = await commentApiRequest("/api/uploads", {
-                  method: "POST",
-                  timeoutMs: 45000,
-                  body: JSON.stringify({ filename: file.name, dataUrl, mimeType: file.type })
-                });
-                const url = uploadResponse && (uploadResponse.url || (uploadResponse.item && uploadResponse.item.url)) || "";
-                if (!url) {
-                  throw new Error("Upload failed");
-                }
-                const next = existing.concat([{
-                  url,
-                  name: file.name,
-                  mimeType: file.type || "",
-                  resourceUrl: url,
-                  isImage: (file.type || "").indexOf("image/") === 0
-                }]);
-                persistMwsCell(block, recordId, fieldName, next, null);
+const config = parseMwsConfig(block);
+if (!config || !config.tableId) {
+  throw new Error("Не удалось определить tableId для загрузки вложения");
+}
+
+const uploadResponse = await commentApiRequest("/api/uploads", {
+  method: "POST",
+  timeoutMs: 45000,
+  body: JSON.stringify({
+    filename: file.name,
+    dataUrl,
+    mimeType: file.type,
+    tableId: config.tableId || "",
+    viewId: config.viewId || "",
+    recordId,
+    fieldName
+  })
+});
+
+const token = uploadResponse && (uploadResponse.token || (uploadResponse.item && uploadResponse.item.token)) || "";
+if (!token) {
+  throw new Error("MWS attachment upload did not return token");
+}
+
+// Файл уже добавлен в ячейку самим MWS attachment endpoint.
+// Просто перегружаем блок, без persistMwsCell(...)
+await hydrateMwsBlock(block, { force: true });
+
+if (typeof scheduleCommentDocumentSave === "function" && typeof getCurrentCommentActor === "function") {
+  scheduleCommentDocumentSave("Добавлено вложение MWS", getCurrentCommentActor().id);
+}
               } catch (error) {
                 console.warn("Failed to upload attachment", error);
                 renderMwsBlockError(block, "Не удалось загрузить вложение");
