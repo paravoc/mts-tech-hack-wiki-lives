@@ -1316,6 +1316,36 @@ __CURSOR_ROOT_VARIABLES__
               background: #f6f8fb;
             }
 
+            .slash-item.is-selected {
+              background: #f6f8fb;
+            }
+
+            .slash-item.is-current {
+              background: #fff4f6;
+            }
+
+            .slash-item.is-current .slash-item__icon {
+              border-color: #ffccd8;
+              color: #ff0032;
+              background: #ffffff;
+            }
+
+            .slash-item__label {
+              flex: 1;
+              min-width: 0;
+            }
+
+            .slash-item__badge {
+              flex: none;
+              padding: 2px 6px;
+              border-radius: 999px;
+              background: #fff4f6;
+              color: #ff0032;
+              font-size: 10px;
+              font-weight: 700;
+              line-height: 1.2;
+            }
+
             .slash-item__icon {
               width: 20px;
               height: 20px;
@@ -2384,6 +2414,72 @@ function resetBodyFontSizeState() {
               { icon: "``", label: "Цитата", queries: ["цитата"], kind: "block", value: "blockquote" },
               { icon: "▣", label: "Изображение", queries: ["изображение", "фото"], kind: "stub", value: "image" }
             ];
+
+            let slashMenuIndex = 0;
+
+function normalizeSlashQuery(value) {
+  return String(value || "")
+    .replace(/^\/+/, "")
+    .trim()
+    .toLowerCase();
+}
+
+function getCurrentSlashKind() {
+  const tag = getCurrentBlockTag();
+
+  if (tag === "p") return { kind: "block", value: "p" };
+  if (tag === "h1") return { kind: "block", value: "h1" };
+  if (tag === "h2") return { kind: "block", value: "h2" };
+  if (tag === "h3") return { kind: "block", value: "h3" };
+  if (tag === "blockquote") return { kind: "block", value: "blockquote" };
+  if (tag === "pre") return { kind: "block", value: "pre" };
+  if (tag === "ul") return { kind: "list", value: "ul" };
+  if (tag === "ol") return { kind: "list", value: "ol" };
+
+  return { kind: "block", value: "p" };
+}
+
+function matchesSlashItem(item, query) {
+  if (!query) {
+    return true;
+  }
+
+  const label = String(item.label || "").toLowerCase();
+  const aliases = Array.isArray(item.queries) ? item.queries : [];
+
+  return (
+    label.includes(query) ||
+    aliases.some((value) => String(value).toLowerCase().includes(query))
+  );
+}
+
+function getSlashMenuItems() {
+  try {
+    return JSON.parse(slashMenu.dataset.items || "[]");
+  } catch (error) {
+    return [];
+  }
+}
+
+function moveSlashMenuSelection(step) {
+  const items = getSlashMenuItems();
+  if (!items.length) {
+    return;
+  }
+
+  slashMenuIndex = (slashMenuIndex + step + items.length) % items.length;
+  renderSlashMenu(items);
+}
+
+function applySelectedSlashItem() {
+  const items = getSlashMenuItems();
+  if (!items.length) {
+    return;
+  }
+
+  const item = items[slashMenuIndex] || items[0];
+  applySlashItem(item);
+}
 
             function setLoadingState() {
               loadingScreen.classList.remove("is-hidden");
@@ -4072,53 +4168,59 @@ function resetBodyFontSizeState() {
             }
 
             function renderSlashMenu(items) {
-              slashMenu.innerHTML = items.map((item, index) => `
-                <div class="slash-item" data-index="${index}">
-                  <span class="slash-item__icon">${item.icon}</span>
-                  <span>${item.label}</span>
-                </div>
-              `).join("");
-              slashMenu.dataset.items = JSON.stringify(items);
-            }
+  const current = getCurrentSlashKind();
+
+  slashMenu.innerHTML = items.map((item, index) => {
+    const isSelected = index === slashMenuIndex;
+    const isCurrent = item.kind === current.kind && item.value === current.value;
+
+    return `
+      <div class="slash-item${isSelected ? " is-selected" : ""}${isCurrent ? " is-current" : ""}" data-index="${index}">
+        <span class="slash-item__icon">${item.icon}</span>
+        <span class="slash-item__label">${item.label}</span>
+        ${isCurrent ? '<span class="slash-item__badge">текущий</span>' : ""}
+      </div>
+    `;
+  }).join("");
+
+  slashMenu.dataset.items = JSON.stringify(items);
+}
 
             function hideSlashMenu() {
-              slashMenu.classList.remove("is-visible");
-            }
+  slashMenu.classList.remove("is-visible");
+  slashMenuIndex = 0;
+}
 
             function updateSlashMenu() {
-              const block = getCurrentBlock();
-              if (!block || !bodyEditor.contains(block)) {
-                hideSlashMenu();
-                return;
-              }
+  const block = getCurrentBlock();
+  if (!block || !bodyEditor.contains(block)) {
+    hideSlashMenu();
+    return;
+  }
 
-              const text = getBlockText(block);
-              if (!text.startsWith("/")) {
-                hideSlashMenu();
-                return;
-              }
+  const text = getBlockText(block);
+  if (!text.startsWith("/")) {
+    hideSlashMenu();
+    return;
+  }
 
-              const query = text.slice(1).toLowerCase();
-              const filtered = slashItems.filter((item) => {
-                if (!query) {
-                  return true;
-                }
-                return item.label.toLowerCase().includes(query) || item.queries.some((value) => value.includes(query));
-              });
+  const query = normalizeSlashQuery(text);
+  const filtered = slashItems.filter((item) => matchesSlashItem(item, query));
 
-              if (!filtered.length) {
-                hideSlashMenu();
-                return;
-              }
+  if (!filtered.length) {
+    hideSlashMenu();
+    return;
+  }
 
-              renderSlashMenu(filtered);
+  slashMenuIndex = Math.min(slashMenuIndex, Math.max(filtered.length - 1, 0));
+  renderSlashMenu(filtered);
 
-              const blockRect = block.getBoundingClientRect();
-              const canvasRect = editorCanvas.getBoundingClientRect();
-              slashMenu.style.left = Math.max(20, blockRect.left - canvasRect.left + editorCanvas.scrollLeft) + "px";
-              slashMenu.style.top = blockRect.bottom - canvasRect.top + editorCanvas.scrollTop + 10 + "px";
-              slashMenu.classList.add("is-visible");
-            }
+  const blockRect = block.getBoundingClientRect();
+  const canvasRect = editorCanvas.getBoundingClientRect();
+  slashMenu.style.left = Math.max(20, blockRect.left - canvasRect.left + editorCanvas.scrollLeft) + "px";
+  slashMenu.style.top = blockRect.bottom - canvasRect.top + editorCanvas.scrollTop + 10 + "px";
+  slashMenu.classList.add("is-visible");
+}
 
             function updateSelectionToolbar() {
               if (selectedImageBlock) {
@@ -4793,20 +4895,26 @@ function resetBodyFontSizeState() {
               updateActiveToolbarButtons();
             });
 
-            slashMenu.addEventListener("mousedown", (event) => event.preventDefault());
-            slashMenu.addEventListener("click", (event) => {
-              const item = event.target.closest(".slash-item");
-              if (!item) {
-                return;
-              }
-              const items = JSON.parse(slashMenu.dataset.items || "[]");
-              const selectedItem = items[Number(item.dataset.index)];
-              if (!selectedItem) {
-                hideSlashMenu();
-                return;
-              }
-              applySlashItem(selectedItem);
-            });
+            slashMenu.addEventListener("mousedown", (event) => {
+  const itemNode = event.target.closest(".slash-item");
+  if (!itemNode) {
+    event.preventDefault();
+    return;
+  }
+
+  event.preventDefault();
+  const index = Number(itemNode.dataset.index || 0);
+  const items = getSlashMenuItems();
+  const item = items[index];
+
+  if (!item) {
+    hideSlashMenu();
+    return;
+  }
+
+  slashMenuIndex = index;
+  applySlashItem(item);
+});
 
             setLoadingState();
             pinComponentFrame();

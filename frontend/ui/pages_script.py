@@ -404,7 +404,12 @@ def pages_script() -> str:
           document.head.appendChild(style);
         }
 
+
         let commentWorkspaceToken = 0;
+let remoteRefreshPending = false;
+let remoteRefreshTimer = 0;
+let commentUserIsTyping = false;
+let commentTypingIdleTimer = 0;
 
         function getActorPageStorageKey(actorId = currentCommentActorId) {
           return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
@@ -469,6 +474,27 @@ def pages_script() -> str:
           }
           placeCaretAtEnd(titleEditor);
         }
+
+        function markUserTyping() {
+  commentUserIsTyping = true;
+
+  if (commentTypingIdleTimer) {
+    window.clearTimeout(commentTypingIdleTimer);
+    commentTypingIdleTimer = 0;
+  }
+
+  commentTypingIdleTimer = window.setTimeout(() => {
+    commentUserIsTyping = false;
+    commentTypingIdleTimer = 0;
+
+    if (remoteRefreshPending) {
+      remoteRefreshPending = false;
+      refreshCurrentPageFromServer(true).catch((error) => {
+        console.warn("Failed to apply deferred remote refresh", error);
+      });
+    }
+  }, 1000);
+}
 
         function syncHeaderTitleFromEditor() {
   const normalizedTitle = normalizePageTitleText(titleEditor ? titleEditor.textContent : "");
@@ -724,18 +750,32 @@ def pages_script() -> str:
         }
 
         async function switchCommentPage(pageId, options = {}) {
-          if (!pageId) {
-            return null;
-          }
+  if (!pageId) {
+    return null;
+  }
 
-          const {
-            persist = true,
-            skipSave = false,
-            forceLoad = false,
-            anchorId = "",
-            discussionTargetId = "",
-            workspaceToken = commentWorkspaceToken,
-          } = options;
+  remoteRefreshPending = false;
+
+  if (remoteRefreshTimer) {
+    window.clearTimeout(remoteRefreshTimer);
+    remoteRefreshTimer = 0;
+  }
+
+  if (commentTypingIdleTimer) {
+    window.clearTimeout(commentTypingIdleTimer);
+    commentTypingIdleTimer = 0;
+  }
+
+  commentUserIsTyping = false;
+
+  const {
+    persist = true,
+    skipSave = false,
+    forceLoad = false,
+    anchorId = "",
+    discussionTargetId = "",
+    workspaceToken = commentWorkspaceToken,
+  } = options;
 
           if (workspaceToken !== commentWorkspaceToken) {
             return null;
@@ -1024,8 +1064,25 @@ commentPresencePeople = [];
                 return;
               }
               if (payload.event === "page.updated") {
-                return;
-              }
+  if (commentUserIsTyping) {
+    remoteRefreshPending = true;
+    return;
+  }
+
+  if (remoteRefreshTimer) {
+    window.clearTimeout(remoteRefreshTimer);
+    remoteRefreshTimer = 0;
+  }
+
+  remoteRefreshTimer = window.setTimeout(() => {
+    remoteRefreshTimer = 0;
+    refreshCurrentPageFromServer(true).catch((error) => {
+      console.warn("Failed to refresh page from socket", error);
+    });
+  }, 250);
+
+  return;
+}
               if (payload.event === "page.deleted") {
                 ensureActorPage(true).catch((error) => console.warn("Failed to recover after page delete", error));
               }
@@ -1420,9 +1477,10 @@ function initializePagesWorkspace() {
             });
 
             titleEditor.addEventListener("input", () => {
-              syncHeaderTitleFromEditor();
-              scheduleCommentDocumentSave("Изменено название страницы", getCurrentCommentActor().id);
-            });
+  markUserTyping();
+  syncHeaderTitleFromEditor();
+  scheduleCommentDocumentSave("Изменено название страницы", getCurrentCommentActor().id);
+});
 
             titleEditor.addEventListener("blur", () => {
               const normalizedTitle = normalizePageTitleText(titleEditor.textContent);
@@ -1430,6 +1488,12 @@ function initializePagesWorkspace() {
               syncHeaderTitleFromEditor();
             });
           }
+
+          if (bodyEditor) {
+  bodyEditor.addEventListener("input", () => {
+    markUserTyping();
+  });
+}
 
           document.addEventListener("click", (event) => {
             if (pagesSwitcher && !pagesSwitcher.contains(event.target)) {
