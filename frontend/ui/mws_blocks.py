@@ -272,7 +272,81 @@ window.currentMwsContext = window.currentMwsContext || null;
             return record.recordId || "Без названия";
           }
           function getPresetByKey(key) { return (mwsState.presets || []).find((preset) => preset.key === key) || null; }
-         function parseMwsLink(value) {
+         
+          
+          const MWS_CUSTOM_PRESETS_STORAGE_KEY = "wikilive-mws-custom-presets";
+
+function loadSavedCustomMwsPresets() {
+  try {
+    const raw = window.localStorage.getItem(MWS_CUSTOM_PRESETS_STORAGE_KEY);
+    if (!raw) {
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .filter((preset) => preset && preset.tableId)
+      .map((preset) => ({
+        key: preset.key || `custom-${preset.tableId}-${preset.viewId || "default"}`,
+        label: preset.label || `Таблица ${String(preset.tableId).slice(0, 6)}`,
+        role: preset.role || "data",
+        tableId: preset.tableId,
+        viewId: preset.viewId || ""
+      }));
+  } catch (error) {
+    console.warn("Failed to load saved custom MWS presets", error);
+    return [];
+  }
+}
+
+function saveCustomMwsPresets(presets) {
+  try {
+    const normalized = (Array.isArray(presets) ? presets : [])
+      .filter((preset) => preset && preset.tableId)
+      .map((preset) => ({
+        key: preset.key || `custom-${preset.tableId}-${preset.viewId || "default"}`,
+        label: preset.label || `Таблица ${String(preset.tableId).slice(0, 6)}`,
+        role: preset.role || "data",
+        tableId: preset.tableId,
+        viewId: preset.viewId || ""
+      }));
+    window.localStorage.setItem(MWS_CUSTOM_PRESETS_STORAGE_KEY, JSON.stringify(normalized));
+  } catch (error) {
+    console.warn("Failed to save custom MWS presets", error);
+  }
+}
+
+function mergeMwsPresets(serverPresets, customPresets) {
+  const result = [];
+  const seen = new Set();
+
+  [...(Array.isArray(serverPresets) ? serverPresets : []), ...(Array.isArray(customPresets) ? customPresets : [])]
+    .forEach((preset) => {
+      if (!preset || !preset.tableId) {
+        return;
+      }
+      const key = `${preset.tableId}::${preset.viewId || ""}`;
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      result.push({
+        key: preset.key || `custom-${preset.tableId}-${preset.viewId || "default"}`,
+        label: preset.label || `Таблица ${String(preset.tableId).slice(0, 6)}`,
+        role: preset.role || "data",
+        tableId: preset.tableId,
+        viewId: preset.viewId || ""
+      });
+    });
+
+  return result;
+}
+
+          
+          
+          function parseMwsLink(value) {
   const raw = String(value || "").trim();
   if (!raw) {
     throw new Error("Вставьте ссылку на таблицу MWS");
@@ -321,19 +395,31 @@ function addCustomMwsPresetFromLink() {
     const parsed = parseMwsLink(mwsState.customLink);
     const label = String(mwsState.customLabel || "").trim() || `Таблица ${parsed.tableId.slice(0, 6)}`;
 
-    const existing = (mwsState.presets || []).find((preset) =>
-      preset.tableId === parsed.tableId && String(preset.viewId || "") === String(parsed.viewId || "")
+    const nextPreset = {
+      key: `custom-${parsed.tableId}-${parsed.viewId || "default"}`,
+      label,
+      role: "data",
+      tableId: parsed.tableId,
+      viewId: parsed.viewId || ""
+    };
+
+    const savedCustom = loadSavedCustomMwsPresets();
+    const existingSaved = savedCustom.find((preset) =>
+      preset.tableId === nextPreset.tableId &&
+      String(preset.viewId || "") === String(nextPreset.viewId || "")
     );
 
-    if (!existing) {
-      mwsState.presets.unshift({
-        key: `custom-${parsed.tableId}-${parsed.viewId || "default"}`,
-        label,
-        role: "data",
-        tableId: parsed.tableId,
-        viewId: parsed.viewId || ""
-      });
-    }
+    const nextCustomPresets = existingSaved
+      ? savedCustom.map((preset) =>
+          preset.tableId === nextPreset.tableId &&
+          String(preset.viewId || "") === String(nextPreset.viewId || "")
+            ? { ...preset, label: nextPreset.label }
+            : preset
+        )
+      : [nextPreset, ...savedCustom];
+
+    saveCustomMwsPresets(nextCustomPresets);
+    mwsState.presets = mergeMwsPresets(mwsState.presets, nextCustomPresets);
 
     mwsState.tableId = parsed.tableId;
     mwsState.viewId = parsed.viewId || "";
@@ -363,7 +449,9 @@ function addCustomMwsPresetFromLink() {
               const payload = await commentApiRequest(`/api/mws/insert-options${query ? "?" + query : ""}`, { timeoutMs: 30000 });
               console.log("MWS insert options payload", payload);
               console.log("MWS presets", payload.tablePresets);
-              mwsState.presets = Array.isArray(payload.tablePresets) ? payload.tablePresets : [];
+              const serverPresets = Array.isArray(payload.tablePresets) ? payload.tablePresets : [];
+                const savedCustomPresets = loadSavedCustomMwsPresets();
+                mwsState.presets = mergeMwsPresets(serverPresets, savedCustomPresets);
               mwsState.tableId = payload.tableId || tableId || "";
               mwsState.viewId = payload.viewId || viewId || "";
               mwsState.tableLabel = payload.activeTable && payload.activeTable.label ? payload.activeTable.label : ((mwsState.presets[0] && mwsState.presets[0].label) || "Живая таблица MWS");
