@@ -252,15 +252,19 @@ window.currentMwsContext = window.currentMwsContext || null;
             return rows || cols ? `${label} · ${rows || 0}×${cols || 0}` : label;
           }
           function canonicalizeMwsBlockElement(block) {
-            const config = parseMwsConfig(block);
-            if (!config) { return; }
-            persistMwsConfig(block, config);
-            block.className = "mws-live-block";
-            block.contentEditable = "false";
-            block.dataset.kind = "mws-grid";
-            block.dataset.commentObject = "1";
-            block.innerHTML = `<div class="mws-live-block__persisted"><span class="mws-live-block__persisted-icon">MWS</span><div class="mws-live-block__persisted-meta"><div class="mws-live-block__persisted-title">${safeHtml(config.label || config.tableLabel || "Живая таблица MWS")}</div><div class="mws-live-block__persisted-subtitle">${safeHtml(summarizeMwsConfig(config))}</div></div></div>`;
-          }
+  const config = parseMwsConfig(block);
+  if (!config) { return; }
+
+  persistMwsConfig(block, config);
+  block.className = "mws-live-block";
+  block.contentEditable = "false";
+  block.dataset.kind = "mws-grid";
+  block.dataset.commentObject = "1";
+
+  // ВАЖНО:
+  // не затираем innerHTML persisted-плейсхолдером,
+  // иначе пропадают таблица и кнопка "Обновить".
+}
           window.wikiliveCanonicalizeMwsBlocksRoot = function(root) { if (!root || typeof root.querySelectorAll !== "function") { return root; } root.querySelectorAll(".mws-live-block").forEach((block) => canonicalizeMwsBlockElement(block)); return root; };
           window.wikiliveCanonicalizeMwsBlocksHtml = function(html) { const root = document.createElement("div"); root.innerHTML = html || ""; window.wikiliveCanonicalizeMwsBlocksRoot(root); return root.innerHTML; };
           window.wikiliveGetSerializableEditorHtml = function(rootElement = bodyEditor) { if (!rootElement) { return ""; } const clone = rootElement.cloneNode(true); window.wikiliveCanonicalizeMwsBlocksRoot(clone); return clone.innerHTML; };
@@ -450,8 +454,8 @@ function addCustomMwsPresetFromLink() {
               console.log("MWS insert options payload", payload);
               console.log("MWS presets", payload.tablePresets);
               const serverPresets = Array.isArray(payload.tablePresets) ? payload.tablePresets : [];
-                const savedCustomPresets = loadSavedCustomMwsPresets();
-                mwsState.presets = mergeMwsPresets(serverPresets, savedCustomPresets);
+            const savedCustomPresets = loadSavedCustomMwsPresets();
+            mwsState.presets = mergeMwsPresets(serverPresets, savedCustomPresets);
               mwsState.tableId = payload.tableId || tableId || "";
               mwsState.viewId = payload.viewId || viewId || "";
               mwsState.tableLabel = payload.activeTable && payload.activeTable.label ? payload.activeTable.label : ((mwsState.presets[0] && mwsState.presets[0].label) || "Живая таблица MWS");
@@ -786,13 +790,38 @@ if (mwsCustomLabel && mwsCustomLabel.value !== mwsState.customLabel) {
               };
             }).filter(Boolean);
           }
-          function renderMwsGrid(block, payload) {
-            const config = parseMwsConfig(block);
-            if (!config) { return; }
-            const records = Array.isArray(payload.records) ? payload.records : [];
-            const fieldNames = Array.isArray(payload.fieldNames) ? payload.fieldNames : (config.fieldNames || []);
-            const title = payload.activeTable && payload.activeTable.label ? payload.activeTable.label : (config.label || config.tableLabel || "Живая таблица MWS");
-            block.innerHTML = `<div class="mws-live-block__head"><button class="mws-live-block__drag" type="button" data-mws-drag="1" aria-label="Переместить блок">⋮⋮</button><div class="mws-live-block__meta"><div class="mws-live-block__title">${safeHtml(title)}</div><div class="mws-live-block__subtitle"><span class="mws-live-block__chip">MWS live</span><span>${safeHtml(records.length + " строк · " + fieldNames.length + " полей")}</span></div></div><button class="mws-live-block__refresh" type="button" data-mws-refresh="1">Обновить</button></div><div class="mws-live-block__body">${
+
+          function buildMwsRenderSignature(payload, config) {
+  const title = payload && payload.activeTable && payload.activeTable.label
+    ? payload.activeTable.label
+    : (config && (config.label || config.tableLabel || "Живая таблица MWS"));
+
+  const fieldNames = Array.isArray(payload && payload.fieldNames)
+    ? payload.fieldNames
+    : (config && Array.isArray(config.fieldNames) ? config.fieldNames : []);
+
+  const records = Array.isArray(payload && payload.records) ? payload.records : [];
+
+  return JSON.stringify({
+    title,
+    fieldNames,
+    records
+  });
+}
+
+function renderMwsGrid(block, payload) {
+  const config = parseMwsConfig(block);
+  if (!config) { return; }
+
+  const nextSignature = buildMwsRenderSignature(payload, config);
+  const currentSignature = block.dataset.mwsRenderSignature || "";
+  if (currentSignature === nextSignature) {
+    return;
+  }
+
+  const records = Array.isArray(payload.records) ? payload.records : [];
+  const fieldNames = Array.isArray(payload.fieldNames) ? payload.fieldNames : (config.fieldNames || []);
+  const title = payload.activeTable && payload.activeTable.label ? payload.activeTable.label : (config.label || config.tableLabel || "Живая таблица MWS");            block.innerHTML = `<div class="mws-live-block__head"><button class="mws-live-block__drag" type="button" data-mws-drag="1" aria-label="Переместить блок">⋮⋮</button><div class="mws-live-block__meta"><div class="mws-live-block__title">${safeHtml(title)}</div><div class="mws-live-block__subtitle"><span class="mws-live-block__chip">MWS live</span><span>${safeHtml(records.length + " строк · " + fieldNames.length + " полей")}</span></div></div><button class="mws-live-block__refresh" type="button" data-mws-refresh="1">Обновить</button></div><div class="mws-live-block__body">${
               records.length && fieldNames.length
                 ? `<div class="mws-live-block__table-wrap"><table class="mws-live-block__table"><thead><tr><th>Строка</th>${fieldNames.map((fieldName) => `<th>${safeHtml(fieldName)}</th>`).join("")}</tr></thead><tbody>${records.map((record) => {
                     const rowLabel = inferRecordLabel(record, fieldNames);
@@ -825,8 +854,8 @@ if (mwsCustomLabel && mwsCustomLabel.value !== mwsState.customLabel) {
                   }).join("")}</tbody></table></div>`
                 : `<div class="mws-live-block__status">Нет данных для выбранного диапазона. Измените набор строк или полей.</div>`
             }</div>`;
-            persistMwsConfig(block, { ...config, label: title, tableLabel: title, fieldNames });
-          }
+persistMwsConfig(block, { ...config, label: title, tableLabel: title, fieldNames });
+block.dataset.mwsRenderSignature = nextSignature;          }
           async function hydrateMwsBlock(block, options = {}) {
             const config = parseMwsConfig(block);
             if (!config || !config.tableId || !config.recordIds.length || !config.fieldNames.length) { renderMwsBlockError(block, "У блока MWS не хватает параметров диапазона"); return null; }
@@ -900,7 +929,6 @@ if (mwsCustomLabel && mwsCustomLabel.value !== mwsState.customLabel) {
             updateSelectionToolbar();
             updateBlockHandleFromSelection();
             showTooltip("Живая таблица MWS");
-            if (typeof scheduleCommentDocumentSave === "function" && typeof getCurrentCommentActor === "function") { scheduleCommentDocumentSave("Вставка данных из таблицы", getCurrentCommentActor().id); }
           }
           window.wikiliveHydrateMwsBlocks = function(force = false) {
             const blocks = Array.from(bodyEditor.querySelectorAll(".mws-live-block"));
@@ -1076,8 +1104,9 @@ if (typeof scheduleCommentDocumentSave === "function" && typeof getCurrentCommen
             reader.readAsDataURL(file);
           });
           document.addEventListener("click", (event) => { if (!event.target.closest(".mws-live-block")) { clearSelectedMwsBlock(); } });
-          document.addEventListener("wikilive:page-ready", () => { window.requestAnimationFrame(() => window.wikiliveHydrateMwsBlocks(true)); });
-          window.setInterval(() => { if (!document.hidden) { window.wikiliveHydrateMwsBlocks(false); } }, 8000);
+          document.addEventListener("wikilive:page-ready", () => {
+  window.requestAnimationFrame(() => window.wikiliveHydrateMwsBlocks(true));
+});
         })();
         """
     ).strip(),
