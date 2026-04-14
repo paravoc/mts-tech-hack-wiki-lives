@@ -1832,6 +1832,7 @@ function seedCommentsDemoDocumentIfNeeded() {
   renderOutline();
 }
 
+
 function getCommentableTargets() {
   const directTargets = Array.from(document.querySelectorAll("[data-comment-target-id]")).filter((node) => {
     return node instanceof HTMLElement && (bodyEditor.contains(node) || titleEditor.contains(node));
