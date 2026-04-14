@@ -272,7 +272,7 @@ window.currentMwsContext = window.currentMwsContext || null;
             return record.recordId || "Без названия";
           }
           function getPresetByKey(key) { return (mwsState.presets || []).find((preset) => preset.key === key) || null; }
-          function parseMwsLink(value) {
+         function parseMwsLink(value) {
   const raw = String(value || "").trim();
   if (!raw) {
     throw new Error("Вставьте ссылку на таблицу MWS");
@@ -285,18 +285,29 @@ window.currentMwsContext = window.currentMwsContext || null;
     throw new Error("Ссылка должна быть полной, начиная с https://");
   }
 
-  const tableId =
+  const parts = url.pathname.split("/").filter(Boolean);
+
+  let tableId =
     url.searchParams.get("tableId") ||
     url.searchParams.get("table") ||
-    (() => {
-      const parts = url.pathname.split("/").filter(Boolean);
-      return parts.length ? parts[parts.length - 1] : "";
-    })();
+    "";
 
-  const viewId =
+  let viewId =
     url.searchParams.get("viewId") ||
     url.searchParams.get("view") ||
     "";
+
+  const workbenchIndex = parts.findIndex((part) => part === "workbench");
+  if (!tableId && workbenchIndex !== -1) {
+    tableId = parts[workbenchIndex + 1] || "";
+    if (!viewId) {
+      viewId = parts[workbenchIndex + 2] || "";
+    }
+  }
+
+  if (!tableId && parts.length) {
+    tableId = parts[parts.length - 1] || "";
+  }
 
   if (!tableId) {
     throw new Error("Не удалось определить tableId из ссылки");

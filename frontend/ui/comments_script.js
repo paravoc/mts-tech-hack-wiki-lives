@@ -357,6 +357,19 @@ function getCurrentCommentActor() {
   return getCommentUser(currentCommentActorId || "ivan");
 }
 
+function canCurrentActorComment() {
+  if (commentAccessMode !== "owner_only") {
+    return true;
+  }
+
+  const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId);
+  if (!currentPage || !currentPage.ownerId) {
+    return false;
+  }
+
+  return normalizeActorId(currentPage.ownerId) === normalizeActorId(currentCommentActorId || "viewer");
+}
+
 function getCurrentCommentPageStorageKey(actorId = currentCommentActorId) {
   return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
 }
@@ -2549,9 +2562,12 @@ function renderReplyPill(thread) {
 
 function updateComposerState() {
   const hasText = !!commentsComposerInput.value.trim();
-  commentsComposerSend.disabled = !commentOpenTargetId || !hasText;
+  const canComment = canCurrentActorComment();
+
+  commentsComposerSend.disabled = !commentOpenTargetId || !hasText || !canComment;
+
   if (commentsComposerAi) {
-    commentsComposerAi.disabled = !commentOpenTargetId || !hasText || commentsComposerInput.disabled;
+    commentsComposerAi.disabled = !commentOpenTargetId || !hasText || commentsComposerInput.disabled || !canComment;
   }
 }
 
@@ -2734,11 +2750,17 @@ function renderCommentsPanel() {
   }
   if (commentsComposerInput) {
   const paused = thread.status === "paused";
-  commentsComposerInput.disabled = paused;
-  commentsComposerInput.placeholder = paused ? "Обсуждение приостановлено" : "Новый комментарий";
+  const canComment = canCurrentActorComment();
+  commentsComposerInput.disabled = paused || !canComment;
+  commentsComposerInput.placeholder = paused
+    ? "Обсуждение приостановлено"
+    : (canComment ? "Новый комментарий" : "Комментарии доступны только создателю страницы");
 }
-if (commentsComposerAi) {
-  commentsComposerAi.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
+if (commentsComposerSend) {
+  commentsComposerSend.disabled =
+    thread.status === "paused" ||
+    !commentsComposerInput.value.trim() ||
+    !canCurrentActorComment();
 }
 if (commentsComposerSend) {
   commentsComposerSend.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
@@ -2942,6 +2964,10 @@ async function addCommentToThread() {
   if (!commentOpenTargetId) {
     return;
   }
+  if (!canCurrentActorComment()) {
+  updateComposerState();
+  return;
+}
   const raw = commentsComposerInput.value.trim();
   if (!raw) {
     updateComposerState();
