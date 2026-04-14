@@ -19,6 +19,197 @@
 
 namespace {
 
+    std::string jsonValueToString(const nlohmann::json& value) {
+        if (value.is_null()) {
+            return {};
+        }
+        if (value.is_string()) {
+            return value.get<std::string>();
+        }
+        if (value.is_boolean()) {
+            return value.get<bool>() ? "true" : "false";
+        }
+        if (value.is_number_integer()) {
+            return std::to_string(value.get<long long>());
+        }
+        if (value.is_number_unsigned()) {
+            return std::to_string(value.get<unsigned long long>());
+        }
+        if (value.is_number_float()) {
+            std::ostringstream stream;
+            stream << value.get<double>();
+            return stream.str();
+        }
+        if (value.is_array()) {
+            std::string result;
+            bool first = true;
+            for (const auto& item : value) {
+                const auto renderedItem = jsonValueToString(item);
+                if (renderedItem.empty()) {
+                    continue;
+                }
+                if (!first) {
+                    result += ", ";
+                }
+                first = false;
+                result += renderedItem;
+            }
+            return first ? value.dump() : result;
+        }
+        if (value.is_object()) {
+            if (value.contains("name") && value["name"].is_string()) {
+                return value["name"].get<std::string>();
+            }
+            if (value.contains("url") && value["url"].is_string()) {
+                return value["url"].get<std::string>();
+            }
+            return value.dump();
+        }
+        return value.dump();
+    }
+
+    std::unordered_map<std::string, wikilive::api::MwsFieldMeta> buildFieldMetaMap(
+        const std::vector<wikilive::api::MwsFieldMeta>& fields) {
+        std::unordered_map<std::string, wikilive::api::MwsFieldMeta> result;
+        for (const auto& field : fields) {
+            if (!field.name.empty()) {
+                result[field.name] = field;
+            }
+        }
+        return result;
+    }
+
+    bool isReadOnlyFieldType(const std::string& type) {
+        return type == "Formula" ||
+            type == "AutoNumber" ||
+            type == "CreatedTime" ||
+            type == "LastModifiedTime" ||
+            type == "CreatedBy" ||
+            type == "LastModifiedBy" ||
+            type == "MagicLookUp" ||
+            type == "WorkDoc";
+    }
+
+    wikilive::utils::Expected<nlohmann::json> normalizeMwsFieldValue(
+        const wikilive::api::MwsFieldMeta& fieldMeta,
+        const nlohmann::json& rawValue) {
+        using wikilive::utils::ErrorCode;
+        const auto& type = fieldMeta.type;
+
+        if (isReadOnlyFieldType(type)) {
+            return std::unexpected(wikilive::utils::makeError(
+                ErrorCode::InvalidRequest,
+                "Поле \"" + fieldMeta.name + "\" типа " + type + " доступно только для чтения",
+                400,
+                false));
+        }
+
+        if (type == "SingleText" || type == "Text" || type == "URL" || type == "Phone" || type == "Email") {
+            if (rawValue.is_null()) {
+                return nlohmann::json(nullptr);
+            }
+            if (rawValue.is_string()) {
+                return rawValue;
+            }
+            return nlohmann::json(jsonValueToString(rawValue));
+        }
+
+        if (type == "Number" || type == "Currency" || type == "Percent" || type == "Rating") {
+            if (rawValue.is_null()) {
+                return nlohmann::json(nullptr);
+            }
+            if (rawValue.is_number()) {
+                return rawValue;
+            }
+            if (rawValue.is_string()) {
+                auto text = rawValue.get<std::string>();
+                for (auto& ch : text) {
+                    if (ch == ',') ch = '.';
+                }
+                try {
+                    size_t idx = 0;
+                    const double parsed = std::stod(text, &idx);
+                    if (idx == text.size()) {
+                        return nlohmann::json(parsed);
+                    }
+                }
+                catch (...) {
+                }
+            }
+            return std::unexpected(wikilive::utils::makeError(
+                ErrorCode::InvalidRequest,
+                "Поле \"" + fieldMeta.name + "\" должно быть числом",
+                400,
+                false));
+        }
+
+        if (type == "Checkbox") {
+            if (rawValue.is_boolean()) {
+                return rawValue;
+            }
+            if (rawValue.is_number_integer()) {
+                return nlohmann::json(rawValue.get<int>() != 0);
+            }
+            if (rawValue.is_string()) {
+                const auto value = rawValue.get<std::string>();
+                if (value == "true" || value == "1" || value == "yes" || value == "on") {
+                    return nlohmann::json(true);
+                }
+                if (value == "false" || value == "0" || value == "no" || value == "off" || value.empty()) {
+                    return nlohmann::json(false);
+                }
+            }
+            return std::unexpected(wikilive::utils::makeError(
+                ErrorCode::InvalidRequest,
+                "Поле \"" + fieldMeta.name + "\" должно быть checkbox/boolean",
+                400,
+                false));
+        }
+
+        if (type == "DateTime") {
+            if (rawValue.is_null()) {
+                return nlohmann::json(nullptr);
+            }
+            if (rawValue.is_string()) {
+                return rawValue;
+            }
+            return nlohmann::json(jsonValueToString(rawValue));
+        }
+
+        if (type == "SingleSelect") {
+            if (rawValue.is_null()) {
+                return nlohmann::json(nullptr);
+            }
+            std::string value = rawValue.is_string() ? rawValue.get<std::string>() : jsonValueToString(rawValue);
+            return nlohmann::json(value);
+        }
+
+        if (type == "MultiSelect") {
+            if (rawValue.is_null()) {
+                return nlohmann::json::array();
+            }
+            nlohmann::json result = nlohmann::json::array();
+            if (rawValue.is_array()) {
+                for (const auto& item : rawValue) {
+                    result.push_back(item.is_string() ? item.get<std::string>() : jsonValueToString(item));
+                }
+                return result;
+            }
+            result.push_back(rawValue.is_string() ? rawValue.get<std::string>() : jsonValueToString(rawValue));
+            return result;
+        }
+
+        if (type == "Member" || type == "OneWayLink" || type == "TwoWayLink" || type == "Attachment") {
+            return std::unexpected(wikilive::utils::makeError(
+                ErrorCode::InvalidRequest,
+                "Поле \"" + fieldMeta.name + "\" типа " + type + " пока редактируется только через отдельный UI",
+                400,
+                false));
+        }
+
+        return rawValue;
+    }
+
 std::string toJsonArray(const std::vector<std::string>& items) {
     std::string result = "[";
     bool first = true;
@@ -2567,6 +2758,12 @@ RouteResponse Router::updateMwsGrid(const std::string& payload) {
                 false));
         }
 
+        const auto fieldsMeta = mwsClient_->getFieldsForTable(resolvedTableId, resolvedViewId);
+        if (!fieldsMeta) {
+            return fail(fieldsMeta.error());
+        }
+        const auto fieldMetaMap = buildFieldMetaMap(fieldsMeta.value());
+
         std::vector<std::string> touchedRecordIds;
         for (const auto& update : parsed["updates"]) {
             if (!update.is_object()) {
@@ -2590,13 +2787,34 @@ RouteResponse Router::updateMwsGrid(const std::string& payload) {
                     false));
             }
 
+            nlohmann::json normalizedFields = nlohmann::json::object();
+
+            for (const auto& [fieldName, rawValue] : update["fields"].items()) {
+                const auto metaIt = fieldMetaMap.find(fieldName);
+                if (metaIt == fieldMetaMap.end()) {
+                    return fail(utils::makeError(
+                        utils::ErrorCode::InvalidRequest,
+                        "Не найдено мета-поле MWS: " + fieldName,
+                        400,
+                        false));
+                }
+
+                const auto normalized = normalizeMwsFieldValue(metaIt->second, rawValue);
+                if (!normalized) {
+                    return fail(normalized.error());
+                }
+
+                normalizedFields[fieldName] = normalized.value();
+            }
+
             nlohmann::json updatePayload = {
                 {"records", nlohmann::json::array({
                     {
                         {"recordId", recordId},
-                        {"fields", update["fields"]},
+                        {"fields", normalizedFields},
                     },
                 })},
+                {"fieldKey", "name"},
             };
 
             const auto result = mwsClient_->updateRecordForTable(

@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+#include <nlohmann/json.hpp>
 
 #include "src/api/retry_policy.h"
 #include "src/utils/errors.h"
@@ -23,6 +24,19 @@ struct MwsFieldValue {
     std::string resourceUrl;
     std::string mimeType;
     bool isImage = false;
+};
+
+struct MwsFieldOption {
+    std::string name;
+    std::string color;
+};
+
+struct MwsFieldMeta {
+    std::string id;
+    std::string name;
+    std::string type;
+    std::vector<MwsFieldOption> options;
+    nlohmann::json property;
 };
 
 struct MwsClientOptions {
@@ -46,6 +60,9 @@ public:
         const std::string& tableId,
         const std::string& recordId,
         const std::string& fieldName);
+    [[nodiscard]] utils::Expected<std::vector<MwsFieldMeta>> getFieldsForTable(
+        const std::string& tableId,
+        const std::string& viewId = "");
     [[nodiscard]] utils::Expected<std::string> createRecord(const std::string& payload);
     [[nodiscard]] utils::Expected<std::string> updateRecord(const std::string& recordId, const std::string& payload);
     [[nodiscard]] utils::Expected<std::string> updateRecordForTable(

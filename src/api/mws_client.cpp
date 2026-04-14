@@ -437,6 +437,68 @@ wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> parseRecords(co
     return records;
 }
 
+wikilive::utils::Expected<std::vector<wikilive::api::MwsFieldMeta>> parseFields(const std::string& responseBody) {
+    const auto parsed = parseResponseJson(responseBody);
+    if (!parsed) {
+        return std::unexpected(parsed.error());
+    }
+
+    if (!parsed->contains("data") || !(*parsed)["data"].is_object()) {
+        return std::unexpected(wikilive::utils::makeError(
+            wikilive::utils::ErrorCode::MwsApiError,
+            "MWS fields response does not contain a data object",
+            502,
+            false));
+    }
+
+    const auto& data = (*parsed)["data"];
+    if (!data.contains("fields") || !data["fields"].is_array()) {
+        return std::vector<wikilive::api::MwsFieldMeta>{};
+    }
+
+    std::vector<wikilive::api::MwsFieldMeta> fields;
+    for (const auto& item : data["fields"]) {
+        if (!item.is_object()) {
+            continue;
+        }
+
+        wikilive::api::MwsFieldMeta meta;
+        if (item.contains("id") && item["id"].is_string()) {
+            meta.id = item["id"].get<std::string>();
+        }
+        if (item.contains("name") && item["name"].is_string()) {
+            meta.name = item["name"].get<std::string>();
+        }
+        if (item.contains("type") && item["type"].is_string()) {
+            meta.type = item["type"].get<std::string>();
+        }
+        if (item.contains("property") && item["property"].is_object()) {
+            meta.property = item["property"];
+            if (meta.property.contains("options") && meta.property["options"].is_array()) {
+                for (const auto& option : meta.property["options"]) {
+                    if (!option.is_object()) {
+                        continue;
+                    }
+                    wikilive::api::MwsFieldOption parsedOption;
+                    if (option.contains("name") && option["name"].is_string()) {
+                        parsedOption.name = option["name"].get<std::string>();
+                    }
+                    if (option.contains("color") && option["color"].is_string()) {
+                        parsedOption.color = option["color"].get<std::string>();
+                    }
+                    if (!parsedOption.name.empty()) {
+                        meta.options.push_back(std::move(parsedOption));
+                    }
+                }
+            }
+        }
+
+        fields.push_back(std::move(meta));
+    }
+
+    return fields;
+}
+
 std::string appendViewParameter(const std::string& query, const std::string& viewId) {
     if (viewId.empty()) {
         return query;
@@ -558,6 +620,46 @@ utils::Expected<MwsFieldValue> MwsClient::getFieldValue(
     return retryPolicy_.run(
         [this, &tableId, &recordId, &fieldName]() {
             return getFieldValueOnce(tableId, recordId, fieldName);
+        },
+        options_.retryAttempts,
+        options_.retryBaseDelayMs);
+}
+
+utils::Expected<std::vector<MwsFieldMeta>> MwsClient::getFieldsForTable(
+    const std::string& tableId,
+    const std::string& viewId) {
+    const auto resolvedTableId = tableId.empty() ? tableId_ : tableId;
+    const auto resolvedViewId = viewId.empty() ? viewId_ : viewId;
+
+    return retryPolicy_.run(
+        [this, &resolvedTableId, &resolvedViewId]() -> utils::Expected<std::vector<MwsFieldMeta>> {
+            if (token_.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidConfig,
+                    "MWS client is missing MWS_TOKEN in .env.",
+                    500,
+                    false));
+            }
+
+            if (resolvedTableId.empty()) {
+                return std::unexpected(missingConfigurationError());
+            }
+
+            auto query = std::string{};
+            if (!resolvedViewId.empty()) {
+                query = appendViewParameter(query, resolvedViewId);
+            }
+
+            const auto path = query.empty()
+                ? "/fusion/v1/datasheets/" + urlEncode(resolvedTableId) + "/fields"
+                : "/fusion/v1/datasheets/" + urlEncode(resolvedTableId) + "/fields?" + query;
+
+            const auto response = executeRequest("GET", toWide(path), token_, options_.requestTimeoutMs);
+            if (!response) {
+                return std::unexpected(response.error());
+            }
+
+            return parseFields(response.value());
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);
