@@ -1,0 +1,15 @@
+FROM python:3.11-windowsservercore-ltsc2022
+
+WORKDIR C:\\app
+
+COPY . C:\\app
+
+RUN python -m pip install --upgrade pip
+RUN python -m pip install -r frontend\\requirements.txt
+
+ENV ENABLE_AI=false
+ENV PYTHONUNBUFFERED=1
+
+EXPOSE 3000 8501
+
+CMD powershell -Command "$ErrorActionPreference='Stop'; Start-Process -FilePath 'C:\\app\\out\\build\\x64-Debug\\wikilive_backend.exe'; python -m streamlit run frontend\\app.py --server.headless true --server.port 8501"

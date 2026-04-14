@@ -140,6 +140,21 @@ C:\Users\smidr\AppData\Local\Programs\Python\Python313\python.exe -m streamlit r
 - AI-кнопка для `suggest-insert`
 - архитектура, готовая к desktop-обертке
 
+## Docker (одна команда)
+
+Важно: текущий backend использует WinHTTP, поэтому контейнер запускается в **Windows containers**.
+Перед запуском убедитесь, что бинарник backend собран локально и лежит в `out/build/x64-Debug/wikilive_backend.exe`.
+
+Одна команда:
+
+```bash
+docker compose -f docker-compose.windows.yml up --build
+```
+
+После запуска:
+- Backend: http://127.0.0.1:3000
+- Frontend: http://127.0.0.1:8501
+
 ## Тесты
 
 Сборка тестов выполняется вместе с проектом. Запуск:

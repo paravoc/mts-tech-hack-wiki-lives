@@ -339,6 +339,12 @@ utils::VoidExpected HttpServer::start(const int port) {
             response->end(routeResponse.body);
             });
 
+        app.post("/api/ai/comments/fix", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.fixCommentText(body));
+                });
+            });
+
         app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
             const std::string actorId(request->getQuery("actorId"));
             writeResponse(response, router_.getPage(std::string(request->getParameter(0)), actorId));

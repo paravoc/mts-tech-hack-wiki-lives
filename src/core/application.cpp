@@ -236,7 +236,10 @@ bool Application::initialize(const char* envPath) {
         webSocketManager_.get(),
         std::move(tablePresets),
         std::move(userStorage),
-        authService_.get());
+        authService_.get(),
+        config_.aiBaseUrl,
+        config_.aiApiKey,
+        config_.aiModel);
 
     httpServer_ = std::make_unique<server::HttpServer>(*router_, webSocketManager_.get());
 

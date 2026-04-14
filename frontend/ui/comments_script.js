@@ -12,6 +12,7 @@ const commentsCloseButton = document.getElementById("commentsCloseButton");
 const commentsPauseButton = document.getElementById("commentsPauseButton");
 const commentsResolveButton = document.getElementById("commentsResolveButton");
 const commentsComposerInput = document.getElementById("commentsComposerInput");
+const commentsComposerAi = document.getElementById("commentsComposerAi");
 const commentsComposerSend = document.getElementById("commentsComposerSend");
 const commentsActorSelect = document.getElementById("commentsActorSelect");
 const commentsActorNote = document.getElementById("commentsActorNote");
@@ -2547,7 +2548,11 @@ function renderReplyPill(thread) {
 }
 
 function updateComposerState() {
-  commentsComposerSend.disabled = !commentOpenTargetId || !commentsComposerInput.value.trim();
+  const hasText = !!commentsComposerInput.value.trim();
+  commentsComposerSend.disabled = !commentOpenTargetId || !hasText;
+  if (commentsComposerAi) {
+    commentsComposerAi.disabled = !commentOpenTargetId || !hasText || commentsComposerInput.disabled;
+  }
 }
 
 function renderMentionDropdown() {
@@ -2728,13 +2733,16 @@ function renderCommentsPanel() {
     commentsResolveButton.disabled = !isOpen || thread.status === "paused";
   }
   if (commentsComposerInput) {
-    const paused = thread.status === "paused";
-    commentsComposerInput.disabled = paused;
-    commentsComposerInput.placeholder = paused ? "Обсуждение приостановлено" : "Новый комментарий";
-  }
-  if (commentsComposerSend) {
-    commentsComposerSend.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
-  }
+  const paused = thread.status === "paused";
+  commentsComposerInput.disabled = paused;
+  commentsComposerInput.placeholder = paused ? "Обсуждение приостановлено" : "Новый комментарий";
+}
+if (commentsComposerAi) {
+  commentsComposerAi.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
+}
+if (commentsComposerSend) {
+  commentsComposerSend.disabled = thread.status === "paused" || !commentsComposerInput.value.trim();
+}
 }
 
 async function openThreadForTarget(targetId, instant = false) {
@@ -2885,7 +2893,51 @@ async function togglePausedThread() {
   renderCommentsPanel();
   scheduleCommentAnchors();
 }
+async function fixCommentTextWithAi() {
+  if (!commentOpenTargetId) {
+    return;
+  }
 
+  const raw = commentsComposerInput.value.trim();
+  if (!raw) {
+    updateComposerState();
+    return;
+  }
+
+  const previousLabel = commentsComposerAi ? commentsComposerAi.textContent : "AI";
+
+  try {
+    if (commentsComposerAi) {
+      commentsComposerAi.disabled = true;
+      commentsComposerAi.textContent = "AI...";
+    }
+
+    const response = await commentApiRequest("/api/ai/comments/fix", {
+      method: "POST",
+      body: JSON.stringify({ text: raw }),
+      timeoutMs: 15000
+    });
+
+    const fixed = response && response.fixed
+      ? response.fixed
+      : response && response.data && response.data.fixed
+        ? response.data.fixed
+        : "";
+
+    if (fixed) {
+      commentsComposerInput.value = fixed;
+      commentsComposerInput.focus();
+      commentsComposerInput.setSelectionRange(fixed.length, fixed.length);
+    }
+  } catch (error) {
+    console.warn("Failed to fix comment text with AI", error);
+  } finally {
+    if (commentsComposerAi) {
+      commentsComposerAi.textContent = previousLabel;
+    }
+    updateComposerState();
+  }
+}
 async function addCommentToThread() {
   if (!commentOpenTargetId) {
     return;
@@ -3336,9 +3388,15 @@ function initializeCommentsSystem() {
       addCommentToThread();
     }
   });
-  commentsComposerSend.addEventListener("click", () => {
-    addCommentToThread().catch((error) => console.warn("Failed to add comment", error));
+  if (commentsComposerAi) {
+  commentsComposerAi.addEventListener("click", () => {
+    fixCommentTextWithAi().catch((error) => console.warn("Failed to fix comment text", error));
   });
+}
+
+commentsComposerSend.addEventListener("click", () => {
+  addCommentToThread().catch((error) => console.warn("Failed to add comment", error));
+});
 
   commentsMentionDropdown.addEventListener("mousedown", (event) => event.preventDefault());
   commentsMentionDropdown.addEventListener("click", (event) => {

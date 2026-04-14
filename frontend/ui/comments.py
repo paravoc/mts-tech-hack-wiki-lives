@@ -865,12 +865,12 @@ def comments_styles() -> str:
         }
 
         .comments-panel__composer-shell {
-          position: relative;
-          display: grid;
-          grid-template-columns: 1fr 28px;
-          gap: 8px;
-          align-items: end;
-        }
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 44px 28px;
+  gap: 8px;
+  align-items: end;
+}
 
         .comments-panel__composer-input {
           width: 100%;
@@ -892,6 +892,28 @@ def comments_styles() -> str:
           box-shadow: 0 0 0 3px rgba(139, 124, 255, 0.14);
         }
 
+        .comments-panel__composer-ai {
+  appearance: none;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #ddd6ff;
+  border-radius: 12px;
+  background: #f6f3ff;
+  color: var(--comment-accent-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.comments-panel__composer-ai:hover {
+  background: #efe9ff;
+}
+
+.comments-panel__composer-ai:disabled {
+  opacity: 0.5;
+}
         .comments-panel__composer-send {
           appearance: none;
           width: 28px;
@@ -1397,14 +1419,15 @@ def comments_markup() -> str:
               <button class="comments-panel__reply-cancel" id="commentsReplyCancel" type="button" aria-label="Отменить ответ">?</button>
             </div>
             <div class="comments-panel__composer-shell">
-              <div class="comments-mentions" id="commentsMentionDropdown"></div>
-              <textarea class="comments-panel__composer-input" id="commentsComposerInput" placeholder="Новый комментарий"></textarea>
-              <button class="comments-panel__composer-send" id="commentsComposerSend" type="button" aria-label="Отправить">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M14 2L2.8 7.2l4 1 1 4L14 2z"></path>
-                </svg>
-              </button>
-            </div>
+  <div class="comments-mentions" id="commentsMentionDropdown"></div>
+  <textarea class="comments-panel__composer-input" id="commentsComposerInput" placeholder="Новый комментарий"></textarea>
+  <button class="comments-panel__composer-ai" id="commentsComposerAi" type="button" aria-label="Исправить через AI">AI</button>
+  <button class="comments-panel__composer-send" id="commentsComposerSend" type="button" aria-label="Отправить">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 2L2.8 7.2l4 1 1 4L14 2z"></path>
+    </svg>
+  </button>
+</div>
           </div>
         </aside>
 

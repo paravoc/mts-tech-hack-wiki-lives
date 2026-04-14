@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  wikilive:
+    build:
+      context: .
+      dockerfile: Dockerfile.windows
+    ports:
+      - "3000:3000"
+      - "8501:8501"
+    environment:
+      ENABLE_AI: "false"
+      WIKILIVE_BACKEND_URL: "http://127.0.0.1:3000"

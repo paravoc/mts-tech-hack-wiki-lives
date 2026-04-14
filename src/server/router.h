@@ -53,23 +53,27 @@ public:
         RouteResponse setProjectAccess(const std::string& projectId, const std::string& payload);
 
 
-    Router(
-        services::PageService& pageService,
-        services::RenderService& renderService,
-        api::MwsClient* mwsClient,
-        services::ProjectService* projectService,
-        ai::AiService* aiService,
-        services::CollaborationService* collaborationService,
-        WebSocketManager* webSocketManager,
-        std::vector<MwsTablePreset> tablePresets,
-        std::unique_ptr<storage::LocalUserStorage> userStorage,
-        services::AuthService* authService);
+        Router(
+            services::PageService& pageService,
+            services::RenderService& renderService,
+            api::MwsClient* mwsClient,
+            services::ProjectService* projectService,
+            ai::AiService* aiService,
+            services::CollaborationService* collaborationService,
+            WebSocketManager* webSocketManager,
+            std::vector<MwsTablePreset> tablePresets,
+            std::unique_ptr<storage::LocalUserStorage> userStorage,
+            services::AuthService* authService,
+            std::string aiBaseUrl = {},
+            std::string aiApiKey = {},
+            std::string aiModel = {});
 
     RouteResponse downloadMwsAttachment(
         const std::string& tableId,
         const std::string& token,
         const std::string& path);
 
+    [[nodiscard]] RouteResponse fixCommentText(const std::string& payload);
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();
     [[nodiscard]] RouteResponse listPagesForActor(const std::string& actorId);
@@ -137,6 +141,9 @@ public:
  
 private:
     services::ProjectService* projectService_ = nullptr;
+    std::string aiBaseUrl_;
+    std::string aiApiKey_;
+    std::string aiModel_;
     [[nodiscard]] RouteResponse ok(const std::string& dataJson) const;
     [[nodiscard]] RouteResponse fail(const utils::Error& error) const;
     [[nodiscard]] RouteResponse created(const std::string& dataJson) const;
