@@ -471,13 +471,19 @@ def pages_script() -> str:
         }
 
         function syncHeaderTitleFromEditor() {
-          const normalizedTitle = normalizePageTitleText(titleEditor ? titleEditor.textContent : "");
-          if (docHeaderTitle) {
-            docHeaderTitle.textContent = normalizedTitle;
-          }
-          syncCurrentPageSnapshot({ title: normalizedTitle });
-          renderPagesSwitcher();
-        }
+  const normalizedTitle = normalizePageTitleText(titleEditor ? titleEditor.textContent : "");
+
+  if (titleEditor) {
+    titleEditor.style.removeProperty("font-size");
+    titleEditor.style.removeProperty("line-height");
+  }
+
+  if (docHeaderTitle) {
+    docHeaderTitle.textContent = normalizedTitle;
+  }
+  syncCurrentPageSnapshot({ title: normalizedTitle });
+  renderPagesSwitcher();
+}
 
         function closePagesSwitcher() {
           if (pagesSwitcher) {
@@ -1031,10 +1037,7 @@ commentPresencePeople = [];
             commentSocket = null;
             commentSocketPageId = "";
             commentSocketPresenceKey = "";
-            commentPresenceLoaded = false;
-commentPresencePageId = "";
-commentPresencePeople = [];
-renderPagePresence();
+            renderPagePresence();
             if (commentSocketReconnectTimer) {
               clearTimeout(commentSocketReconnectTimer);
             }

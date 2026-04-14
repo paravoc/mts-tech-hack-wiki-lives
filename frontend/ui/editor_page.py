@@ -2311,7 +2311,9 @@ __MWS_BLOCKS_STYLES__
             let hoveredBlock = null;
             let isHandleHovered = false;
             let activeMenuKey = null;
-            let pendingFontSize = "14px";
+            const BODY_DEFAULT_FONT_SIZE = "14px";
+            const TITLE_EDITOR_FONT_SIZE = "56px";
+            let pendingFontSize = BODY_DEFAULT_FONT_SIZE;
             let pendingLinkTarget = "";
             let hoveredLink = null;
             let ctrlPressed = false;
@@ -2319,6 +2321,21 @@ __MWS_BLOCKS_STYLES__
             let uploadState = null;
             let selectedImageBlock = null;
             let imageInteraction = null;
+
+            function isEditingTitle() {
+  return document.activeElement === titleEditor;
+}
+
+function enforceTitleEditorStyle() {
+  if (!titleEditor) return;
+  titleEditor.style.fontSize = TITLE_EDITOR_FONT_SIZE;
+  titleEditor.style.lineHeight = "1.08";
+}
+
+function resetBodyFontSizeState() {
+  pendingFontSize = BODY_DEFAULT_FONT_SIZE;
+  syncFontSizeControls(BODY_DEFAULT_FONT_SIZE);
+}
 
             function setCursorState(state) {
               if (!state) {
@@ -3730,15 +3747,16 @@ __MWS_BLOCKS_STYLES__
                 return;
               }
 
-              const range = selection.getRangeAt(0);
               if (selection.isCollapsed) {
-                const root = getActiveEditableRoot();
-                if (root === titleEditor) {
-                  titleEditor.style.fontSize = normalized;
-                }
-                syncFontSizeControls(normalized);
-                return;
-              }
+  const root = getActiveEditableRoot();
+  if (root === titleEditor) {
+    enforceTitleEditorStyle();
+    return;
+  }
+  pendingFontSize = normalized;
+  syncFontSizeControls(normalized);
+  return;
+}
 
               const startElement = range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer : range.startContainer.parentElement;
               const endElement = range.endContainer.nodeType === Node.ELEMENT_NODE ? range.endContainer : range.endContainer.parentElement;
@@ -4554,14 +4572,10 @@ __MWS_BLOCKS_STYLES__
                 updateSelectionToolbar();
               }
             });
-            bodyEditor.addEventListener("blur", () => {
-              window.setTimeout(() => {
-                restorePlaceholderIfEmpty();
-                hideSlashMenu();
-                updateActiveToolbarButtons();
-                updateSelectionToolbar();
-              }, 0);
-            });
+            titleEditor.addEventListener("blur", () => {
+  enforceTitleEditorStyle();
+  resetBodyFontSizeState();
+});
 
             bodyEditor.addEventListener("keydown", (event) => {
               if (uploadModal && uploadModal.classList.contains("is-visible") && event.key === "Escape") {
@@ -4597,21 +4611,19 @@ __MWS_BLOCKS_STYLES__
               }
             });
 
-            bodyEditor.addEventListener("input", () => {
-              renderOutline();
-              updateActiveToolbarButtons();
-              updateSlashMenu();
-              updateSelectionToolbar();
-              updateBlockHandleFromSelection();
-            });
+            titleEditor.addEventListener("input", () => {
+  enforceTitleEditorStyle();
+  renderOutline();
+  updateActiveToolbarButtons();
+});
 
-            bodyEditor.addEventListener("keyup", () => {
-              saveCurrentRange();
-              updateActiveToolbarButtons();
-              updateSlashMenu();
-              updateSelectionToolbar();
-              updateBlockHandleFromSelection();
-            });
+            titleEditor.addEventListener("keyup", () => {
+  saveCurrentRange();
+  enforceTitleEditorStyle();
+  renderOutline();
+  updateActiveToolbarButtons();
+  updateSelectionToolbar();
+});
 
             editorCanvas.addEventListener("scroll", () => {
               updateActiveToolbarButtons();
