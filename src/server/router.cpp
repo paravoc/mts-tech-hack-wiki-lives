@@ -2855,6 +2855,65 @@ RouteResponse Router::updateMwsGrid(const std::string& payload) {
     }
 }
 
+RouteResponse Router::downloadMwsAttachment(
+    const std::string& tableId,
+    const std::string& token,
+    const std::string& path) {
+    try {
+        if (mwsClient_ == nullptr) {
+            return fail(utils::makeError(
+                utils::ErrorCode::InvalidConfig,
+                "MWS client is not configured",
+                503,
+                false));
+        }
+
+        std::string mimeType;
+
+        if (!path.empty()) {
+            const auto result = mwsClient_->downloadAttachmentByPath(path, mimeType);
+            if (!result) {
+                return fail(result.error());
+            }
+
+            RouteResponse response;
+            response.statusCode = 200;
+            response.body = result.value();
+            response.contentType = mimeType.empty()
+                ? "application/octet-stream"
+                : mimeType;
+            return response;
+        }
+
+        if (!token.empty() && !tableId.empty()) {
+            const auto result = mwsClient_->downloadAttachment(tableId, token, mimeType);
+            if (!result) {
+                return fail(result.error());
+            }
+
+            RouteResponse response;
+            response.statusCode = 200;
+            response.body = result.value();
+            response.contentType = mimeType.empty()
+                ? "application/octet-stream"
+                : mimeType;
+            return response;
+        }
+
+        return fail(utils::makeError(
+            utils::ErrorCode::InvalidRequest,
+            "Either path OR (tableId + token) must be provided",
+            400,
+            false));
+    }
+    catch (const std::exception& exception) {
+        return unexpectedExceptionResponse(exception);
+    }
+    catch (...) {
+        return unknownExceptionResponse();
+    }
+}
+
 RouteResponse Router::uploadAttachment(const std::string& payload) {
     try {
         if (payload.empty()) {

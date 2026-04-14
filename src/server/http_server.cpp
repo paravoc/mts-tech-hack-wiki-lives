@@ -45,8 +45,8 @@ std::string_view reasonPhrase(const int statusCode) {
     }
 }
 
-void writeCommonHeaders(HttpResponse* response) {
-    response->writeHeader("Content-Type", "application/json; charset=utf-8");
+void writeCommonHeaders(HttpResponse* response, const std::string& contentType = "application/json; charset=utf-8") {
+    response->writeHeader("Content-Type", contentType);
     response->writeHeader("Access-Control-Allow-Origin", "*");
     response->writeHeader("Access-Control-Allow-Headers", "content-type");
     response->writeHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
@@ -69,7 +69,7 @@ std::string_view contentTypeForPath(const std::string& path) {
 
 void writeResponse(HttpResponse* response, const RouteResponse& routeResponse) {
     response->writeStatus(reasonPhrase(routeResponse.statusCode));
-    writeCommonHeaders(response);
+    writeCommonHeaders(response, routeResponse.contentType);
     response->end(routeResponse.body);
 }
 
@@ -221,6 +221,8 @@ utils::VoidExpected HttpServer::start(const int port) {
                     std::string(request->getParameter(1))));
         });
 
+
+
         app.post("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
             const std::string pageId(request->getParameter(0));
             handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
@@ -319,6 +321,23 @@ utils::VoidExpected HttpServer::start(const int port) {
                 writeResponse(innerResponse, router_.setCommentAccess(pageId, body));
             });
         });
+
+        app.get("/api/mws/attachment", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableId(request->getQuery("tableId"));
+            const std::string token(request->getQuery("token"));
+            const std::string path(request->getQuery("path"));
+
+            const auto routeResponse = router_.downloadMwsAttachment(tableId, token, path);
+
+            response->writeStatus(reasonPhrase(routeResponse.statusCode));
+            response->writeHeader(
+                "Content-Type",
+                routeResponse.contentType.empty()
+                ? "application/octet-stream"
+                : routeResponse.contentType);
+            response->writeHeader("Access-Control-Allow-Origin", "*");
+            response->end(routeResponse.body);
+            });
 
         app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
             const std::string actorId(request->getQuery("actorId"));

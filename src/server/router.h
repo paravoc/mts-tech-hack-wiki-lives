@@ -31,6 +31,7 @@ struct MwsTablePreset {
 struct RouteResponse {
     int statusCode = 200;
     std::string body;
+    std::string contentType = "application/json; charset=utf-8";
 };
 
 class Router {
@@ -63,6 +64,11 @@ public:
         std::vector<MwsTablePreset> tablePresets,
         std::unique_ptr<storage::LocalUserStorage> userStorage,
         services::AuthService* authService);
+
+    RouteResponse downloadMwsAttachment(
+        const std::string& tableId,
+        const std::string& token,
+        const std::string& path);
 
     [[nodiscard]] RouteResponse handleHealth() const;
     [[nodiscard]] RouteResponse listPages();

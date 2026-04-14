@@ -59,6 +59,15 @@ struct MwsClientOptions {
 class MwsClient {
 public:
 
+
+    [[nodiscard]] utils::Expected<std::string> downloadAttachmentByPath(
+        const std::string& relativePath,
+        std::string& outMimeType);
+
+    [[nodiscard]] utils::Expected<std::string> downloadAttachment(
+        const std::string& tableId,
+        const std::string& token,
+        std::string& outMimeType);
     [[nodiscard]] utils::Expected<MwsUploadedAttachment> uploadAttachmentForField(
         const std::string& tableId,
         const std::string& recordId,

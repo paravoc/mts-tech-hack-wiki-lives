@@ -9,6 +9,7 @@
 #include <string_view>
 #include <utility>
 #include <cctype>
+#include <algorithm>
 
 namespace {
 
@@ -292,6 +293,23 @@ wikilive::utils::Expected<std::string> executeRequest(
     return responseBody;
 }
 
+std::string guessMimeTypeFromPath(const std::string& value) {
+    std::string lower = value;
+    std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+        });
+
+    if (lower.find(".png") != std::string::npos) return "image/png";
+    if (lower.find(".jpg") != std::string::npos || lower.find(".jpeg") != std::string::npos) return "image/jpeg";
+    if (lower.find(".webp") != std::string::npos) return "image/webp";
+    if (lower.find(".gif") != std::string::npos) return "image/gif";
+    if (lower.find(".svg") != std::string::npos) return "image/svg+xml";
+    if (lower.find(".pdf") != std::string::npos) return "application/pdf";
+    return "application/octet-stream";
+}
+
+
+
 std::string sanitizeFilename(const std::string& value) {
     std::string result;
     for (const unsigned char ch : value) {
@@ -301,6 +319,7 @@ std::string sanitizeFilename(const std::string& value) {
     }
     return result.empty() ? std::string("upload.bin") : result;
 }
+
 
 std::string buildMultipartBody(
     const std::string& boundary,
@@ -321,6 +340,8 @@ std::string buildMultipartBody(
 
     return body;
 }
+
+
 
 wikilive::utils::Expected<json> parseResponseJson(const std::string& responseBody) {
     try {
@@ -423,6 +444,7 @@ void applyFieldMetadata(const json& value, wikilive::api::MwsFieldValue& fieldVa
         fieldValue.value = value["name"].get<std::string>();
     }
 }
+
 
 wikilive::utils::Expected<std::vector<wikilive::api::MwsRecord>> parseRecords(const std::string& responseBody) {
     const auto parsed = parseResponseJson(responseBody);
@@ -804,6 +826,97 @@ utils::Expected<std::string> MwsClient::updateRecord(const std::string& recordId
     return retryPolicy_.run(
         [this, &recordId, &payload]() {
             return updateRecordOnce(recordId, payload);
+        },
+        options_.retryAttempts,
+        options_.retryBaseDelayMs);
+}
+
+utils::Expected<std::string> MwsClient::downloadAttachmentByPath(
+    const std::string& relativePath,
+    std::string& outMimeType) {
+    return retryPolicy_.run(
+        [this, &relativePath, &outMimeType]() -> utils::Expected<std::string> {
+            if (token_.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidConfig,
+                    "MWS client is missing MWS_TOKEN in .env.",
+                    500,
+                    false));
+            }
+
+            if (relativePath.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "relativePath must not be empty",
+                    400,
+                    false));
+            }
+
+            const std::string path =
+                relativePath.front() == '/'
+                ? relativePath
+                : "/" + relativePath;
+
+            const auto response = executeRequest(
+                "GET",
+                toWide(path),
+                token_,
+                options_.requestTimeoutMs,
+                {},
+                "application/octet-stream");
+
+            if (!response) {
+                return std::unexpected(response.error());
+            }
+
+            outMimeType = guessMimeTypeFromPath(path);
+            return response.value();
+        },
+        options_.retryAttempts,
+        options_.retryBaseDelayMs);
+}
+
+utils::Expected<std::string> MwsClient::downloadAttachment(
+    const std::string& tableId,
+    const std::string& token,
+    std::string& outMimeType) {
+    return retryPolicy_.run(
+        [this, &tableId, &token, &outMimeType]() -> utils::Expected<std::string> {
+            if (token_.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidConfig,
+                    "MWS client is missing MWS_TOKEN in .env.",
+                    500,
+                    false));
+            }
+
+            if (tableId.empty() || token.empty()) {
+                return std::unexpected(utils::makeError(
+                    utils::ErrorCode::InvalidRequest,
+                    "tableId and token must not be empty",
+                    400,
+                    false));
+            }
+
+            const auto path =
+                "/fusion/v1/datasheets/" + urlEncode(tableId) +
+                "/attachments?token=" + urlEncode(token);
+
+            const auto response = executeRequest(
+                "GET",
+                toWide(path),
+                token_,
+                options_.requestTimeoutMs,
+                {},
+                "application/octet-stream"
+               );
+
+            if (!response) {
+                return std::unexpected(response.error());
+            }
+
+            outMimeType = "application/octet-stream";
+            return response.value();
         },
         options_.retryAttempts,
         options_.retryBaseDelayMs);
