@@ -1,0 +1,522 @@
+#include "src/server/http_server.h"
+
+#include <exception>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
+
+#include "src/server/router.h"
+#include "src/server/websocket_manager.h"
+#include "src/utils/logger.h"
+#include "uwebsockets/App.h"
+
+namespace wikilive::server {
+
+namespace {
+
+using HttpRequest = uWS::HttpRequest;
+using HttpResponse = uWS::HttpResponse<false>;
+
+std::string_view reasonPhrase(const int statusCode) {
+    switch (statusCode) {
+        case 200:
+            return "200 OK";
+        case 201:
+            return "201 Created";
+        case 400:
+            return "400 Bad Request";
+        case 401:
+            return "401 Unauthorized";
+        case 403:
+            return "403 Forbidden";
+        case 404:
+            return "404 Not Found";
+        case 429:
+            return "429 Too Many Requests";
+        case 500:
+            return "500 Internal Server Error";
+        case 501:
+            return "501 Not Implemented";
+        default:
+            return "500 Internal Server Error";
+    }
+}
+
+void writeCommonHeaders(HttpResponse* response, const std::string& contentType = "application/json; charset=utf-8") {
+    response->writeHeader("Content-Type", contentType);
+    response->writeHeader("Access-Control-Allow-Origin", "*");
+    response->writeHeader("Access-Control-Allow-Headers", "content-type");
+    response->writeHeader("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS");
+}
+
+std::string_view contentTypeForPath(const std::string& path) {
+    const auto dotPos = path.find_last_of('.');
+    if (dotPos == std::string::npos) {
+        return "application/octet-stream";
+    }
+    const auto ext = path.substr(dotPos + 1);
+    if (ext == "png") return "image/png";
+    if (ext == "jpg" || ext == "jpeg") return "image/jpeg";
+    if (ext == "gif") return "image/gif";
+    if (ext == "webp") return "image/webp";
+    if (ext == "svg") return "image/svg+xml";
+    if (ext == "pdf") return "application/pdf";
+    return "application/octet-stream";
+}
+
+void writeResponse(HttpResponse* response, const RouteResponse& routeResponse) {
+    response->writeStatus(reasonPhrase(routeResponse.statusCode));
+    writeCommonHeaders(response, routeResponse.contentType);
+    response->end(routeResponse.body);
+}
+
+template <typename Callback>
+void collectRequestBody(HttpResponse* response, Callback&& callback) {
+    auto body = std::make_shared<std::string>();
+    auto aborted = std::make_shared<bool>(false);
+
+    response->onAborted([aborted]() {
+        *aborted = true;
+    });
+
+    response->onData([response, body, aborted, callback = std::forward<Callback>(callback)](
+                         std::string_view chunk,
+                         bool isLast) mutable {
+        if (*aborted) {
+            return;
+        }
+
+        body->append(chunk.data(), chunk.size());
+        if (isLast) {
+            callback(response, *body);
+        }
+    });
+}
+
+template <typename Callback>
+void handleRequestBody(HttpResponse* response, HttpRequest* request, Callback&& callback) {
+    const auto contentLength = request->getHeader("content-length");
+    const auto transferEncoding = request->getHeader("transfer-encoding");
+
+    if (contentLength.empty() && transferEncoding.empty()) {
+        callback(response, std::string{});
+        return;
+    }
+
+    collectRequestBody(response, std::forward<Callback>(callback));
+}
+
+}  // namespace
+
+HttpServer::HttpServer(Router& router, WebSocketManager* webSocketManager)
+    : router_(router), webSocketManager_(webSocketManager) {
+}
+
+utils::VoidExpected HttpServer::start(const int port) {
+    try {
+        uWS::App app;
+
+        if (webSocketManager_ != nullptr) {
+            app.ws<WebSocketSessionData>("/ws", {
+                .open = [this](auto* socket) {
+                    webSocketManager_->registerConnection(socket);
+                    socket->send(R"({"event":"connected","status":"ok"})", uWS::OpCode::TEXT);
+                },
+                .message = [this](auto* socket, std::string_view message, uWS::OpCode opCode) {
+                    if (opCode != uWS::OpCode::TEXT) {
+                        return;
+                    }
+
+                    const auto response = webSocketManager_->handleMessage(socket, message);
+                    if (!response.empty()) {
+                        socket->send(response, uWS::OpCode::TEXT);
+                    }
+                },
+                .close = [this](auto* socket, int /*code*/, std::string_view /*message*/) {
+                    webSocketManager_->unregisterConnection(socket);
+                },
+            });
+        }
+
+        app.options("/*", [](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, RouteResponse{
+                                      .statusCode = 200,
+                                      .body = R"({"success":true,"data":{"preflight":true}})",
+                                  });
+        });
+
+        app.get("/health", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.handleHealth());
+        });
+
+        app.post("/api/uploads", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.uploadAttachment(body));
+            });
+        });
+
+        app.get("/uploads/*", [](HttpResponse* response, HttpRequest* request) {
+            const std::string url(request->getUrl());
+            const std::string prefix = "/uploads/";
+            if (url.rfind(prefix, 0) != 0) {
+                response->writeStatus("404 Not Found");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"not found"})");
+                return;
+            }
+            std::string relative = url.substr(prefix.size());
+            if (relative.find("..") != std::string::npos) {
+                response->writeStatus("400 Bad Request");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"invalid path"})");
+                return;
+            }
+            const auto filePath = std::filesystem::current_path() / "uploads" / relative;
+            if (!std::filesystem::exists(filePath)) {
+                response->writeStatus("404 Not Found");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"not found"})");
+                return;
+            }
+            std::ifstream file(filePath, std::ios::binary);
+            if (!file) {
+                response->writeStatus("500 Internal Server Error");
+                writeCommonHeaders(response);
+                response->end(R"({"error":"read failed"})");
+                return;
+            }
+            std::string data((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            response->writeStatus("200 OK");
+            response->writeHeader("Content-Type", contentTypeForPath(relative));
+            response->writeHeader("Access-Control-Allow-Origin", "*");
+            response->end(data);
+        });
+
+        app.get("/api/pages", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            const std::string projectId(request->getQuery("projectId"));
+            if (!projectId.empty()) {
+                writeResponse(response, router_.listPagesForProject(projectId, actorId));
+                return;
+            }
+            if (!actorId.empty()) {
+                writeResponse(response, router_.listPagesForActor(actorId));
+                return;
+            }
+            writeResponse(response, router_.listPages());
+        });
+
+        app.get("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listVersions(std::string(request->getParameter(0))));
+        });
+
+        app.get("/api/pages/:pageId/versions/:versionId", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(
+                response,
+                router_.getVersion(
+                    std::string(request->getParameter(0)),
+                    std::string(request->getParameter(1))));
+        });
+
+
+
+        app.post("/api/pages/:pageId/versions", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createVersion(pageId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/versions/:versionId/restore", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(
+                response,
+                router_.restoreVersion(
+                    std::string(request->getParameter(0)),
+                    std::string(request->getParameter(1))));
+        });
+
+        app.get("/api/pages/:pageId/comments", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listComments(std::string(request->getParameter(0))));
+        });
+
+        app.get("/api/pages/:pageId/comments/history", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.listCommentHistory(std::string(request->getParameter(0))));
+        });
+
+        app.post("/api/pages/:pageId/comments", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createComment(pageId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/replies", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.replyToComment(pageId, threadId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/resolve", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.resolveComment(pageId, threadId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/pause", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.pauseComment(pageId, threadId, body));
+            });
+        });
+
+        app.post("/api/pages/:pageId/comments/:threadId/like", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.toggleCommentLike(pageId, threadId, body));
+            });
+        });
+
+        app.put("/api/pages/:pageId/comments/:threadId/messages/:messageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            const std::string messageId(request->getParameter(2));
+            handleRequestBody(response, request, [this, pageId, threadId, messageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.updateCommentMessage(pageId, threadId, messageId, body));
+            });
+        });
+
+        app.del("/api/pages/:pageId/comments/:threadId/messages/:messageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            const std::string messageId(request->getParameter(2));
+            handleRequestBody(response, request, [this, pageId, threadId, messageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.deleteCommentMessage(pageId, threadId, messageId, body));
+            });
+        });
+
+        app.del("/api/pages/:pageId/comments/:threadId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            const std::string threadId(request->getParameter(1));
+            handleRequestBody(response, request, [this, pageId, threadId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.deleteCommentThread(pageId, threadId, body));
+            });
+        });
+
+        app.get("/api/pages/:pageId/comment-access", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.getCommentAccess(std::string(request->getParameter(0))));
+        });
+
+        app.put("/api/pages/:pageId/comment-access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setCommentAccess(pageId, body));
+            });
+        });
+
+        app.get("/api/mws/attachment", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableId(request->getQuery("tableId"));
+            const std::string token(request->getQuery("token"));
+            const std::string path(request->getQuery("path"));
+
+            const auto routeResponse = router_.downloadMwsAttachment(tableId, token, path);
+
+            response->writeStatus(reasonPhrase(routeResponse.statusCode));
+            response->writeHeader(
+                "Content-Type",
+                routeResponse.contentType.empty()
+                ? "application/octet-stream"
+                : routeResponse.contentType);
+            response->writeHeader("Access-Control-Allow-Origin", "*");
+            response->end(routeResponse.body);
+            });
+
+        app.post("/api/ai/comments/fix", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.fixCommentText(body));
+                });
+            });
+
+        app.get("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.getPage(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.get("/api/pages/:pageId/access", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.getPageAccess(std::string(request->getParameter(0))));
+        });
+
+        app.put("/api/pages/:pageId/access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setPageAccess(pageId, body));
+            });
+        });
+
+        app.get("/api/users", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.listUsers());
+        });
+
+        app.get("/api/groups", [this](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, router_.listGroups());
+        });
+
+        app.get("/api/workspace", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.listWorkspace(actorId));
+        });
+
+        app.get("/api/projects", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            if (!actorId.empty()) {
+                writeResponse(response, router_.listProjectsForActor(actorId));
+                return;
+            }
+            writeResponse(response, router_.listProjects());
+        });
+
+        app.post("/api/projects", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createProject(body));
+            });
+        });
+
+        app.get("/api/projects/:projectId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.getProject(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.get("/api/projects/:projectId/pages", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string actorId(request->getQuery("actorId"));
+            writeResponse(response, router_.listPagesForProject(std::string(request->getParameter(0)), actorId));
+        });
+
+        app.put("/api/projects/:projectId/access", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string projectId(request->getParameter(0));
+            handleRequestBody(response, request, [this, projectId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.setProjectAccess(projectId, body));
+            });
+        });
+
+        app.post("/api/auth/login", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.login(body));
+            });
+        });
+
+        app.post("/api/pages", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.createPage(body));
+            });
+        });
+
+        app.put("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string pageId(request->getParameter(0));
+            handleRequestBody(response, request, [this, pageId](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.updatePage(pageId, body));
+            });
+        });
+
+        app.del("/api/pages/:pageId", [this](HttpResponse* response, HttpRequest* request) {
+            writeResponse(response, router_.deletePage(std::string(request->getParameter(0))));
+        });
+
+        app.post("/api/render", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.renderContent(body));
+            });
+        });
+
+        app.get("/api/mws/insert-options", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableUrl(request->getQuery("tableUrl"));
+            const std::string tableId = tableUrl.empty()
+                ? std::string(request->getQuery("tableId"))
+                : tableUrl;
+            writeResponse(
+                response,
+                router_.getMwsInsertOptions(
+                    tableId,
+                    std::string(request->getQuery("viewId"))));
+        });
+
+        app.get("/api/mws/grid", [this](HttpResponse* response, HttpRequest* request) {
+            const std::string tableUrl(request->getQuery("tableUrl"));
+            const std::string tableId = tableUrl.empty()
+                ? std::string(request->getQuery("tableId"))
+                : tableUrl;
+            writeResponse(
+                response,
+                router_.getMwsGrid(
+                    tableId,
+                    std::string(request->getQuery("viewId")),
+                    std::string(request->getQuery("recordIds")),
+                    std::string(request->getQuery("fieldNames"))));
+        });
+
+        app.post("/api/mws/grid/update", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.updateMwsGrid(body));
+            });
+        });
+
+        app.post("/api/ai/suggest-insert", [this](HttpResponse* response, HttpRequest* request) {
+            handleRequestBody(response, request, [this](HttpResponse* innerResponse, const std::string& body) {
+                writeResponse(innerResponse, router_.suggestInsert(body));
+            });
+        });
+
+        app.any("/*", [](HttpResponse* response, HttpRequest* /*request*/) {
+            writeResponse(response, RouteResponse{
+                                      .statusCode = 404,
+                                      .body = R"({"success":false,"error":{"code":"NotFound","message":"Route not found","retryable":false}})",
+                                  });
+        });
+
+        app.listen("0.0.0.0", port, [this, port](auto* token) {
+            listenSocket_ = token;
+            if (token) {
+                utils::Logger::instance().info("HTTP server is listening on port " + std::to_string(port));
+            } else {
+                utils::Logger::instance().error("Failed to listen on port " + std::to_string(port));
+            }
+        });
+
+        if (listenSocket_ == nullptr) {
+            return wikilive::utils::makeUnexpected(utils::makeError(
+                utils::ErrorCode::InternalError,
+                "HTTP server failed to bind to port " + std::to_string(port),
+                500,
+                false));
+        }
+
+        app.run();
+        listenSocket_ = nullptr;
+        return {};
+    } catch (const std::exception& exception) {
+        return wikilive::utils::makeUnexpected(utils::makeError(
+            utils::ErrorCode::InternalError,
+            std::string("HTTP server start failed: ") + exception.what(),
+            500,
+            false));
+    } catch (...) {
+        return wikilive::utils::makeUnexpected(utils::makeError(
+            utils::ErrorCode::InternalError,
+            "HTTP server start failed with unknown exception",
+            500,
+            false));
+    }
+}
+
+void HttpServer::stop() {
+    listenSocket_ = nullptr;
+}
+
+}  // namespace wikilive::server
