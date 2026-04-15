@@ -1,0 +1,23 @@
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command"]
+
+WORKDIR C:\\app
+
+COPY . C:\\app
+
+RUN $ErrorActionPreference = 'Stop'; \
+    Invoke-WebRequest -Uri 'https://www.python.org/ftp/python/3.11.9/python-3.11.9-amd64.exe' -OutFile 'C:\\python-installer.exe'; \
+    Start-Process -FilePath 'C:\\python-installer.exe' -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1 Include_test=0' -Wait; \
+    Remove-Item 'C:\\python-installer.exe' -Force; \
+    python --version; \
+    python -m pip install --upgrade pip; \
+    python -m pip install -r 'C:\\app\\frontend\\requirements.txt'
+
+ENV ENABLE_AI=false
+ENV PYTHONUNBUFFERED=1
+ENV WIKILIVE_BACKEND_URL=http://127.0.0.1:3000
+
+EXPOSE 3000 8501
+
+CMD powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; Start-Process -FilePath 'C:\\app\\out\\build\\x64-Debug\\wikilive_backend.exe'; python -m streamlit run C:\\app\\frontend\\app.py --server.headless true --server.port 8501"

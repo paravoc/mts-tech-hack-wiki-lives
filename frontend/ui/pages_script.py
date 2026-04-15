@@ -1,0 +1,1559 @@
+from __future__ import annotations
+
+from textwrap import dedent
+
+
+def pages_script() -> str:
+    return dedent(
+        r"""
+        function ensurePagesWorkspaceStyles() {
+          if (document.getElementById("wikilivePagesWorkspaceStyles")) {
+            return;
+          }
+          const style = document.createElement("style");
+          style.id = "wikilivePagesWorkspaceStyles";
+          style.textContent = `
+            .doc-head__inline-tools {
+              display: inline-flex;
+              align-items: center;
+              gap: 10px;
+              min-width: 0;
+            }
+
+            .pages-switcher {
+              position: relative;
+              flex: none;
+            }
+
+            .pages-switcher__trigger {
+              min-height: 34px;
+              padding: 0 12px;
+              border: 1px solid #dde2ea;
+              border-radius: 999px;
+              background: #ffffff;
+              color: #4a5568;
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              font-size: 12px;
+              font-weight: 700;
+              box-shadow: 0 8px 18px rgba(17, 24, 39, 0.07);
+              transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+            }
+
+            .pages-switcher__trigger:hover,
+            .pages-switcher.is-open .pages-switcher__trigger {
+              border-color: #cfd6e1;
+              box-shadow: 0 12px 22px rgba(17, 24, 39, 0.10);
+              transform: translateY(-1px);
+            }
+
+            .pages-switcher__count {
+              min-width: 18px;
+              height: 18px;
+              padding: 0 6px;
+              border-radius: 999px;
+              background: #fff4f6;
+              color: #ff0032;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 11px;
+              font-weight: 800;
+            }
+
+            .pages-switcher__menu {
+              position: absolute;
+              top: calc(100% + 10px);
+              left: 0;
+              width: 286px;
+              max-height: 360px;
+              padding: 10px;
+              border-radius: 16px;
+              border: 1px solid #e3e7ef;
+              background: rgba(255, 255, 255, 0.99);
+              box-shadow: 0 18px 36px rgba(17, 24, 39, 0.14);
+              opacity: 0;
+              visibility: hidden;
+              transform: translateY(-6px);
+              transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+              z-index: 42;
+            }
+
+            .pages-switcher.is-open .pages-switcher__menu {
+              opacity: 1;
+              visibility: visible;
+              transform: translateY(0);
+            }
+
+            .pages-switcher__menu-head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 12px;
+              margin-bottom: 10px;
+            }
+
+            .pages-switcher__menu-title {
+              font-size: 13px;
+              font-weight: 800;
+              color: #222733;
+            }
+
+            .pages-switcher__create {
+              border: 0;
+              border-radius: 10px;
+              background: #fff4f6;
+              color: #ff0032;
+              padding: 7px 10px;
+              font-size: 12px;
+              font-weight: 700;
+            }
+
+            .pages-switcher__list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              max-height: 286px;
+              overflow: auto;
+              padding-right: 2px;
+            }
+
+            .pages-switcher__section {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+
+            .pages-switcher__section + .pages-switcher__section {
+              margin-top: 10px;
+              padding-top: 10px;
+              border-top: 1px solid #eef1f6;
+            }
+
+            .pages-switcher__section-label {
+              font-size: 11px;
+              line-height: 1.2;
+              font-weight: 800;
+              letter-spacing: .04em;
+              text-transform: uppercase;
+              color: #9aa3b3;
+              padding: 0 2px;
+            }
+
+            .pages-switcher__item {
+              width: 100%;
+              border: 1px solid #e7ebf2;
+              border-radius: 12px;
+              background: #ffffff;
+              padding: 10px 11px;
+              display: flex;
+              flex-direction: column;
+              align-items: flex-start;
+              gap: 4px;
+              text-align: left;
+            }
+
+            .pages-switcher__item:hover {
+              background: #f7f9fc;
+              border-color: #d8dee8;
+            }
+
+            .pages-switcher__item.is-active {
+              border-color: #ffccd8;
+              background: #fff7f9;
+            }
+
+            .pages-switcher__item-title {
+              font-size: 13px;
+              line-height: 1.2;
+              font-weight: 700;
+              color: #232833;
+            }
+
+            .pages-switcher__item-meta {
+              font-size: 11px;
+              line-height: 1.2;
+              color: #8b93a4;
+            }
+
+            
+            .pages-switcher__footer {
+              margin-top: 10px;
+              display: flex;
+              gap: 8px;
+            }
+
+            .pages-switcher__action {
+              flex: 1;
+              border: 1px solid #e3e7ef;
+              border-radius: 10px;
+              background: #ffffff;
+              color: #4a5568;
+              padding: 8px 10px;
+              font-size: 12px;
+              font-weight: 700;
+            }
+
+            .pages-switcher__action:hover {
+              background: #f7f9fc;
+              border-color: #d6dce7;
+            }
+
+            .pages-switcher__action--danger {
+              background: #fff4f6;
+              color: #ff0032;
+              border-color: #ffd2dc;
+            }
+
+            .page-access-panel {
+              position: fixed;
+              top: 96px;
+              right: 30px;
+              width: 300px;
+              padding: 16px;
+              border-radius: 16px;
+              border: 1px solid #e3e7ef;
+              background: #ffffff;
+              box-shadow: 0 18px 36px rgba(17, 24, 39, 0.14);
+              opacity: 0;
+              visibility: hidden;
+              transform: translateY(-6px);
+              transition: opacity .18s ease, transform .18s ease, visibility .18s ease;
+              z-index: 46;
+            }
+
+            .page-access-panel.is-open {
+              opacity: 1;
+              visibility: visible;
+              transform: translateY(0);
+            }
+
+            .page-access-panel__head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+            }
+
+            .page-access-panel__title {
+              font-size: 14px;
+              font-weight: 800;
+              color: #252b36;
+            }
+
+            .page-access-panel__close {
+              width: 26px;
+              height: 26px;
+              border: 0;
+              border-radius: 999px;
+              background: #f4f6fb;
+              color: #6b7280;
+            }
+
+            .page-access-panel__subtitle {
+              margin-top: 6px;
+              font-size: 12px;
+              color: #8b93a4;
+            }
+
+            .page-access-panel__list {
+              margin-top: 12px;
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              max-height: 220px;
+              overflow: auto;
+            }
+
+            .page-access-item {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              padding: 6px 8px;
+              border-radius: 10px;
+              background: #f7f9fc;
+            }
+
+            .page-access-item input {
+              margin: 0;
+              accent-color: #ff0032;
+            }
+
+            .page-access-item__meta {
+              font-size: 11px;
+              color: #8b93a4;
+            }
+
+            .page-access-panel__actions {
+              margin-top: 12px;
+              display: flex;
+              justify-content: flex-end;
+            }
+
+            .page-access-panel__save {
+              border: 0;
+              border-radius: 10px;
+              background: #ff0032;
+              color: #ffffff;
+              padding: 8px 12px;
+              font-size: 12px;
+              font-weight: 700;
+            }
+
+            .pages-switcher__empty {
+              padding: 12px 8px;
+              border-radius: 12px;
+              background: #f7f9fc;
+              color: #8b93a4;
+              font-size: 12px;
+              text-align: center;
+            }
+
+            .page-presence {
+              min-height: 34px;
+              padding: 4px 8px 4px 6px;
+              border: 1px solid #dde2ea;
+              border-radius: 999px;
+              background: #ffffff;
+              box-shadow: 0 8px 18px rgba(17, 24, 39, 0.07);
+              display: inline-flex;
+              align-items: center;
+              gap: 7px;
+            }
+
+            .page-presence.is-empty {
+              opacity: 0.7;
+            }
+
+            .page-presence__avatars {
+              display: inline-flex;
+              align-items: center;
+            }
+
+            .page-presence__avatar {
+              width: 22px;
+              height: 22px;
+              border-radius: 999px;
+              border: 2px solid #ffffff;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              color: #ffffff;
+              font-size: 11px;
+              font-weight: 800;
+              margin-left: -6px;
+            }
+
+            .page-presence__avatar:first-child {
+              margin-left: 0;
+            }
+
+            .page-presence__count {
+              font-size: 12px;
+              line-height: 1;
+              font-weight: 800;
+              color: #ff0032;
+              min-width: 10px;
+            }
+
+            .link-menu__section {
+              border-top: 1px solid #eef1f6;
+              padding-top: 8px;
+              margin-top: 8px;
+            }
+
+            .link-menu__section:first-child {
+              border-top: 0;
+              margin-top: 0;
+              padding-top: 0;
+            }
+
+            .link-menu__section-title {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              font-size: 11px;
+              line-height: 1.2;
+              font-weight: 800;
+              letter-spacing: .02em;
+              text-transform: uppercase;
+              color: #8a93a4;
+              margin-bottom: 6px;
+            }
+
+            .link-menu__section-subtitle {
+              font-size: 11px;
+              font-weight: 600;
+              color: #b0b7c4;
+              text-transform: none;
+              letter-spacing: normal;
+            }
+
+            .link-menu__section-items {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+            }
+
+            .link-menu__heading--subtle {
+              padding-left: 34px;
+            }
+          `;
+          document.head.appendChild(style);
+        }
+
+
+        let commentWorkspaceToken = 0;
+let remoteRefreshPending = false;
+let remoteRefreshTimer = 0;
+let commentUserIsTyping = false;
+let commentTypingIdleTimer = 0;
+
+        function getActorPageStorageKey(actorId = currentCommentActorId) {
+          return `${commentPageStorageKey}:${normalizeActorId(actorId || "viewer")}`;
+        }
+
+        function getCurrentPageSnapshot() {
+  const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId) || {};
+  return {
+    pageId: commentPageId,
+    title: titleEditor.textContent.replace(/\u200B/g, "").trim() || "Новая страница",
+    description: typeof getDocumentDescriptionText === "function" ? getDocumentDescriptionText() : "",
+    content: bodyEditor.innerHTML || "",
+    ownerId: normalizeActorId(currentCommentActorId || "viewer"),
+    ownerName: getCurrentCommentActor().name || "Гость",
+    mwsScenarioId: currentPage.mwsScenarioId || "",
+    mwsScenarioTitle: currentPage.mwsScenarioTitle || "",
+  };
+}
+
+        function getOwnedPagesForActor(actorId = currentCommentActorId) {
+          return (commentPages || []).filter((page) => normalizeActorId(page.ownerId || "viewer") === normalizeActorId(actorId || "viewer"));
+        }
+
+        function getAccessiblePagesForActor(actorId = currentCommentActorId) {
+          const normalizedActorId = normalizeActorId(actorId || "viewer");
+          return (commentPages || []).filter((page) => {
+            const ownerId = normalizeActorId(page.ownerId || "viewer");
+            const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
+            return ownerId === normalizedActorId || sharedWith.includes(normalizedActorId) || sharedWith.includes("*");
+          });
+        }
+
+        function normalizePageTitleText(value) {
+          const text = String(value || "").replace(/\u200B/g, "").replace(/\s+/g, " ").trim();
+          return text || "Новая страница";
+        }
+
+        function syncCurrentPageSnapshot(partial = {}) {
+          if (!commentPageId) {
+            return;
+          }
+          const currentPage = (commentPages || []).find((page) => page.pageId === commentPageId);
+          if (!currentPage) {
+            return;
+          }
+          Object.assign(currentPage, partial);
+          currentPage.updatedAt = partial.updatedAt || currentPage.updatedAt || new Date().toISOString();
+        }
+
+        function focusTitleEditor(selectAll = false) {
+          if (!titleEditor) {
+            return;
+          }
+          titleEditor.focus();
+          if (selectAll) {
+            const selection = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(titleEditor);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return;
+          }
+          placeCaretAtEnd(titleEditor);
+        }
+
+        function markUserTyping() {
+  commentUserIsTyping = true;
+
+  if (commentTypingIdleTimer) {
+    window.clearTimeout(commentTypingIdleTimer);
+    commentTypingIdleTimer = 0;
+  }
+
+  commentTypingIdleTimer = window.setTimeout(() => {
+    commentUserIsTyping = false;
+    commentTypingIdleTimer = 0;
+
+    if (remoteRefreshPending) {
+      remoteRefreshPending = false;
+      refreshCurrentPageFromServer(true).catch((error) => {
+        console.warn("Failed to apply deferred remote refresh", error);
+      });
+    }
+  }, 100);
+}
+
+        function syncHeaderTitleFromEditor() {
+  const normalizedTitle = normalizePageTitleText(titleEditor ? titleEditor.textContent : "");
+
+  if (titleEditor) {
+
+  }
+
+  if (docHeaderTitle) {
+    docHeaderTitle.textContent = normalizedTitle;
+  }
+  syncCurrentPageSnapshot({ title: normalizedTitle });
+  renderPagesSwitcher();
+}
+
+        function closePagesSwitcher() {
+          if (pagesSwitcher) {
+            pagesSwitcher.classList.remove("is-open");
+          }
+        }
+
+        function renderPagesSwitcher() {
+          if (!pagesSwitcher || !pagesList || !pagesCount) {
+            renderPagePresence();
+            return;
+          }
+
+          const accessiblePages = getAccessiblePagesForActor();
+          const ownedPages = accessiblePages.filter((page) => isCurrentActorPage(page));
+          const sharedPages = accessiblePages.filter((page) => !isCurrentActorPage(page));
+
+          pagesCount.textContent = String(accessiblePages.length);
+          if (!accessiblePages.length) {
+            pagesList.innerHTML = '<div class="pages-switcher__empty">Пока нет страниц</div>';
+            renderPagePresence();
+            return;
+          }
+
+          const renderPageItem = (page, isSharedView) => {
+  const isActive = page.pageId === commentPageId;
+  const headingCount = extractPageHeadingTargets(page).filter((item) => item.kind === "heading").length;
+  const ownerName = String(page.ownerName || "Гость").trim() || "Гость";
+  const scenarioMeta = page.mwsScenarioTitle ? `MWS: ${page.mwsScenarioTitle}` : "";
+  const meta = scenarioMeta || (
+    isSharedView
+      ? `Автор: ${ownerName}`
+      : (headingCount ? `${headingCount} заголовков` : "Без разделов")
+  );
+            return `
+              <button class="pages-switcher__item${isActive ? " is-active" : ""}" data-page-id="${page.pageId}" type="button">
+                <span class="pages-switcher__item-title">${escapeHtml(page.title || "Без названия")}</span>
+                <span class="pages-switcher__item-meta">${escapeHtml(meta)}</span>
+              </button>
+            `;
+          };
+
+          const sections = [];
+          if (ownedPages.length) {
+            sections.push(`
+              <div class="pages-switcher__section">
+                <div class="pages-switcher__section-label">Мои страницы</div>
+                ${ownedPages.map((page) => renderPageItem(page, false)).join("")}
+              </div>
+            `);
+          }
+          if (sharedPages.length) {
+            sections.push(`
+              <div class="pages-switcher__section">
+                <div class="pages-switcher__section-label">Доступные мне</div>
+                ${sharedPages.map((page) => renderPageItem(page, true)).join("")}
+              </div>
+            `);
+          }
+
+          pagesList.innerHTML = sections.join("");
+          renderPagePresence();
+        }
+
+        function updatePresenceState(payload) {
+  if (!payload || payload.pageId !== commentPageId) {
+    return;
+  }
+
+  const people = Array.isArray(payload.people) ? payload.people : [];
+  const uniquePeople = [];
+  const seen = new Set();
+
+  for (const person of people) {
+    const key = normalizeActorId(person.actorId || "");
+    if (!key || seen.has(key)) continue;
+
+    seen.add(key);
+    uniquePeople.push({
+      actorId: key,
+      actorName: person.actorName || key,
+      actorShort:
+        person.actorShort ||
+        String(person.actorName || key || "?").charAt(0).toUpperCase(),
+      actorColor: person.actorColor || "#a6afbf",
+    });
+  }
+
+  commentPresencePeople = uniquePeople;
+  commentPresenceLoaded = true;
+  commentPresencePageId = payload.pageId || "";
+
+  renderPagePresence();
+}
+
+        function applyEditorDocumentSafely(page) {
+          commentApplyingDocument = true;
+          try {
+            titleEditor.textContent = (page && page.title) || "Новая страница";
+            bodyEditor.innerHTML = page && page.content && page.content.trim()
+              ? page.content
+              : `<p class="body-placeholder">${emptyHint}</p>`;
+            updateDocumentHeader(page || {});
+            renderOutline();
+            commentLastSavedSnapshot = typeof window.wikiliveBuildVersionSnapshot === "function"
+              ? window.wikiliveBuildVersionSnapshot({
+                  title: (page && page.title) || "",
+                  description: (page && page.description) || "",
+                  content: (page && page.content) || ""
+                })
+              : null;
+          } finally {
+            window.setTimeout(() => {
+              commentApplyingDocument = false;
+              scheduleCommentAnchors();
+            }, 0);
+          }
+        }
+
+        applyEditorDocument = function(page) {
+          applyEditorDocumentSafely(page);
+        };
+
+        async function saveCurrentPageNow(label = "Изменение текста", author = getCurrentCommentActor().id) {
+          if (!commentPageId || commentApplyingDocument) {
+            return null;
+          }
+          if (commentSaveTimer) {
+            clearTimeout(commentSaveTimer);
+            commentSaveTimer = null;
+          }
+          if (commentSaveInFlight) {
+            commentSaveQueued = true;
+            queueCommentVersionLabel(label, author);
+            return null;
+          }
+
+          commentSaveInFlight = true;
+          try {
+            const documentState = serializeEditorDocument();
+            const nextSnapshot = typeof window.wikiliveBuildVersionSnapshot === "function"
+              ? window.wikiliveBuildVersionSnapshot(documentState)
+              : null;
+            const pendingLabel = commentPendingVersionLabel || label || "Изменение текста";
+            const payload = {
+              ...documentState,
+              ownerId: normalizeActorId(currentCommentActorId || "viewer"),
+              ownerName: getCurrentCommentActor().name || "Гость",
+              versionLabel: typeof window.wikiliveInferDocumentVersionLabel === "function" && typeof isGenericVersionLabel === "function" && isGenericVersionLabel(pendingLabel)
+                ? window.wikiliveInferDocumentVersionLabel(commentLastSavedSnapshot, nextSnapshot, pendingLabel)
+                : pendingLabel,
+              versionAuthor: commentPendingVersionAuthor || author || "editor",
+            };
+            const response = await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
+              method: "PUT",
+              body: JSON.stringify(payload),
+              timeoutMs: 30000
+            });
+            const savedPage = response.item || {
+              pageId: commentPageId,
+              ...payload,
+              updatedAt: new Date().toISOString(),
+            };
+            upsertCommentPage(savedPage);
+            updateDocumentHeader(savedPage);
+            renderPagesSwitcher();
+            commentLastSavedSnapshot = nextSnapshot;
+            commentPendingVersionLabel = "";
+            commentPendingVersionAuthor = "";
+            if (window.refreshTimeMachinePanel) {
+              window.refreshTimeMachinePanel();
+            }
+            return savedPage;
+          } catch (error) {
+            console.warn("Failed to save comment page", error);
+            return null;
+          } finally {
+            commentSaveInFlight = false;
+            if (commentSaveQueued) {
+              commentSaveQueued = false;
+              scheduleCommentDocumentSave(commentPendingVersionLabel || label, commentPendingVersionAuthor || author);
+            }
+          }
+        }
+
+        scheduleCommentDocumentSave = function(label = "", author = "editor") {
+          if (!commentPageId || commentApplyingDocument) {
+            return;
+          }
+          queueCommentVersionLabel(label || "Изменение текста", author);
+          if (commentSaveTimer) {
+            clearTimeout(commentSaveTimer);
+          }
+          commentSaveTimer = window.setTimeout(async () => {
+            if (commentSaveInFlight) {
+              commentSaveQueued = true;
+              return;
+            }
+            await saveCurrentPageNow(
+              commentPendingVersionLabel || label || "Изменение текста",
+              commentPendingVersionAuthor || author || "editor"
+            );
+          }, 1800);
+        };
+
+        async function refreshCurrentPageFromServer(force = false) {
+          if (!commentPageId) {
+            return null;
+          }
+          const loaded = await commentApiRequest(`/api/pages/${encodeURIComponent(commentPageId)}`, {
+            timeoutMs: 15000
+          });
+          const page = loaded.item || loaded;
+          if (!page || !page.pageId) {
+            return null;
+          }
+
+          upsertCommentPage(page);
+          updateDocumentHeader(page);
+          const currentTitle = titleEditor.textContent.replace(/\u200B/g, "").trim();
+          const currentContent = bodyEditor.innerHTML.trim();
+          if (force || currentTitle !== String(page.title || "").trim() || currentContent !== String(page.content || "").trim()) {
+            applyEditorDocumentSafely(page);
+          }
+          renderPagesSwitcher();
+          return page;
+        }
+
+        function scrollToPageAnchor(anchorId) {
+          if (!anchorId) {
+            titleEditor.scrollIntoView({ behavior: "smooth", block: "start" });
+            return;
+          }
+          const target = document.getElementById(anchorId);
+          if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "center" });
+          }
+        }
+
+        async function switchCommentPage(pageId, options = {}) {
+  if (!pageId) {
+    return null;
+  }
+
+  remoteRefreshPending = false;
+
+  if (remoteRefreshTimer) {
+    window.clearTimeout(remoteRefreshTimer);
+    remoteRefreshTimer = 0;
+  }
+
+  if (commentTypingIdleTimer) {
+    window.clearTimeout(commentTypingIdleTimer);
+    commentTypingIdleTimer = 0;
+  }
+
+  commentUserIsTyping = false;
+
+  const {
+    persist = true,
+    skipSave = false,
+    forceLoad = false,
+    anchorId = "",
+    discussionTargetId = "",
+    workspaceToken = commentWorkspaceToken,
+  } = options;
+
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
+
+          if (commentPageId && commentPageId !== pageId && !skipSave) {
+  saveCurrentPageNow("Сохранение перед переключением", getCurrentCommentActor().id)
+    .catch((error) => console.warn("Background save before switch failed", error));
+}
+
+          if (!forceLoad && commentPageId === pageId) {
+            if (anchorId) {
+              window.requestAnimationFrame(() => scrollToPageAnchor(anchorId));
+            }
+            if (discussionTargetId) {
+              window.requestAnimationFrame(() => openThreadForTarget(discussionTargetId, true));
+            }
+            return getCurrentPageSnapshot();
+          }
+
+          const loaded = await commentApiRequest(`/api/pages/${encodeURIComponent(pageId)}`, {
+            timeoutMs: 15000
+          });
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
+          const page = loaded.item || loaded;
+          if (!page || !page.pageId) {
+            return null;
+          }
+
+          commentOpenTargetId = null;
+          commentReplyTo = null;
+          commentMenuOpenId = null;
+          commentEditingId = null;
+          commentPageId = page.pageId;
+          commentPresenceLoaded = false;
+commentPresencePageId = page.pageId || "";
+commentPresencePeople = [];
+          if (persist) {
+            window.localStorage.setItem(getActorPageStorageKey(), commentPageId);
+          }
+
+          applyEditorDocumentSafely(page);
+          upsertCommentPage(page);
+          renderPagesSwitcher();
+          renderCommentsPanel();
+          renderPagePresence();
+          ensureCommentSocket();
+          subscribeCommentSocketToPage();
+          await ensurePersistedCommentTargets();
+          await syncThreadsFromServer(true);
+          scheduleCommentAnchors();
+          commentBootstrapPromise = Promise.resolve(page);
+          document.dispatchEvent(new CustomEvent("wikilive:page-ready", { detail: { pageId: commentPageId } }));
+          if (discussionTargetId) {
+            window.setTimeout(() => openThreadForTarget(discussionTargetId, true), 120);
+          } else if (anchorId) {
+            window.setTimeout(() => scrollToPageAnchor(anchorId), 120);
+          }
+          return page;
+        }
+
+        window.switchCommentPageByLink = async function(pageId, anchorId) {
+          return switchCommentPage(pageId, { persist: true, anchorId });
+        };
+
+        window.openCommentDiscussionTarget = function(targetId) {
+          if (!targetId) {
+            return;
+          }
+          openThreadForTarget(targetId, true);
+        };
+
+        async function createPageForCurrentActor(workspaceToken = commentWorkspaceToken) {
+  const actor = getCurrentCommentActor();
+  const actorToken = normalizeActorId(
+    (actor && (actor.id || actor.email)) || currentCommentActorId || "viewer"
+  );
+
+  console.log("[wikilive][pages] createPageForCurrentActor:start", {
+    actor,
+    actorToken,
+    workspaceToken,
+    currentWorkspaceToken: commentWorkspaceToken
+  });
+
+  // 1. грузим workspace текущего пользователя
+  const workspace = await commentApiRequest(
+    `/api/workspace?actorId=${encodeURIComponent(actorToken)}`,
+    { timeoutMs: 15000 }
+  );
+
+  const projects = Array.isArray(workspace.projects) ? workspace.projects : [];
+  const ownedProject =
+    projects.find((item) => normalizeActorId(item.ownerId || "") === actorToken) ||
+    projects.find((item) =>
+      Array.isArray(item.access && item.access.users) &&
+      item.access.users.some((userId) => normalizeActorId(userId || "") === actorToken)
+    ) ||
+    projects[0] ||
+    null;
+
+  console.log("[wikilive][pages] createPageForCurrentActor:workspace", {
+    projectsCount: projects.length,
+    ownedProject
+  });
+
+  if (!ownedProject || !ownedProject.projectId) {
+    throw new Error("Не удалось определить projectId для текущего пользователя");
+  }
+
+  // 2. создаём страницу уже с projectId
+  const payload = {
+    projectId: ownedProject.projectId,
+    title: "Новая страница",
+    description: "",
+    content: "",
+    ownerId: actor && actor.id ? actor.id : actorToken,
+    ownerName: actor && actor.name ? actor.name : "Гость",
+    sharedWith: [],
+    access: {
+      public: false,
+      users: [actor && actor.id ? actor.id : actorToken, actor && actor.email ? actor.email : actorToken],
+      groups: [],
+      roles: []
+    }
+  };
+
+  console.log("[wikilive][pages] createPageForCurrentActor:payload", payload);
+
+  const created = await commentApiRequest("/api/pages", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    timeoutMs: 30000
+  });
+
+  console.log("[wikilive][pages] createPageForCurrentActor:response", created);
+
+  if (workspaceToken !== commentWorkspaceToken) {
+    return null;
+  }
+
+  const page = created.item || created;
+  upsertCommentPage(page);
+  renderPagesSwitcher();
+
+  commentOpenTargetId = null;
+commentReplyTo = null;
+commentMenuOpenId = null;
+commentEditingId = null;
+
+commentPageId = page.pageId;
+commentPresenceLoaded = false;
+commentPresencePageId = page.pageId || "";
+commentPresencePeople = [];
+
+window.localStorage.setItem(getActorPageStorageKey(), commentPageId);
+
+applyEditorDocumentSafely(page);
+upsertCommentPage(page);
+renderPagesSwitcher();
+renderCommentsPanel();
+renderPagePresence();
+ensureCommentSocket();
+subscribeCommentSocketToPage();
+commentBootstrapPromise = Promise.resolve(page);
+
+document.dispatchEvent(
+  new CustomEvent("wikilive:page-ready", { detail: { pageId: commentPageId } })
+);
+
+closePagesSwitcher();
+closePageAccessPanel();
+focusTitleEditor(true);
+
+return page;
+
+  return page;
+}
+
+        async function ensureActorPage(forceCatalog = false, workspaceToken = commentWorkspaceToken) {
+          await loadPagesCatalog(forceCatalog);
+          if (workspaceToken !== commentWorkspaceToken) {
+            return null;
+          }
+          const ownedPages = getOwnedPagesForActor();
+          const accessiblePages = getAccessiblePagesForActor();
+          const savedPageId = window.localStorage.getItem(getActorPageStorageKey()) || "";
+          const candidatePageId = savedPageId || (ownedPages[0] && ownedPages[0].pageId) || (accessiblePages[0] && accessiblePages[0].pageId) || "";
+          if (!candidatePageId) {
+            return createPageForCurrentActor(workspaceToken);
+          }
+          const page = commentPages.find((item) => item.pageId === candidatePageId) || ownedPages[0] || accessiblePages[0];
+          if (!page) {
+            return createPageForCurrentActor(workspaceToken);
+          }
+          return switchCommentPage(page.pageId, { persist: true, skipSave: true, forceLoad: true, workspaceToken });
+        }
+
+        ensureCommentPage = async function() {
+          if (commentBootstrapPromise) {
+            return commentBootstrapPromise;
+          }
+
+          commentBootstrapPromise = ensureActorPage(true).catch((error) => {
+            console.warn("Failed to bootstrap actor page", error);
+            commentBootstrapPromise = null;
+            return null;
+          });
+          return commentBootstrapPromise;
+        };
+
+        setCurrentCommentActor = function(actorId, persist = true) {
+          commentWorkspaceToken += 1;
+          currentCommentActorId = actorId || "viewer";
+          commentBootstrapPromise = null;
+          commentOpenTargetId = null;
+          commentReplyTo = null;
+          commentMenuOpenId = null;
+          commentEditingId = null;
+          commentPresenceLoaded = false;
+commentPresencePageId = commentPageId || "";
+commentPresencePeople = [];
+          commentThreads = new Map();
+          if (persist) {
+            window.localStorage.setItem(commentActorStorageKey, currentCommentActorId);
+          }
+          renderActorPicker();
+          renderAccountSwitcher();
+          renderPagesSwitcher();
+          renderCommentsPanel();
+          closePagesSwitcher();
+          if (accountSwitcher) {
+            accountSwitcher.classList.remove("is-open");
+          }
+          ensureActorPage(true, commentWorkspaceToken).catch((error) => console.warn("Failed to switch actor page", error));
+          ensureCommentSocket();
+        };
+
+        let commentSocketPresenceKey = "";
+
+        subscribeCommentSocketToPage = function() {
+          if (!commentSocket || commentSocket.readyState !== WebSocket.OPEN || !commentPageId) {
+            return;
+          }
+
+          const actor = getCurrentCommentActor();
+          const presenceKey = `${commentPageId}:${normalizeActorId(actor.id || "viewer")}`;
+          if (commentSocketPageId && commentSocketPageId !== commentPageId) {
+            commentSocket.send(JSON.stringify({ action: "unsubscribe", pageId: commentSocketPageId }));
+            commentSocketPresenceKey = "";
+          }
+          if (commentSocketPageId === commentPageId && commentSocketPresenceKey === presenceKey) {
+            return;
+          }
+          commentSocket.send(JSON.stringify({
+            action: "subscribe",
+            pageId: commentPageId,
+            actorId: normalizeActorId(actor.id || "viewer"),
+            actorName: actor.name || "Гость",
+            actorShort: actor.short || "Г",
+            actorColor: actor.color || "#a6afbf",
+          }));
+          commentSocketPageId = commentPageId;
+          commentSocketPresenceKey = presenceKey;
+        };
+
+        ensureCommentSocket = function() {
+          if (typeof window.WebSocket !== "function") {
+            return;
+          }
+          if (commentSocket && (commentSocket.readyState === WebSocket.OPEN || commentSocket.readyState === WebSocket.CONNECTING)) {
+            subscribeCommentSocketToPage();
+            return;
+          }
+
+          try {
+            commentSocket = new WebSocket(getCommentSocketUrl());
+          } catch (error) {
+            console.warn("Failed to open comment socket", error);
+            return;
+          }
+
+          commentSocketPageId = "";
+          commentSocketPresenceKey = "";
+          commentSocket.addEventListener("open", () => {
+            subscribeCommentSocketToPage();
+          });
+          commentSocket.addEventListener("message", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              if (!payload) {
+                return;
+              }
+              if (payload.event === "presence.changed") {
+                updatePresenceState(payload);
+                return;
+              }
+              if (payload.pageId !== commentPageId) {
+                return;
+              }
+              if (payload.event === "comments.changed" || payload.event === "comments.access.changed") {
+                refreshCommentsFromServer().catch((error) => console.warn("Failed to refresh comments from socket", error));
+                return;
+              }
+              if (payload.event === "page.updated") {
+  if (commentUserIsTyping) {
+    remoteRefreshPending = true;
+    return;
+  }
+
+  if (remoteRefreshTimer) {
+    window.clearTimeout(remoteRefreshTimer);
+    remoteRefreshTimer = 0;
+  }
+
+  remoteRefreshTimer = window.setTimeout(() => {
+    remoteRefreshTimer = 0;
+    refreshCurrentPageFromServer(true).catch((error) => {
+      console.warn("Failed to refresh page from socket", error);
+    });
+  }, 250);
+
+  return;
+}
+              if (payload.event === "page.deleted") {
+                ensureActorPage(true).catch((error) => console.warn("Failed to recover after page delete", error));
+              }
+            } catch (error) {
+              console.warn("Failed to parse comment socket payload", error);
+            }
+          });
+          commentSocket.addEventListener("close", () => {
+            commentSocket = null;
+            commentSocketPageId = "";
+            commentSocketPresenceKey = "";
+            renderPagePresence();
+            if (commentSocketReconnectTimer) {
+              clearTimeout(commentSocketReconnectTimer);
+            }
+            commentSocketReconnectTimer = window.setTimeout(() => {
+              ensureCommentSocket();
+            }, 1600);
+          });
+          commentSocket.addEventListener("error", () => {
+            if (commentSocket) {
+              commentSocket.close();
+            }
+          });
+        };
+
+        navigateToLink = (function(originalNavigateToLink) {
+          return function(link) {
+            if (!link) {
+              return;
+            }
+            const href = (link.getAttribute("href") || "").trim();
+            if (href.startsWith("wikilive://page/")) {
+              const match = href.match(/^wikilive:\/\/page\/([^#]+)(?:#(.+))?$/);
+              if (match) {
+                const pageId = decodeURIComponent(match[1] || "");
+                const anchorId = match[2] ? decodeURIComponent(match[2]) : "";
+                switchCommentPage(pageId, { persist: true, anchorId }).catch((error) => console.warn("Failed to switch page by link", error));
+              }
+              return;
+            }
+            if (href.startsWith("wikilive://discussion/")) {
+              const targetId = decodeURIComponent(href.replace("wikilive://discussion/", ""));
+              openThreadForTarget(targetId, true);
+              return;
+            }
+            originalNavigateToLink(link);
+          };
+        })(navigateToLink);
+
+        renderLinkHeadingList = function() {
+          if (!linkHeadingList) {
+            return;
+          }
+          const sections = buildWikiLiveLinkSections();
+          if (!sections.length) {
+            linkHeadingList.innerHTML = '<div class="link-menu__empty">Нет доступных ссылок</div>';
+            return;
+          }
+
+          linkHeadingList.innerHTML = sections.map((section) => {
+            const items = (section.items || []).map((item) => `
+              <button
+                class="link-menu__heading${item.kind === "heading" ? " link-menu__heading--subtle" : ""}"
+                type="button"
+                data-heading-target="${item.href}"
+              >
+                <span class="link-menu__heading-badge">${escapeHtml(item.level || item.kind || "")}</span>
+                <span>${escapeHtml(item.label || "Без названия")}</span>
+              </button>
+            `).join("");
+
+            return `
+              <div class="link-menu__section">
+                <div class="link-menu__section-title">
+                  <span>${escapeHtml(section.title || "Ссылки")}</span>
+                  ${section.subtitle ? `<span class="link-menu__section-subtitle">${escapeHtml(section.subtitle)}</span>` : ""}
+                </div>
+                <div class="link-menu__section-items">${items}</div>
+              </div>
+            `;
+          }).join("");
+        };
+
+        
+        const pageAccessButton = document.getElementById("pageAccessButton");
+        const pageDeleteButton = document.getElementById("pageDeleteButton");
+        const pageAccessPanel = document.getElementById("pageAccessPanel");
+        const pageAccessClose = document.getElementById("pageAccessClose");
+        const pageAccessList = document.getElementById("pageAccessList");
+        const pageAccessSave = document.getElementById("pageAccessSave");
+
+        let pageAccessUsers = [];
+        let pageAccessGroups = [];
+
+        async function loadPageAccessDirectory() {
+          try {
+            const [usersResponse, groupsResponse] = await Promise.all([
+              commentApiRequest("/api/users", { timeoutMs: 8000 }),
+              commentApiRequest("/api/groups", { timeoutMs: 8000 })
+            ]);
+            pageAccessUsers = Array.isArray(usersResponse.users) ? usersResponse.users : [];
+            pageAccessGroups = Array.isArray(groupsResponse.groups) ? groupsResponse.groups : [];
+          } catch (error) {
+            console.warn("Failed to load access directory, using fallback", error);
+            pageAccessUsers = [
+              { id: "ivan", name: "Иван Иванов", role: "Автор", team: "WikiLive" },
+              { id: "sergei", name: "Сергей Иванов", role: "Редактор", team: "WikiLive" },
+              { id: "anton", name: "Антон Серганов", role: "PM", team: "Release" },
+              { id: "daria", name: "Дарья Смирнова", role: "Designer", team: "Design" },
+              { id: "maxim", name: "Максим Карпов", role: "Backend", team: "Platform" },
+            ];
+            pageAccessGroups = [];
+          }
+        }
+
+        function getCurrentPage() {
+          return (commentPages || []).find((page) => page.pageId === commentPageId) || null;
+        }
+
+        function renderPageAccessPanel() {
+          if (!pageAccessList) {
+            return;
+          }
+          const page = getCurrentPage();
+          if (!page) {
+            pageAccessList.innerHTML = '<div class="page-access-item">Нет активной страницы</div>';
+            return;
+          }
+          const ownerId = normalizeActorId(page.ownerId || "viewer");
+          const sharedWith = Array.isArray(page.sharedWith) ? page.sharedWith : [];
+          const groupItems = (pageAccessGroups || []).map((group) => {
+            return `
+              <label class="page-access-item">
+                <input type="checkbox" data-group="${escapeHtml(group.id)}" />
+                <span>
+                  <div>${escapeHtml(group.name)}</div>
+                  <div class="page-access-item__meta">Группа • ${escapeHtml(group.id)}</div>
+                </span>
+              </label>
+            `;
+          }).join("");
+
+          const userItems = pageAccessUsers.map((user) => {
+            const normalized = normalizeActorId(user.id);
+            const isOwner = normalized === ownerId;
+            const isChecked = isOwner || sharedWith.includes(normalized) || sharedWith.includes("*");
+            return `
+              <label class="page-access-item">
+                <input type="checkbox" value="${normalized}" ${isChecked ? "checked" : ""} ${isOwner ? "disabled" : ""} />
+                <span>
+                  <div>${escapeHtml(user.name)}</div>
+                  <div class="page-access-item__meta">${escapeHtml(user.role || "Участник")} • ${escapeHtml(user.team || "WikiLive")}</div>
+                </span>
+              </label>
+            `;
+          }).join("");
+
+          pageAccessList.innerHTML = groupItems + userItems;
+        }
+
+        function openPageAccessPanel() {
+          if (!pageAccessPanel) {
+            return;
+          }
+          renderPageAccessPanel();
+          pageAccessPanel.classList.add("is-open");
+        }
+
+        function closePageAccessPanel() {
+          if (pageAccessPanel) {
+            pageAccessPanel.classList.remove("is-open");
+          }
+        }
+
+function initializePagesWorkspace() {
+          const newPageButton = document.getElementById("newPageButton");
+          const docHeaderTitleButton = document.getElementById("docHeaderTitleButton");
+
+          ensurePagesWorkspaceStyles();
+          loadPageAccessDirectory().finally(() => renderPagesSwitcher());
+          renderPagePresence();
+
+          if (pagesTrigger) {
+            pagesTrigger.addEventListener("click", (event) => {
+              event.stopPropagation();
+              pagesSwitcher.classList.toggle("is-open");
+            });
+          }
+
+          if (pageAccessButton) {
+            pageAccessButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openPageAccessPanel();
+            });
+          }
+
+          if (pageAccessClose) {
+            pageAccessClose.addEventListener("click", closePageAccessPanel);
+          }
+
+          if (pageAccessPanel) {
+            pageAccessPanel.addEventListener("click", (event) => {
+              event.stopPropagation();
+            });
+          }
+
+          if (pageAccessSave) {
+            pageAccessSave.addEventListener("click", async (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+
+              const page = getCurrentPage();
+              if (!page) {
+                closePageAccessPanel();
+                return;
+              }
+              const ownerId = normalizeActorId(page.ownerId || "viewer");
+              const actor = getCurrentCommentActor();
+              const actorId = normalizeActorId((actor && (actor.id || actor.email)) || currentCommentActorId || "viewer");
+
+              const selectedUsers = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][value]'))
+                .filter((input) => input.checked)
+                .map((input) => normalizeActorId(input.value))
+                .filter((value) => value && value !== ownerId);
+
+              const selectedGroups = Array.from(pageAccessList.querySelectorAll('input[type="checkbox"][data-group]'))
+                .filter((input) => input.checked)
+                .map((input) => input.dataset.group || "");
+
+              const groupMembers = (pageAccessGroups || [])
+                .filter((group) => selectedGroups.includes(group.id))
+                .flatMap((group) => group.members || []);
+
+              const selected = Array.from(new Set([...selectedUsers, ...groupMembers]))
+                .filter((value) => value && value !== ownerId);
+
+              const previousShared = Array.isArray(page.sharedWith)
+                ? page.sharedWith.map((value) => normalizeActorId(value))
+                : [];
+
+              const addedAccess = selected.filter((value) => !previousShared.includes(value));
+              const removedAccess = previousShared.filter((value) => !selected.includes(value));
+              const accessVersionLabel = addedAccess.length && !removedAccess.length
+                ? "Добавлены участники к странице"
+                : (!addedAccess.length && removedAccess.length
+                  ? "Закрыт доступ к странице"
+                  : "Обновление доступа");
+
+              const nextAccess = {
+                public: false,
+                users: [ownerId, ...selected],
+                groups: selectedGroups,
+                roles: []
+              };
+
+              const payload = {
+                ...serializeEditorDocument(),
+                ownerId: page.ownerId || normalizeActorId(currentCommentActorId || "viewer"),
+                ownerName: page.ownerName || getCurrentCommentActor().name || "Автор",
+                sharedWith: selected,
+                access: nextAccess,
+                actorId,
+                versionLabel: accessVersionLabel,
+                versionAuthor: getCurrentCommentActor().id || "viewer",
+              };
+
+              console.log("[wikilive][access] save:start", {
+                pageId: page.pageId,
+                actorId,
+                ownerId,
+                selected,
+                selectedGroups,
+                payload
+              });
+
+              try {
+                const response = await commentApiRequest(`/api/pages/${encodeURIComponent(page.pageId)}`, {
+                  method: "PUT",
+                  body: JSON.stringify(payload),
+                  timeoutMs: 30000,
+                });
+                const updated = response.item || response;
+                console.log("[wikilive][access] save:response", updated);
+
+                if (updated && updated.pageId) {
+                  upsertCommentPage(updated);
+                  syncCurrentPageSnapshot({
+                    sharedWith: selected,
+                    access: nextAccess
+                  });
+                  renderPagesSwitcher();
+                  renderPageAccessPanel();
+                }
+              } catch (error) {
+                console.error("[wikilive][access] save:error", error);
+              }
+            });
+          }
+
+          document.addEventListener("click", (event) => {
+            if (pageAccessPanel && pageAccessPanel.classList.contains("is-open")) {
+              const clickedButton = pageAccessButton && pageAccessButton.contains(event.target);
+              const clickedInsidePanel = pageAccessPanel.contains(event.target);
+              if (!clickedInsidePanel && !clickedButton) {
+                closePageAccessPanel();
+              }
+            }
+          });
+
+          if (pageDeleteButton) {
+            pageDeleteButton.addEventListener("click", async (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const page = getCurrentPage();
+              if (!page) {
+                return;
+              }
+              const ownerId = normalizeActorId(page.ownerId || "viewer");
+              const actorId = normalizeActorId(currentCommentActorId || "viewer");
+              if (ownerId !== actorId && !isCommentAdmin(actorId)) {
+                return;
+              }
+              if (!window.confirm("Удалить страницу?")) {
+                return;
+              }
+              try {
+  const currentPageId = page.pageId;
+  const remainingPages = (commentPages || []).filter((item) => item.pageId !== currentPageId);
+  const nextPage = remainingPages[0] || null;
+
+  commentPages = remainingPages;
+  closePagesSwitcher();
+  closePageAccessPanel();
+
+  if (nextPage) {
+    commentPageId = nextPage.pageId;
+    window.localStorage.setItem(getActorPageStorageKey(), commentPageId);
+
+    applyEditorDocumentSafely(nextPage);
+    renderPagesSwitcher();
+    renderCommentsPanel();
+    renderPagePresence();
+    ensureCommentSocket();
+    subscribeCommentSocketToPage();
+
+    document.dispatchEvent(
+      new CustomEvent("wikilive:page-ready", { detail: { pageId: commentPageId } })
+    );
+  } else {
+    titleEditor.textContent = "Новая страница";
+    if (typeof setDocumentDescriptionText === "function") {
+      setDocumentDescriptionText("");
+    }
+    bodyEditor.innerHTML = "<p><br></p>";
+    if (docHeaderTitle) {
+      docHeaderTitle.textContent = "Новая страница";
+    }
+    commentPageId = "";
+    window.localStorage.removeItem(getActorPageStorageKey());
+    renderPagesSwitcher();
+    renderCommentsPanel();
+    renderPagePresence();
+  }
+
+  commentApiRequest(`/api/pages/${encodeURIComponent(currentPageId)}`, {
+    method: "DELETE",
+    timeoutMs: 15000,
+  }).catch((error) => {
+    console.warn("Failed to delete page", error);
+  });
+
+} catch (error) {
+  console.warn("Failed to delete page", error);
+}
+            });
+          }
+
+          const createAndFocusPage = () => {
+  createPageForCurrentActor()
+    .catch((error) => console.warn("Failed to create page", error));
+};
+
+          if (pagesCreateButton) {
+            pagesCreateButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              createAndFocusPage();
+            });
+          }
+
+          if (newPageButton) {
+            newPageButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              createAndFocusPage();
+            });
+          }
+
+          if (docHeaderTitleButton) {
+            docHeaderTitleButton.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              focusTitleEditor(true);
+            });
+          }
+
+          if (pagesList) {
+            pagesList.addEventListener("click", (event) => {
+              const pageButton = event.target.closest("[data-page-id]");
+              if (!pageButton) {
+                return;
+              }
+              switchCommentPage(pageButton.dataset.pageId || "", { persist: true }).then(() => {
+                closePagesSwitcher();
+              }).catch((error) => console.warn("Failed to switch page", error));
+            });
+          }
+
+          if (titleEditor) {
+            titleEditor.addEventListener("keydown", (event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+              }
+            });
+
+            titleEditor.addEventListener("input", () => {
+  markUserTyping();
+  syncHeaderTitleFromEditor();
+  scheduleCommentDocumentSave("Изменено название страницы", getCurrentCommentActor().id);
+});
+
+            titleEditor.addEventListener("blur", () => {
+              const normalizedTitle = normalizePageTitleText(titleEditor.textContent);
+              titleEditor.textContent = normalizedTitle;
+              syncHeaderTitleFromEditor();
+            });
+          }
+
+          if (bodyEditor) {
+  bodyEditor.addEventListener("input", () => {
+    markUserTyping();
+  });
+}
+
+          document.addEventListener("click", (event) => {
+            if (pagesSwitcher && !pagesSwitcher.contains(event.target)) {
+              closePagesSwitcher();
+            }
+          });
+        }
+
+        initializePagesWorkspace();
+        """
+    ).strip()

@@ -1,0 +1,52 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+namespace wikilive::models {
+
+struct CommentMessage {
+    std::string messageId;
+    std::string author;
+    std::string body;
+    std::string createdAt;
+    std::string updatedAt;
+    std::string replyToMessageId;
+    bool deleted = false;
+    std::vector<std::string> likedBy;
+};
+
+struct CommentAnchor {
+    std::string anchorId;
+    std::string quote;
+    std::string selector;
+    std::string blockId;
+    std::string blockType;
+    int startOffset = -1;
+    int endOffset = -1;
+};
+
+struct CommentThread {
+    std::string threadId;
+    std::string pageId;
+    std::string targetId;
+    std::string targetType;
+    std::string selectionLabel;
+    std::string targetPreview;
+    CommentAnchor anchor;
+    std::string createdAt;
+    std::string updatedAt;
+    bool resolved = false;
+    std::string resolvedAt;
+    std::string resolvedBy;
+    bool paused = false;
+    std::string pausedAt;
+    std::string pausedBy;
+    bool deleted = false;
+    std::string deletedAt;
+    std::string deletedBy;
+    std::vector<std::string> likedBy;
+    std::vector<CommentMessage> messages;
+};
+
+}  // namespace wikilive::models
