@@ -2,21 +2,21 @@
 
 ![WikiLive cover](docs/images/wikilive-banner.svg)
 
-WikiLive is a collaborative knowledge workspace built during the MTS Tech Hack. It combines a high-performance C++ backend with a lightweight Streamlit interface to make technical content editing, discussion, version tracking, and AI-assisted work feel fast and practical.
+**WikiLive** - платформа для совместной работы с документами и внутренними знаниями в реальном времени, разработанная в рамках MTS Tech Hack. Проект сочетает производительный backend на C++ и легкий интерфейс на Streamlit, чтобы редактирование, обсуждение, контроль версий и AI-помощь работали быстро и в одном пространстве.
 
-The project is centered around live team workflows: editing pages, leaving structured comments, reviewing history, managing access, attaching media from MWS, and using AI helpers directly inside the workspace.
+Основной сценарий проекта - живая командная работа со страницами: создание и редактирование контента, комментарии по месту, просмотр истории изменений, управление доступом, встраивание медиа-блоков из MWS и использование AI-инструментов прямо внутри рабочего процесса.
 
-## What it does
+## Возможности
 
-- Real-time collaborative wiki for project and knowledge pages
-- Fine-grained comments with replies, likes, pause/resume, edit and resolve flows
-- Version history and time-machine style rollback for page changes
-- Project, page, user, and group level access control
-- AI assistance for text improvement and inline content suggestions
-- MWS integration for uploading and embedding media blocks
-- WebSocket-ready architecture for live collaboration updates
+- совместная wiki-среда для проектов и страниц знаний
+- комментарии с ответами, лайками, редактированием, паузой и завершением обсуждений
+- история изменений и восстановление предыдущих версий страниц
+- разграничение прав доступа на уровне проекта, страницы, пользователей и групп
+- AI-подсказки для улучшения текста и вставки контента
+- интеграция с MWS для загрузки и встраивания медиа-блоков
+- архитектура, готовая к live-обновлениям через WebSocket
 
-## Product tour
+## Интерфейс
 
 <p align="center">
   <img src="docs/images/wikilive-shot-01.png" alt="WikiLive editor" width="31%">
@@ -24,45 +24,45 @@ The project is centered around live team workflows: editing pages, leaving struc
   <img src="docs/images/wikilive-shot-03.png" alt="WikiLive time machine" width="31%">
 </p>
 
-## Demo
+## Демо
 
-- Interactive showcase page in `docs/` (ready for GitHub Pages): [docs/index.html](docs/index.html)
-- Demo video: [docs/media/wikilive-demo.mp4](docs/media/wikilive-demo.mp4)
+- Витрина проекта в `docs/`, готовая для GitHub Pages: [docs/index.html](docs/index.html)
+- Демо-видео: [docs/media/wikilive-demo.mp4](docs/media/wikilive-demo.mp4)
 
-## Architecture
+## Архитектура
 
 ![WikiLive architecture](docs/images/wikilive-architecture.svg)
 
-Core layers:
+Основные слои проекта:
 
-- `frontend/` - Streamlit application and UI modules
-- `src/server/` - HTTP routing and API surface
-- `src/core/` - application bootstrap and dependency wiring
-- `src/services/` - domain services, AI integration, MWS integration
-- `src/storage/` - local persistence for users, pages, projects, collaboration state
-- `src/wiki/` - wiki-specific business logic and models
+- `frontend/` - приложение на Streamlit и UI-модули
+- `src/server/` - HTTP-маршруты и API
+- `src/core/` - инициализация приложения и сборка зависимостей
+- `src/services/` - доменные сервисы, AI-интеграция и MWS-интеграция
+- `src/storage/` - локальное хранение пользователей, страниц, проектов и состояния коллаборации
+- `src/wiki/` - wiki-логика и связанные модели
 
-## Stack
+## Технологии
 
 - Backend: `C++23`
-- HTTP layer: `uWebSockets`
+- HTTP-слой: `uWebSockets`
 - Frontend: `Streamlit`
-- Data exchange: `nlohmann/json`
-- External integrations: `libcurl`
-- Local orchestration: `Docker Compose`
+- Обмен данными: `nlohmann/json`
+- Внешние интеграции: `libcurl`
+- Локальный запуск: `Docker Compose`
 
-## Quick start
+## Быстрый старт
 
 ```bash
 docker compose up --build
 ```
 
-Available after startup:
+После запуска доступны:
 
 - Frontend: `http://localhost:8501`
-- Backend health check: `http://localhost:3000/health`
+- Проверка backend: `http://localhost:3000/health`
 
-## Local development
+## Локальная разработка
 
 Backend:
 
@@ -78,6 +78,6 @@ cd frontend
 streamlit run app.py
 ```
 
-## Repository notes
+## Дополнительно
 
-The repository also includes planning and tracker materials in [`docs/`](docs/) that were used during the hackathon delivery process.
+В каталоге [`docs/`](docs/) также лежат материалы по планированию и трекингу, которые использовались в ходе хакатона.
