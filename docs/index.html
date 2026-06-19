@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WikiLive Showcase</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b1020;
+      --bg-soft: #121a31;
+      --panel: rgba(15, 23, 42, 0.78);
+      --line: rgba(148, 163, 184, 0.2);
+      --text: #e5eefb;
+      --muted: #99a7c2;
+      --accent: #63b3ff;
+      --accent-2: #7c8cff;
+      --shadow: 0 24px 80px rgba(2, 6, 23, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(99, 179, 255, 0.18), transparent 34%),
+        radial-gradient(circle at top right, rgba(124, 140, 255, 0.16), transparent 28%),
+        var(--bg);
+      color: var(--text);
+    }
+
+    a {
+      color: inherit;
+    }
+
+    .wrap {
+      width: min(1180px, calc(100% - 48px));
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 72px 0 48px;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 28px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 8px 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--accent);
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      background: rgba(99, 179, 255, 0.08);
+    }
+
+    h1 {
+      margin: 18px 0 16px;
+      font-size: clamp(44px, 7vw, 76px);
+      line-height: 0.95;
+    }
+
+    .lead {
+      margin: 0;
+      max-width: 720px;
+      font-size: 18px;
+      line-height: 1.7;
+      color: var(--muted);
+    }
+
+    .hero-card,
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .hero-card {
+      overflow: hidden;
+    }
+
+    .hero-card img {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    .section {
+      padding: 28px 0 0;
+    }
+
+    .section-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: end;
+      margin-bottom: 20px;
+    }
+
+    .section-head h2 {
+      margin: 0;
+      font-size: 30px;
+    }
+
+    .section-head p {
+      margin: 0;
+      color: var(--muted);
+      max-width: 620px;
+      line-height: 1.6;
+    }
+
+    .feature-grid,
+    .gallery {
+      display: grid;
+      gap: 18px;
+    }
+
+    .feature-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .feature {
+      padding: 22px;
+    }
+
+    .feature h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .feature p {
+      margin: 0;
+      line-height: 1.65;
+      color: var(--muted);
+    }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+    }
+
+    video,
+    .gallery img {
+      width: 100%;
+      display: block;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: #030712;
+    }
+
+    .gallery {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .gallery-item {
+      padding: 12px;
+    }
+
+    .gallery-item p {
+      margin: 12px 2px 4px;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .architecture {
+      padding: 18px;
+    }
+
+    .architecture img {
+      width: 100%;
+      display: block;
+    }
+
+    .footer {
+      padding: 36px 0 56px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 24px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      text-decoration: none;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .button.primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #081120;
+      border: none;
+    }
+
+    @media (max-width: 960px) {
+      .hero-grid,
+      .demo-grid,
+      .feature-grid,
+      .gallery {
+        grid-template-columns: 1fr;
+      }
+
+      .wrap {
+        width: min(100% - 28px, 1180px);
+      }
+
+      .hero {
+        padding-top: 40px;
+      }
+
+      h1 {
+        line-height: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div class="hero-grid">
+        <div>
+          <span class="eyebrow">MTS Tech Hack • WikiLive</span>
+          <h1>Collaborative knowledge editing with live discussion and AI assistance</h1>
+          <p class="lead">
+            WikiLive brings together fast page editing, threaded comments, time-machine history,
+            access control, media blocks, and AI-powered writing helpers in one compact workflow.
+            The stack is built around a C++ backend and a Streamlit UI, with room for live updates
+            through WebSocket-based collaboration.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="https://github.com/paravoc/mts-tech-hack-wiki-lives">Open repository</a>
+            <a class="button" href="media/wikilive-demo.mp4">Download demo video</a>
+          </div>
+        </div>
+        <div class="hero-card">
+          <img src="images/wikilive-banner.svg" alt="WikiLive banner">
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Core capabilities</h2>
+        <p>Designed for teams that need more than a simple notes page: discussion, moderation, revision tracking, and assisted editing are built into the product flow.</p>
+      </div>
+      <div class="feature-grid">
+        <article class="feature panel">
+          <h3>Structured collaboration</h3>
+          <p>Threaded comments support replies, likes, pause and resume flows, edit and delete actions, and resolution tracking directly on page content.</p>
+        </article>
+        <article class="feature panel">
+          <h3>Version-aware editing</h3>
+          <p>History snapshots and time-machine navigation make it possible to inspect revisions, compare states, and roll back page content when needed.</p>
+        </article>
+        <article class="feature panel">
+          <h3>Integrated assistance</h3>
+          <p>AI prompts can improve wording, suggest inserts, and help with content polishing while MWS blocks make it easier to pull media into the page.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Video walkthrough</h2>
+        <p>The repository includes the original demo capture. It can be used both as a product walkthrough and as a source for screenshots.</p>
+      </div>
+      <div class="demo-grid">
+        <div class="panel architecture">
+          <video id="wikilive-demo-video" controls preload="metadata">
+            <source src="media/wikilive-demo.mp4" type="video/mp4">
+          </video>
+        </div>
+        <div class="panel architecture">
+          <img src="images/wikilive-architecture.svg" alt="WikiLive architecture">
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>Selected screens</h2>
+        <p>Frames below are generated from the included product demo and highlight the main working surfaces of the application.</p>
+      </div>
+      <div class="gallery">
+        <article class="gallery-item panel">
+          <img src="images/wikilive-shot-01.png" alt="WikiLive editor screen">
+          <p>Editing workspace with project navigation and live content area.</p>
+        </article>
+        <article class="gallery-item panel">
+          <img src="images/wikilive-shot-02.png" alt="WikiLive comments screen">
+          <p>Discussion mode with contextual comments and collaboration actions.</p>
+        </article>
+        <article class="gallery-item panel">
+          <img src="images/wikilive-shot-03.png" alt="WikiLive history screen">
+          <p>Version history and page recovery workflow for controlled changes.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="section-head">
+        <h2>System shape</h2>
+        <p>The application separates UI, HTTP routing, core orchestration, storage, and external integrations into clear modules, which keeps the feature surface manageable despite a broad workflow.</p>
+      </div>
+      <div class="panel architecture">
+        <img src="images/wikilive-architecture.svg" alt="System architecture diagram">
+      </div>
+    </section>
+
+    <footer class="footer">
+      WikiLive showcase page stored inside the repository under <code>docs/</code>.
+    </footer>
+  </main>
+</body>
+</html>

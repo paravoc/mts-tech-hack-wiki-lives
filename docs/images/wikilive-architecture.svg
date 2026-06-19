@@ -1,0 +1,37 @@
+<svg width="1600" height="920" viewBox="0 0 1600 920" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="920" rx="32" fill="#0A1020"/>
+  <text x="94" y="106" fill="#EDF3FF" font-family="Arial, sans-serif" font-size="54" font-weight="700">WikiLive architecture</text>
+  <text x="95" y="154" fill="#93A4C2" font-family="Arial, sans-serif" font-size="24">Compact view of the main runtime modules and integrations</text>
+  <rect x="98" y="236" width="304" height="150" rx="26" fill="#15223A" stroke="#284168" stroke-width="2"/>
+  <rect x="648" y="236" width="304" height="150" rx="26" fill="#15223A" stroke="#284168" stroke-width="2"/>
+  <rect x="1198" y="236" width="304" height="150" rx="26" fill="#15223A" stroke="#284168" stroke-width="2"/>
+  <rect x="98" y="580" width="304" height="170" rx="26" fill="#131F34" stroke="#284168" stroke-width="2"/>
+  <rect x="470" y="580" width="304" height="170" rx="26" fill="#131F34" stroke="#284168" stroke-width="2"/>
+  <rect x="842" y="580" width="304" height="170" rx="26" fill="#131F34" stroke="#284168" stroke-width="2"/>
+  <rect x="1198" y="580" width="304" height="170" rx="26" fill="#131F34" stroke="#284168" stroke-width="2"/>
+  <text x="151" y="299" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="34" font-weight="700">Frontend</text>
+  <text x="151" y="344" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="24">Streamlit UI modules</text>
+  <text x="701" y="299" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="34" font-weight="700">Backend</text>
+  <text x="701" y="344" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="24">uWebSockets + C++23</text>
+  <text x="1261" y="299" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="34" font-weight="700">Clients</text>
+  <text x="1261" y="344" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="24">browser and API consumers</text>
+  <text x="145" y="640" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="30" font-weight="700">Storage</text>
+  <text x="145" y="685" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">pages, projects, users,</text>
+  <text x="145" y="715" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">collaboration state</text>
+  <text x="523" y="640" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="30" font-weight="700">Domain services</text>
+  <text x="523" y="685" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">wiki logic, comments,</text>
+  <text x="523" y="715" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">versions, access rules</text>
+  <text x="897" y="640" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="30" font-weight="700">AI integration</text>
+  <text x="897" y="685" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">OpenRouter or Ollama</text>
+  <text x="897" y="715" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">text fixes and suggestions</text>
+  <text x="1247" y="640" fill="#EAF2FF" font-family="Arial, sans-serif" font-size="30" font-weight="700">External services</text>
+  <text x="1247" y="685" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">MWS media, websocket</text>
+  <text x="1247" y="715" fill="#8FA5C7" font-family="Arial, sans-serif" font-size="22">broadcast, HTTP APIs</text>
+  <path d="M402 311H648" stroke="#63B3FF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M952 311H1198" stroke="#63B3FF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M800 386V516" stroke="#7C8CFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M250 386V516H622V580" stroke="#7C8CFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M1350 386V516H978V580" stroke="#7C8CFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M800 516H1350V580" stroke="#7C8CFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M800 516H250V580" stroke="#7C8CFF" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
